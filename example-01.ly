@@ -1,0 +1,119 @@
+# Shelly complete syntax example #
+
+# Variables are case-insensitive and can be empty. #
+$name = "Agustin"
+$enabled = true
+$empty
+
+# Constants use $$, must be uppercase, require a value, and cannot be reassigned. #
+$$APP = "Shelly"
+$$MIN_AGE = 18
+$$BASE = 10
+
+# Numeric expressions support precedence, parentheses, floats, negatives, variables, and constants. #
+$count = 1 + 2 * 3
+$half_count = ($count + 1) / 2
+$temperature = 10.5 + 2.25
+$negative = -3 * 2
+$total = $$BASE * $temperature
+
+shellout "Welcome to $$APP, $NAME"
+shellout "Arithmetic: count=$count half=$half_count temperature=$temperature negative=$negative total=$total"
+shellout "Empty variable value: '$empty'"
+
+# Lists are Shelly's only collection type. Indexes are one-based. #
+$names = ["Ana", "Luis", "Mora"]
+$numbers = [1, 3, 5, 8, 10]
+$flags = [true, false, true]
+$values = [$name, $$BASE, true, 2 + 3]
+
+shellout "First list name: $names[first]; last: $names[last]"
+shellout "Second by index: $names[2]"
+shellout "List picks: $names[1,3]"
+shellout "List range: $names[1..2]"
+shellout "List until second: $names[..2]"
+shellout "List from second: $names[2..]"
+shellout "List copy: $names[..]"
+shellout "Filtered numbers: >5 $numbers[>5]; <=5 $numbers[<=5]"
+shellout "Filtered names: $names[==\"Ana\"]; not Ana: $names[!=\"Ana\"]"
+shellout "Filtered flags: $flags[==true]"
+shellout "List refs: name=$values[1] base=$values[2] flag=$values[3] math=$values[4]"
+
+# Variable lists can be mutated with append/prepend/remove/replacement. #
+$queue = []
+append $queue, "Luis"
+prepend $queue, "Ana"
+append $queue, $$APP
+$queue[last] = "Mora"
+$queue[first] = "Iris"
+remove $queue[first]
+shellout "Mutated queue: $queue[..]"
+
+# `ask` prints a prompt and stores one input line in a variable. #
+ask "Do you want to continue? " -> $answer
+
+if $answer == "yes"
+    shellout "Great, continuing"
+elif $answer == "no"
+    shellout "Stopping soon"
+else
+    shellout "Unknown answer, but the example continues"
+end
+
+# `shellin` only reads input; use `shellout` when you want a prompt. #
+shellout "What is your favorite color?"
+shellin $color
+shellout "Favorite color: $color"
+
+# Repeat loops run a fixed number of times. The optional index is local/protected. #
+repeat 3 -> $turn
+    shellout "Repeat turn $turn"
+end
+
+$visits = 0
+repeat 2
+    $visits = $visits + 1
+end
+shellout "Repeat visits counted: $visits"
+
+# While loops reuse if conditions and do not create a new scope. #
+$countdown = 2
+while $countdown > 0
+    shellout "While countdown $countdown"
+    $countdown = $countdown - 1
+end
+shellout "While finished at $countdown"
+
+# Functions use fn/end, comma-separated arguments, defaults, and local scope. #
+fn greet $person, $prefix = "Hello"
+    global $$APP, $color
+
+    $local_message = "$prefix $person from $$APP"
+    shellout "$local_message; favorite color is $color"
+end
+
+greet $name
+greet "Guest", "Hi"
+
+# Imports load exported constants/functions only; includes execute the whole file in current scope. #
+import "examples/module.ly"
+greet "Ada"
+shellout "Imported constant: $$GREETING"
+include "examples/setup.ly"
+shellout "Included setup color: $color"
+
+# `command` streams a system command. #
+command "printf 'Command output: hello from Linux\n'"
+
+# `command ... -> $var` captures stdout from a system command. #
+command "pwd" -> $current_dir
+shellout "Running from $current_dir"
+
+# If blocks do not create a new scope. #
+if $count >= 3
+    $status = "count is high enough"
+else
+    $status = "count is too low"
+end
+
+shellout "Status: $status"

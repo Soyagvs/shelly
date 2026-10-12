@@ -1,0 +1,1391 @@
+use std::collections::{HashMap, HashSet};
+use std::env;
+use std::fs;
+use std::io::{self, Write};
+use std::path::PathBuf;
+use std::process::Stdio;
+
+mod comments;
+mod parser;
+mod shell;
+mod value;
+
+use comments::strip_comments;
+use parser::{
+    is_identifier_name, is_number_literal, parse_identifier, parse_string_literal, parse_var_ref,
+    split_commas, split_string_literal_tail,
+};
+use shell::{read_stdin_line, shell_command};
+use value::{
+    IdentKind, Value, compare_values, display_identifier, format_list, format_number, is_truthy,
+};
+
+const WHILE_ITERATION_LIMIT: usize = 10_000;
+
+fn main() {
+    let script_path = env::args_os().nth(1).map(PathBuf::from);
+
+    let result = match script_path {
+        Some(path) => run_script(path),
+        None => {
+            println!("Shelly is ready. Pass a .ly script path to run it.");
+            println!("Usage: shelly <script.ly>");
+            Ok(())
+        }
+    };
+
+    if let Err(error) = result {
+        if let Some(code) = parse_exit_signal(&error) {
+            std::process::exit(code);
+        }
+        eprintln!("{error}");
+        std::process::exit(1);
+    }
+}
+
+fn exit_signal(code: u8) -> String {
+    format!("__shelly_exit:{code}")
+}
+
+fn parse_exit_signal(error: &str) -> Option<i32> {
+    error
+        .strip_prefix("__shelly_exit:")
+        .and_then(|code| code.parse::<i32>().ok())
+}
+
+fn line_error(line_no: usize, error: String) -> String {
+    if parse_exit_signal(&error).is_some() {
+        error
+    } else {
+        format!("line {line_no}: {error}")
+    }
+}
+
+fn run_script(path: PathBuf) -> Result<(), String> {
+    let path = path
+        .canonicalize()
+        .map_err(|error| format!("could not read script '{}': {error}", path.display()))?;
+    let source = fs::read_to_string(&path)
+        .map_err(|error| format!("could not read script '{}': {error}", path.display()))?;
+    let mut interpreter = Interpreter::default();
+    interpreter.current_dir = path.parent().map(PathBuf::from).unwrap_or_default();
+    interpreter.stack.push(path);
+    interpreter.run(&source)
+}
+
+#[derive(Default)]
+struct Interpreter {
+    vars: HashMap<String, Value>,
+    consts: HashMap<String, Value>,
+    functions: HashMap<String, Function>,
+    current_dir: PathBuf,
+    stack: Vec<PathBuf>,
+    imported: HashSet<PathBuf>,
+}
+
+impl Interpreter {
+    fn run(&mut self, source: &str) -> Result<(), String> {
+        let lines = strip_comments(source)?;
+        self.run_lines(&lines)
+    }
+
+    fn run_lines(&mut self, lines: &[(usize, String)]) -> Result<(), String> {
+        let mut index = 0;
+        while index < lines.len() {
+            let line_no = lines[index].0;
+            let line = lines[index].1.trim();
+            if line.is_empty() || line.starts_with('#') {
+                index += 1;
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("export fn ") {
+                let (function, next_index) = parse_function(rest.trim(), lines, index)
+                    .map_err(|error| line_error(line_no, error))?;
+                self.define_function(function, line_no)?;
+                index = next_index;
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("export ") {
+                let (kind, _, _) =
+                    parse_identifier(rest).map_err(|error| line_error(line_no, error))?;
+                if kind != IdentKind::Constant {
+                    return Err(format!(
+                        "line {line_no}: only constants and functions can be exported"
+                    ));
+                }
+                self.assignment(rest, line_no)
+                    .map_err(|error| line_error(line_no, error))?;
+                index += 1;
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("fn ") {
+                let (function, next_index) = parse_function(rest.trim(), lines, index)
+                    .map_err(|error| line_error(line_no, error))?;
+                self.define_function(function, line_no)?;
+                index = next_index;
+                continue;
+            }
+            if line == "if" {
+                return Err(format!("line {line_no}: condition required"));
+            }
+            if let Some(condition) = line.strip_prefix("if ") {
+                let next_index = self
+                    .run_conditional(condition.trim(), lines, index)
+                    .map_err(|error| line_error(line_no, error))?;
+                index = next_index;
+                continue;
+            }
+            if line == "repeat" {
+                return Err(format!("line {line_no}: repeat count required"));
+            }
+            if let Some(condition) = line.strip_prefix("while ") {
+                let next_index = self
+                    .run_while(condition.trim(), lines, index)
+                    .map_err(|error| line_error(line_no, error))?;
+                index = next_index;
+                continue;
+            }
+            if line == "while" {
+                return Err(format!("line {line_no}: condition required"));
+            }
+            if let Some(rest) = line.strip_prefix("repeat ") {
+                let next_index = self
+                    .run_repeat(rest.trim(), lines, index)
+                    .map_err(|error| line_error(line_no, error))?;
+                index = next_index;
+                continue;
+            }
+            if matches!(line, "elif" | "else" | "end") || line.starts_with("elif ") {
+                return Err(format!("line {line_no}: unexpected conditional marker"));
+            }
+            self.run_line(line, line_no)
+                .map_err(|error| line_error(line_no, error))?;
+            index += 1;
+        }
+        Ok(())
+    }
+
+    fn run_conditional(
+        &mut self,
+        first_condition: &str,
+        lines: &[(usize, String)],
+        start: usize,
+    ) -> Result<usize, String> {
+        if first_condition.is_empty() {
+            return Err("condition required".to_string());
+        }
+        let mut branches: Vec<(Option<String>, Vec<(usize, String)>)> =
+            vec![(Some(first_condition.to_string()), Vec::new())];
+        let mut depth = 0;
+        let mut saw_else = false;
+        let mut index = start + 1;
+        while index < lines.len() {
+            let line_no = lines[index].0;
+            let line = lines[index].1.trim();
+            if starts_block(line) {
+                depth += 1;
+            }
+            if line == "end" {
+                if depth == 0 {
+                    for (condition, body) in branches {
+                        let take = match condition {
+                            Some(condition) => self.eval_condition(&condition)?,
+                            None => true,
+                        };
+                        if take {
+                            return self.run_lines(&body).map(|_| index + 1);
+                        }
+                    }
+                    return Ok(index + 1);
+                }
+                depth -= 1;
+            }
+            if depth == 0 {
+                if let Some(condition) = line.strip_prefix("elif ") {
+                    if saw_else {
+                        return Err(format!("line {line_no}: elif after else"));
+                    }
+                    if condition.trim().is_empty() {
+                        return Err(format!("line {line_no}: condition required"));
+                    }
+                    branches.push((Some(condition.trim().to_string()), Vec::new()));
+                    index += 1;
+                    continue;
+                }
+                if line == "else" {
+                    if saw_else {
+                        return Err(format!("line {line_no}: duplicate else"));
+                    }
+                    saw_else = true;
+                    branches.push((None, Vec::new()));
+                    index += 1;
+                    continue;
+                }
+            }
+            branches
+                .last_mut()
+                .expect("branch exists")
+                .1
+                .push(lines[index].clone());
+            index += 1;
+        }
+        Err("missing end for if".to_string())
+    }
+
+    fn run_repeat(
+        &mut self,
+        rest: &str,
+        lines: &[(usize, String)],
+        start: usize,
+    ) -> Result<usize, String> {
+        let (count_expr, index_var) = parse_repeat_header(rest)?;
+        let count = self.eval_repeat_count(count_expr)?;
+        let (body, next_index) = collect_block(lines, start, "repeat")?;
+        let saved_index = index_var.and_then(|name| {
+            let previous = self.vars.get(&name).cloned();
+            Some((name, previous))
+        });
+
+        for iteration in 1..=count {
+            if let Some((name, _)) = &saved_index {
+                self.vars
+                    .insert(name.clone(), Value::Scalar(iteration.to_string()));
+            }
+            self.run_lines(&body)?;
+        }
+
+        if let Some((name, previous)) = saved_index {
+            if let Some(value) = previous {
+                self.vars.insert(name, value);
+            } else {
+                self.vars.remove(&name);
+            }
+        }
+        Ok(next_index)
+    }
+
+    fn run_while(
+        &mut self,
+        condition: &str,
+        lines: &[(usize, String)],
+        start: usize,
+    ) -> Result<usize, String> {
+        if condition.is_empty() {
+            return Err("condition required".to_string());
+        }
+        let (body, next_index) = collect_block(lines, start, "while")?;
+        let mut iterations = 0;
+        while self.eval_condition(condition)? {
+            if iterations >= WHILE_ITERATION_LIMIT {
+                return Err(format!(
+                    "while loop exceeded safety limit of {WHILE_ITERATION_LIMIT} iterations"
+                ));
+            }
+            iterations += 1;
+            self.run_lines(&body)?;
+        }
+        Ok(next_index)
+    }
+
+    fn eval_repeat_count(&self, expr: &str) -> Result<i64, String> {
+        if expr.contains('.') {
+            return Err("repeat count must be an integer".to_string());
+        }
+        let mut parser = NumericParser::new(expr, self);
+        let value = parser.parse_expr()?;
+        parser.skip_ws();
+        if !parser.is_at_end() {
+            return Err(format!(
+                "unexpected text in numeric expression near '{}'",
+                parser.remaining()
+            ));
+        }
+        if value < 0.0 {
+            return Err("repeat count cannot be negative".to_string());
+        }
+        if value.fract() != 0.0 {
+            return Err("repeat count must be an integer".to_string());
+        }
+        Ok(value as i64)
+    }
+
+    fn eval_exit_code(&self, expr: &str) -> Result<u8, String> {
+        if expr.is_empty() {
+            return Ok(0);
+        }
+        if expr.starts_with('"') || expr.starts_with('[') || matches!(expr, "true" | "false") {
+            return Err("exit code must be an integer from 0 to 255".to_string());
+        }
+        let mut parser = NumericParser::new(expr, self);
+        let value = parser
+            .parse_expr()
+            .map_err(|_| "exit code must be an integer from 0 to 255".to_string())?;
+        parser.skip_ws();
+        if !parser.is_at_end() {
+            return Err(format!(
+                "unexpected text in numeric expression near '{}'",
+                parser.remaining()
+            ));
+        }
+        if value.fract() != 0.0 {
+            return Err("exit code must be an integer".to_string());
+        }
+        if !(0.0..=255.0).contains(&value) {
+            return Err("exit code must be between 0 and 255".to_string());
+        }
+        Ok(value as u8)
+    }
+
+    fn run_line(&mut self, line: &str, line_no: usize) -> Result<(), String> {
+        if let Some(rest) = line.strip_prefix("import ") {
+            return self.import_file(rest.trim(), line_no);
+        }
+        if let Some(rest) = line.strip_prefix("include ") {
+            return self.include_file(rest.trim(), line_no);
+        }
+        if let Some(rest) = line.strip_prefix("append ") {
+            return self.push_list_item(rest.trim(), true);
+        }
+        if let Some(rest) = line.strip_prefix("prepend ") {
+            return self.push_list_item(rest.trim(), false);
+        }
+        if let Some(rest) = line.strip_prefix("remove ") {
+            return self.remove_list_item(rest.trim());
+        }
+        if line == "exit" {
+            return Err(exit_signal(0));
+        }
+        if let Some(rest) = line.strip_prefix("exit ") {
+            let code = self.eval_exit_code(rest.trim())?;
+            return Err(exit_signal(code));
+        }
+        if line.starts_with('$') {
+            return self.assignment(line, line_no);
+        }
+        if let Some(rest) = line.strip_prefix("shellout") {
+            let value = self.eval_expr(rest.trim())?;
+            println!("{value}");
+            return Ok(());
+        }
+        if let Some(rest) = line.strip_prefix("shellin") {
+            let name = parse_var_ref(rest.trim())?;
+            let input = read_stdin_line()?;
+            self.vars.insert(name, Value::Scalar(input));
+            return Ok(());
+        }
+        if let Some(rest) = line.strip_prefix("ask") {
+            let rest = rest.trim();
+            if rest.contains(',') && !rest.contains("->") {
+                return Err(
+                    "old ask comma syntax was removed; use ask \"Question?\" -> $answer"
+                        .to_string(),
+                );
+            }
+            let Some((prompt_text, destination)) = rest.split_once("->") else {
+                return Err("ask syntax is ask \"Question?\" -> $answer".to_string());
+            };
+            let prompt = self.eval_string(prompt_text.trim())?;
+            let (kind, name, extra) = parse_identifier(destination.trim())
+                .map_err(|_| "ask destination must be a variable".to_string())?;
+            if kind != IdentKind::Variable || !extra.trim().is_empty() {
+                return Err("ask destination must be a variable".to_string());
+            }
+            print!("{prompt}");
+            io::stdout()
+                .flush()
+                .map_err(|error| format!("failed to flush stdout: {error}"))?;
+            let input = read_stdin_line()?;
+            self.vars.insert(name, Value::Scalar(input));
+            return Ok(());
+        }
+        if let Some(rest) = line.strip_prefix("command") {
+            let (command_text, tail) = split_string_literal_tail(rest.trim())?;
+            let command = self.eval_string(command_text)?;
+            let tail = tail.trim();
+            if tail.is_empty() {
+                let status = shell_command(&command)
+                    .status()
+                    .map_err(|error| format!("failed to run command: {error}"))?;
+                if !status.success() {
+                    return Err(format!("command exited with status {status}"));
+                }
+                return Ok(());
+            }
+            let Some(destination) = tail.strip_prefix("->") else {
+                return Err("command capture syntax is command \"...\" -> $var".to_string());
+            };
+            let (kind, name, extra) = parse_identifier(destination.trim())
+                .map_err(|_| "command capture destination must be a variable".to_string())?;
+            if kind != IdentKind::Variable || !extra.trim().is_empty() {
+                return Err("command capture destination must be a variable".to_string());
+            }
+            let output = shell_command(&command)
+                .stdout(Stdio::piped())
+                .output()
+                .map_err(|error| format!("failed to capture command: {error}"))?;
+            if !output.status.success() {
+                return Err(format!("command exited with status {}", output.status));
+            }
+            let value = String::from_utf8(output.stdout)
+                .map_err(|error| format!("command output was not UTF-8: {error}"))?
+                .trim_end_matches(['\r', '\n'])
+                .to_string();
+            self.vars.insert(name, Value::Scalar(value));
+            return Ok(());
+        }
+        if line.starts_with("capture") {
+            return Err("capture syntax was removed; use command \"...\" -> $var".to_string());
+        }
+        if let Some(name) = line.split_whitespace().next() {
+            if self.functions.contains_key(name) {
+                return self.call_function(line, line_no);
+            }
+        }
+        Err(format!("unknown command or invalid syntax: {line}"))
+    }
+
+    fn define_function(&mut self, function: Function, line_no: usize) -> Result<(), String> {
+        if self.functions.contains_key(&function.name) {
+            return Err(format!(
+                "line {line_no}: duplicate function {}",
+                function.name
+            ));
+        }
+        self.functions.insert(function.name.clone(), function);
+        Ok(())
+    }
+
+    fn import_file(&mut self, path_text: &str, line_no: usize) -> Result<(), String> {
+        let path = self.resolve_path(path_text)?;
+        if self.stack.contains(&path) {
+            return Err(format!(
+                "line {line_no}: import/include cycle involving {}",
+                path.display()
+            ));
+        }
+        if !self.imported.insert(path.clone()) {
+            return Ok(());
+        }
+        let source = fs::read_to_string(&path)
+            .map_err(|error| format!("could not read import '{}': {error}", path.display()))?;
+        let lines = strip_comments(&source)?;
+        self.stack.push(path.clone());
+        let previous_dir = std::mem::replace(
+            &mut self.current_dir,
+            path.parent().map(PathBuf::from).unwrap_or_default(),
+        );
+        let result = self.load_exports(&lines);
+        self.current_dir = previous_dir;
+        self.stack.pop();
+        result
+    }
+
+    fn include_file(&mut self, path_text: &str, line_no: usize) -> Result<(), String> {
+        let path = self.resolve_path(path_text)?;
+        if self.stack.contains(&path) {
+            return Err(format!(
+                "line {line_no}: import/include cycle involving {}",
+                path.display()
+            ));
+        }
+        let source = fs::read_to_string(&path)
+            .map_err(|error| format!("could not read include '{}': {error}", path.display()))?;
+        let lines = strip_comments(&source)?;
+        self.stack.push(path.clone());
+        let previous_dir = std::mem::replace(
+            &mut self.current_dir,
+            path.parent().map(PathBuf::from).unwrap_or_default(),
+        );
+        let result = self.run_lines(&lines);
+        self.current_dir = previous_dir;
+        self.stack.pop();
+        result
+    }
+
+    fn resolve_path(&self, path_text: &str) -> Result<PathBuf, String> {
+        let raw = parse_string_literal(path_text)?;
+        let path = self.current_dir.join(raw);
+        path.canonicalize()
+            .map_err(|error| format!("could not read file '{}': {error}", path.display()))
+    }
+
+    fn load_exports(&mut self, lines: &[(usize, String)]) -> Result<(), String> {
+        let mut index = 0;
+        while index < lines.len() {
+            let line_no = lines[index].0;
+            let line = lines[index].1.trim();
+            if let Some(rest) = line.strip_prefix("import ") {
+                self.import_file(rest.trim(), line_no)
+                    .map_err(|error| line_error(line_no, error))?;
+            } else if let Some(rest) = line.strip_prefix("include ") {
+                self.include_file(rest.trim(), line_no)
+                    .map_err(|error| line_error(line_no, error))?;
+            } else if let Some(rest) = line.strip_prefix("export fn ") {
+                let (function, next_index) = parse_function(rest.trim(), lines, index)
+                    .map_err(|error| line_error(line_no, error))?;
+                if !self.functions.contains_key(&function.name) {
+                    self.functions.insert(function.name.clone(), function);
+                }
+                index = next_index;
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("export ") {
+                let (kind, _name, _) = parse_identifier(rest)?;
+                if kind != IdentKind::Constant {
+                    return Err(format!(
+                        "line {line_no}: only constants and functions can be exported"
+                    ));
+                }
+                self.assignment(rest, line_no)
+                    .map_err(|error| line_error(line_no, error))?;
+            }
+            index += 1;
+        }
+        Ok(())
+    }
+
+    fn call_function(&mut self, line: &str, _line_no: usize) -> Result<(), String> {
+        let (name, rest) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
+        let function = self
+            .functions
+            .get(name)
+            .cloned()
+            .ok_or_else(|| format!("unknown command or function: {name}"))?;
+        let arg_texts = if rest.trim().is_empty() {
+            Vec::new()
+        } else {
+            split_commas(rest.trim())?
+        };
+        let required = function
+            .params
+            .iter()
+            .filter(|p| p.default.is_none())
+            .count();
+        if arg_texts.len() < required || arg_texts.len() > function.params.len() {
+            return Err(format!("wrong argument count for {name}"));
+        }
+        let mut child = Interpreter::default();
+        child.consts = HashMap::new();
+        child.functions = self.functions.clone();
+        child.current_dir = self.current_dir.clone();
+        child.stack = self.stack.clone();
+        child.imported = self.imported.clone();
+        for (idx, param) in function.params.iter().enumerate() {
+            let value = if let Some(text) = arg_texts.get(idx) {
+                self.eval_expr(text)?
+            } else {
+                param.default.clone().expect("default exists")
+            };
+            child.vars.insert(param.name.clone(), Value::Scalar(value));
+        }
+        let mut executable_body = Vec::new();
+        for (line_no, body_line) in function.body {
+            if let Some(rest) = body_line.strip_prefix("global") {
+                child
+                    .declare_globals(rest.trim(), self)
+                    .map_err(|error| line_error(line_no, error))?;
+                continue;
+            }
+            executable_body.push((line_no, body_line));
+        }
+        child.run_lines(&executable_body)
+    }
+
+    fn declare_globals(&mut self, rest: &str, parent: &Interpreter) -> Result<(), String> {
+        if rest.is_empty() {
+            return Err("global requires at least one identifier".to_string());
+        }
+        for item in split_commas(rest)? {
+            let (kind, name, extra) = parse_identifier(item.trim())?;
+            if !extra.trim().is_empty() {
+                return Err("unexpected text after identifier".to_string());
+            }
+            match kind {
+                IdentKind::Variable => {
+                    let value = parent
+                        .vars
+                        .get(&name)
+                        .cloned()
+                        .ok_or_else(|| format!("undefined global variable ${name}"))?;
+                    self.vars.insert(name, value);
+                }
+                IdentKind::Constant => {
+                    let value = parent
+                        .consts
+                        .get(&name)
+                        .cloned()
+                        .ok_or_else(|| format!("undefined global constant $${name}"))?;
+                    self.consts.insert(name, value);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn assignment(&mut self, line: &str, _line_no: usize) -> Result<(), String> {
+        let (kind, name, rest) = parse_identifier(line)?;
+        let rest = rest.trim_start();
+        if rest.starts_with('[') {
+            return self.replace_list_item(kind, &name, rest);
+        }
+        if rest.is_empty() {
+            match kind {
+                IdentKind::Variable => {
+                    self.vars.insert(name, Value::Scalar(String::new()));
+                    return Ok(());
+                }
+                IdentKind::Constant => {
+                    return Err("constant must have an initial value".to_string());
+                }
+            }
+        }
+        let rest = rest
+            .strip_prefix('=')
+            .ok_or_else(|| "unexpected text after identifier".to_string())?
+            .trim_start();
+        if rest.is_empty() {
+            return Err("expected value after '='".to_string());
+        }
+        if kind == IdentKind::Constant && self.consts.contains_key(&name) {
+            return Err(format!("constant $${name} cannot be reassigned"));
+        }
+        if rest.starts_with("capture") {
+            return Err("capture syntax was removed; use command \"...\" -> $var".to_string());
+        }
+        let value = self.eval_value_kind(rest)?;
+        match kind {
+            IdentKind::Variable => {
+                self.vars.insert(name, value);
+            }
+            IdentKind::Constant => {
+                self.consts.insert(name, value);
+            }
+        }
+        Ok(())
+    }
+
+    fn push_list_item(&mut self, rest: &str, append: bool) -> Result<(), String> {
+        let args = split_commas(rest)?;
+        let verb = if append { "append" } else { "prepend" };
+        if args.len() != 2 {
+            return Err(format!("{verb} requires exactly two arguments"));
+        }
+        let (kind, name, extra) = parse_identifier(args[0])
+            .map_err(|_| "mutation target must be a variable list".to_string())?;
+        if kind != IdentKind::Variable || !extra.trim().is_empty() {
+            return Err("mutation target must be a variable list".to_string());
+        }
+        let value = match self.eval_value_kind(args[1])? {
+            Value::Scalar(value) => value,
+            Value::List(_) => return Err("nested lists are not supported yet".to_string()),
+        };
+        let target = self
+            .vars
+            .get_mut(&name)
+            .ok_or_else(|| format!("undefined variable ${name}"))?;
+        match target {
+            Value::List(values) => {
+                if append {
+                    values.push(value);
+                } else {
+                    values.insert(0, value);
+                }
+                Ok(())
+            }
+            Value::Scalar(_) => Err("mutation target must be a list".to_string()),
+        }
+    }
+
+    fn remove_list_item(&mut self, target: &str) -> Result<(), String> {
+        let (kind, name, selector) = self.parse_mutation_target(target)?;
+        if kind != IdentKind::Variable {
+            return Err("mutation target must be a variable list".to_string());
+        }
+        let len = match self.vars.get(&name) {
+            Some(Value::List(values)) => values.len(),
+            Some(Value::Scalar(_)) => return Err("mutation target must be a list".to_string()),
+            None => return Err(format!("undefined variable ${name}")),
+        };
+        let index = self.parse_mutation_index(len, selector.trim(), &format!("${name}"))?;
+        let Value::List(values) = self.vars.get_mut(&name).expect("checked list") else {
+            unreachable!();
+        };
+        values.remove(index - 1);
+        Ok(())
+    }
+
+    fn replace_list_item(&mut self, kind: IdentKind, name: &str, rest: &str) -> Result<(), String> {
+        if kind != IdentKind::Variable {
+            return Err("mutation target must be a variable list".to_string());
+        }
+        let close = rest
+            .find(']')
+            .ok_or_else(|| "malformed list index syntax".to_string())?;
+        let selector = rest[..=close].trim();
+        let value_text = rest[close + 1..]
+            .trim_start()
+            .strip_prefix('=')
+            .ok_or_else(|| "unexpected text after identifier".to_string())?;
+        if !selector.starts_with('[') || !selector.ends_with(']') {
+            return Err("malformed list index syntax".to_string());
+        }
+        let selector = &selector[1..selector.len() - 1];
+        let len = match self.vars.get(name) {
+            Some(Value::List(values)) => values.len(),
+            Some(Value::Scalar(_)) => return Err("mutation target must be a list".to_string()),
+            None => return Err(format!("undefined variable ${name}")),
+        };
+        let index = self.parse_mutation_index(len, selector.trim(), &format!("${name}"))?;
+        let value = match self.eval_value_kind(value_text.trim())? {
+            Value::Scalar(value) => value,
+            Value::List(_) => return Err("nested lists are not supported yet".to_string()),
+        };
+        let Value::List(values) = self.vars.get_mut(name).expect("checked list") else {
+            unreachable!();
+        };
+        values[index - 1] = value;
+        Ok(())
+    }
+
+    fn parse_mutation_target<'a>(
+        &self,
+        target: &'a str,
+    ) -> Result<(IdentKind, String, &'a str), String> {
+        let (kind, name, rest) = parse_identifier(target)?;
+        let rest = rest.trim();
+        if !rest.starts_with('[') || !rest.ends_with(']') {
+            return Err("malformed list index syntax".to_string());
+        }
+        Ok((kind, name, &rest[1..rest.len() - 1]))
+    }
+
+    fn parse_mutation_index(
+        &self,
+        len: usize,
+        selector: &str,
+        target: &str,
+    ) -> Result<usize, String> {
+        if selector.is_empty() {
+            return Err("malformed list index syntax".to_string());
+        }
+        if selector.contains(',') || selector.contains("..") || parse_filter(selector).is_some() {
+            return Err("mutation index must select exactly one item".to_string());
+        }
+        if len == 0 && matches!(selector, "first" | "last") {
+            return Err("list is empty".to_string());
+        }
+        let index = self.parse_list_position(len, selector)?;
+        if index == 0 || index > len {
+            return Err(format!(
+                "list index {index} out of range for {target} (length {len})"
+            ));
+        }
+        Ok(index)
+    }
+
+    fn eval_condition(&self, condition: &str) -> Result<bool, String> {
+        if condition.is_empty() {
+            return Err("condition required".to_string());
+        }
+        if condition.contains('(')
+            || condition.contains(')')
+            || condition
+                .split_whitespace()
+                .any(|word| matches!(word, "and" | "or" | "not"))
+        {
+            return Err("unsupported complex condition".to_string());
+        }
+        for operator in ["==", "!=", ">=", "<=", ">", "<"] {
+            if let Some((left, right)) = condition.split_once(operator) {
+                let left = self.eval_expr(left.trim())?;
+                let right = self.eval_expr(right.trim())?;
+                return match operator {
+                    "==" => Ok(left == right),
+                    "!=" => Ok(left != right),
+                    ">" => Ok(compare_values(&left, &right).is_gt()),
+                    ">=" => Ok(!compare_values(&left, &right).is_lt()),
+                    "<" => Ok(compare_values(&left, &right).is_lt()),
+                    "<=" => Ok(!compare_values(&left, &right).is_gt()),
+                    _ => unreachable!(),
+                };
+            }
+        }
+        Ok(is_truthy(&self.eval_expr(condition)?))
+    }
+
+    fn eval_expr(&self, expr: &str) -> Result<String, String> {
+        let expr = expr.trim();
+        if expr.starts_with('$') {
+            let (kind, name, rest) = parse_identifier(expr)?;
+            let rest = rest.trim();
+            if rest.is_empty() {
+                return self.lookup(kind, &name);
+            }
+            if rest.starts_with('[') {
+                return self.eval_index(kind, &name, rest);
+            }
+            if looks_like_numeric_expr(expr) {
+                return self.eval_numeric_expr(expr);
+            }
+            return Err("unexpected text after identifier".to_string());
+        }
+        self.eval_value(expr)
+    }
+
+    fn eval_value(&self, text: &str) -> Result<String, String> {
+        match self.eval_value_kind(text)? {
+            Value::Scalar(value) => Ok(value),
+            Value::List(_) => Err("cannot use list as scalar value".to_string()),
+        }
+    }
+
+    fn eval_value_kind(&self, text: &str) -> Result<Value, String> {
+        let text = text.trim();
+        if text.starts_with('[') {
+            return self.eval_list(text);
+        }
+        if text.starts_with('"') {
+            return Ok(Value::Scalar(self.eval_string(text)?));
+        }
+        if text.starts_with('$') {
+            return Ok(Value::Scalar(self.eval_expr(text)?));
+        }
+        if text == "true" || text == "false" {
+            return Ok(Value::Scalar(text.to_string()));
+        }
+        if is_number_literal(text) {
+            return Ok(Value::Scalar(format_number(
+                text.parse::<f64>().expect("number literal parses"),
+            )));
+        }
+        if looks_like_numeric_expr(text) {
+            return Ok(Value::Scalar(self.eval_numeric_expr(text)?));
+        }
+        Err("expected string, number, boolean, or numeric expression".to_string())
+    }
+
+    fn eval_list(&self, text: &str) -> Result<Value, String> {
+        let text = text.trim();
+        if !text.ends_with(']') {
+            return Err("malformed list literal".to_string());
+        }
+        let inner = &text[1..text.len() - 1];
+        if inner.trim().is_empty() {
+            return Ok(Value::List(Vec::new()));
+        }
+        let mut values = Vec::new();
+        for item in split_commas(inner)? {
+            match self.eval_value_kind(item)? {
+                Value::Scalar(value) => values.push(value),
+                Value::List(_) => return Err("nested lists are not supported yet".to_string()),
+            }
+        }
+        Ok(Value::List(values))
+    }
+
+    fn eval_index(&self, kind: IdentKind, name: &str, rest: &str) -> Result<String, String> {
+        if !rest.ends_with(']') || rest.matches('[').count() != 1 || rest.matches(']').count() != 1
+        {
+            return Err("malformed list index syntax".to_string());
+        }
+        let selector = rest[1..rest.len() - 1].trim();
+        if selector.is_empty() {
+            return Err("malformed list index syntax".to_string());
+        }
+        match self.lookup_value(kind, name)? {
+            Value::List(values) => self.eval_list_selector(kind, name, values, selector),
+            Value::Scalar(_) => Err(format!(
+                "cannot index non-list value {}",
+                display_identifier(kind, name)
+            )),
+        }
+    }
+
+    fn eval_list_selector(
+        &self,
+        kind: IdentKind,
+        name: &str,
+        values: &[String],
+        selector: &str,
+    ) -> Result<String, String> {
+        if let Some((op, rhs)) = parse_filter(selector) {
+            return self.eval_list_filter(values, op, rhs);
+        }
+        if selector.contains(',') {
+            let mut selected = Vec::new();
+            for part in split_commas(selector)? {
+                let index = self.resolve_list_position(kind, name, values.len(), part)?;
+                selected.push(values[index - 1].clone());
+            }
+            return Ok(format_list(&selected));
+        }
+        if let Some((start, end)) = selector.split_once("..") {
+            let start = if start.trim().is_empty() {
+                1
+            } else {
+                self.parse_list_position(values.len(), start.trim())?
+            };
+            let end = if end.trim().is_empty() {
+                values.len()
+            } else {
+                self.parse_list_position(values.len(), end.trim())?
+            };
+            if start > end {
+                return Err("reverse list ranges are not supported".to_string());
+            }
+            self.ensure_list_position_in_range(kind, name, values.len(), start)?;
+            self.ensure_list_position_in_range(kind, name, values.len(), end)?;
+            return Ok(format_list(&values[start - 1..end]));
+        }
+        let index = self.resolve_list_position(kind, name, values.len(), selector)?;
+        Ok(values[index - 1].clone())
+    }
+
+    fn resolve_list_position(
+        &self,
+        kind: IdentKind,
+        name: &str,
+        len: usize,
+        expr: &str,
+    ) -> Result<usize, String> {
+        let index = self.parse_list_position(len, expr)?;
+        self.ensure_list_position_in_range(kind, name, len, index)?;
+        Ok(index)
+    }
+
+    fn parse_list_position(&self, len: usize, expr: &str) -> Result<usize, String> {
+        match expr {
+            "first" => Ok(1),
+            "last" => Ok(len),
+            _ => {
+                if expr.starts_with('"') {
+                    return Err("list index must be numeric".to_string());
+                }
+                let value = self
+                    .eval_numeric_expr(expr)
+                    .map_err(|_| "list index must be numeric".to_string())?;
+                let number = value
+                    .parse::<f64>()
+                    .map_err(|_| "list index must be numeric".to_string())?;
+                if number.fract() != 0.0 {
+                    return Err("list index must be an integer".to_string());
+                }
+                if number < 1.0 {
+                    return Err("list index must be 1 or greater".to_string());
+                }
+                Ok(number as usize)
+            }
+        }
+    }
+
+    fn ensure_list_position_in_range(
+        &self,
+        kind: IdentKind,
+        name: &str,
+        len: usize,
+        index: usize,
+    ) -> Result<(), String> {
+        if index == 0 || index > len {
+            return Err(format!(
+                "list index {index} out of range for {} (length {len})",
+                display_identifier(kind, name)
+            ));
+        }
+        Ok(())
+    }
+
+    fn eval_list_filter(&self, values: &[String], op: &str, rhs: &str) -> Result<String, String> {
+        let target = self.eval_value(rhs)?;
+        if matches!(op, ">" | ">=" | "<" | "<=") {
+            if rhs.trim().starts_with('"') {
+                return Err("ordered string filters are not supported".to_string());
+            }
+            let target_num = target
+                .parse::<f64>()
+                .map_err(|_| "ordered list filters require numeric comparison value".to_string())?;
+            let mut selected = Vec::new();
+            for item in values {
+                let item_num = item
+                    .parse::<f64>()
+                    .map_err(|_| "ordered list filters require numeric items".to_string())?;
+                let keep = match op {
+                    ">" => item_num > target_num,
+                    ">=" => item_num >= target_num,
+                    "<" => item_num < target_num,
+                    "<=" => item_num <= target_num,
+                    _ => unreachable!(),
+                };
+                if keep {
+                    selected.push(item.clone());
+                }
+            }
+            return Ok(format_list(&selected));
+        }
+        let selected: Vec<String> = values
+            .iter()
+            .filter(|item| match op {
+                "==" => *item == &target,
+                "!=" => *item != &target,
+                _ => false,
+            })
+            .cloned()
+            .collect();
+        Ok(format_list(&selected))
+    }
+
+    fn eval_string(&self, text: &str) -> Result<String, String> {
+        let raw = parse_string_literal(text)?;
+        self.interpolate(&raw)
+    }
+
+    fn interpolate(&self, input: &str) -> Result<String, String> {
+        let bytes = input.as_bytes();
+        let mut output = String::new();
+        let mut index = 0;
+        while index < bytes.len() {
+            if bytes[index] == b'$' {
+                let tail = &input[index..];
+                let (kind, name, rest) = parse_identifier(tail)?;
+                let consumed = tail.len() - rest.len();
+                let rest_trim = rest.trim_start();
+                if rest_trim.starts_with('[') {
+                    let leading_ws = rest.len() - rest_trim.len();
+                    let index_tail = &rest[leading_ws..];
+                    let end = index_tail
+                        .find(']')
+                        .ok_or_else(|| "malformed list index syntax".to_string())?
+                        + 1;
+                    output.push_str(&self.eval_index(kind, &name, &index_tail[..end])?);
+                    index += consumed + leading_ws + end;
+                } else {
+                    output.push_str(&self.lookup(kind, &name)?);
+                    index = input.len() - rest.len();
+                }
+            } else {
+                let ch = input[index..].chars().next().expect("valid char boundary");
+                output.push(ch);
+                index += ch.len_utf8();
+            }
+        }
+        Ok(output)
+    }
+
+    fn eval_numeric_expr(&self, expr: &str) -> Result<String, String> {
+        let mut parser = NumericParser::new(expr, self);
+        let value = parser.parse_expr()?;
+        parser.skip_ws();
+        if !parser.is_at_end() {
+            return Err(format!(
+                "unexpected text in numeric expression near '{}'",
+                parser.remaining()
+            ));
+        }
+        Ok(format_number(value))
+    }
+
+    fn lookup_value(&self, kind: IdentKind, name: &str) -> Result<&Value, String> {
+        match kind {
+            IdentKind::Variable => self
+                .vars
+                .get(name)
+                .ok_or_else(|| format!("undefined variable ${name}")),
+            IdentKind::Constant => self
+                .consts
+                .get(name)
+                .ok_or_else(|| format!("undefined constant $${name}")),
+        }
+    }
+
+    fn lookup(&self, kind: IdentKind, name: &str) -> Result<String, String> {
+        match self.lookup_value(kind, name)? {
+            Value::Scalar(value) => Ok(value.clone()),
+            Value::List(_) => Err(format!(
+                "cannot use list {} as scalar value",
+                display_identifier(kind, name)
+            )),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct Function {
+    name: String,
+    params: Vec<Param>,
+    body: Vec<(usize, String)>,
+}
+
+#[derive(Clone)]
+struct Param {
+    name: String,
+    default: Option<String>,
+}
+
+fn parse_repeat_header(rest: &str) -> Result<(&str, Option<String>), String> {
+    let (count_expr, destination) = match rest.split_once("->") {
+        Some((count_expr, destination)) => (count_expr.trim(), Some(destination.trim())),
+        None => (rest.trim(), None),
+    };
+    if count_expr.is_empty() {
+        return Err("repeat count required".to_string());
+    }
+    let index_var = if let Some(destination) = destination {
+        let (kind, name, extra) = parse_identifier(destination)
+            .map_err(|_| "repeat index destination must be a variable".to_string())?;
+        if kind != IdentKind::Variable || !extra.trim().is_empty() {
+            return Err("repeat index destination must be a variable".to_string());
+        }
+        Some(name)
+    } else {
+        None
+    };
+    Ok((count_expr, index_var))
+}
+
+fn collect_block(
+    lines: &[(usize, String)],
+    start: usize,
+    kind: &str,
+) -> Result<(Vec<(usize, String)>, usize), String> {
+    let mut body = Vec::new();
+    let mut depth = 0;
+    let mut index = start + 1;
+    while index < lines.len() {
+        let line = lines[index].1.trim();
+        if starts_block(line) {
+            depth += 1;
+        }
+        if line == "end" {
+            if depth == 0 {
+                return Ok((body, index + 1));
+            }
+            depth -= 1;
+        }
+        if !line.is_empty() {
+            body.push(lines[index].clone());
+        }
+        index += 1;
+    }
+    Err(format!("missing end for {kind}"))
+}
+
+fn starts_block(line: &str) -> bool {
+    line.starts_with("if ")
+        || line.starts_with("while ")
+        || line.starts_with("repeat ")
+        || line.starts_with("fn ")
+        || line.starts_with("export fn ")
+}
+
+fn parse_function(
+    rest: &str,
+    lines: &[(usize, String)],
+    start: usize,
+) -> Result<(Function, usize), String> {
+    let (name, params_text) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+    if !is_identifier_name(name) {
+        return Err("function name must start with an ASCII letter".to_string());
+    }
+    let mut params = Vec::new();
+    let mut saw_default = false;
+    if !params_text.trim().is_empty() {
+        for item in split_commas(params_text.trim())? {
+            let (left, default) = match item.split_once('=') {
+                Some((left, right)) => (left.trim(), Some(right.trim())),
+                None => (item.trim(), None),
+            };
+            if default.is_none() && saw_default {
+                return Err("required parameter cannot follow default".to_string());
+            }
+            let (kind, name, extra) = parse_identifier(left)?;
+            if kind != IdentKind::Variable {
+                return Err("function parameters must be variables".to_string());
+            }
+            if !extra.trim().is_empty() {
+                return Err("unexpected text after parameter".to_string());
+            }
+            let default = if let Some(value) = default {
+                saw_default = true;
+                Some(Interpreter::default().eval_value(value)?)
+            } else {
+                None
+            };
+            params.push(Param { name, default });
+        }
+    }
+    let mut body = Vec::new();
+    let mut index = start + 1;
+    while index < lines.len() {
+        let line_no = lines[index].0;
+        let line = lines[index].1.trim();
+        if line == "end" {
+            return Ok((
+                Function {
+                    name: name.to_string(),
+                    params,
+                    body,
+                },
+                index + 1,
+            ));
+        }
+        if !line.is_empty() {
+            body.push((line_no, line.to_string()));
+        }
+        index += 1;
+    }
+    Err(format!("missing end for function {name}"))
+}
+
+struct NumericParser<'a> {
+    input: &'a str,
+    pos: usize,
+    interpreter: &'a Interpreter,
+}
+
+impl<'a> NumericParser<'a> {
+    fn new(input: &'a str, interpreter: &'a Interpreter) -> Self {
+        Self {
+            input,
+            pos: 0,
+            interpreter,
+        }
+    }
+
+    fn parse_expr(&mut self) -> Result<f64, String> {
+        let mut value = self.parse_term()?;
+        loop {
+            self.skip_ws();
+            if self.consume('+') {
+                value += self.parse_term()?;
+            } else if self.consume('-') {
+                value -= self.parse_term()?;
+            } else {
+                return Ok(value);
+            }
+        }
+    }
+
+    fn parse_term(&mut self) -> Result<f64, String> {
+        let mut value = self.parse_factor()?;
+        loop {
+            self.skip_ws();
+            if self.consume('*') {
+                value *= self.parse_factor()?;
+            } else if self.consume('/') {
+                let divisor = self.parse_factor()?;
+                if divisor == 0.0 {
+                    return Err("division by zero".to_string());
+                }
+                value /= divisor;
+            } else {
+                return Ok(value);
+            }
+        }
+    }
+
+    fn parse_factor(&mut self) -> Result<f64, String> {
+        self.skip_ws();
+        if self.consume('-') {
+            return Ok(-self.parse_factor()?);
+        }
+        if self.consume('+') {
+            return self.parse_factor();
+        }
+        if self.consume('(') {
+            let value = self.parse_expr()?;
+            self.skip_ws();
+            if !self.consume(')') {
+                return Err("missing ')' in numeric expression".to_string());
+            }
+            return Ok(value);
+        }
+        if self.peek() == Some('$') {
+            let tail = &self.input[self.pos..];
+            let (kind, name, rest) = parse_identifier(tail)?;
+            self.pos = self.input.len() - rest.len();
+            let value = self.interpreter.lookup(kind, &name)?;
+            return value.parse::<f64>().map_err(|_| {
+                format!(
+                    "numeric operand expected for {}",
+                    display_identifier(kind, &name)
+                )
+            });
+        }
+        self.parse_number()
+    }
+
+    fn parse_number(&mut self) -> Result<f64, String> {
+        self.skip_ws();
+        let start = self.pos;
+        let mut saw_digit = false;
+        while matches!(self.peek(), Some(ch) if ch.is_ascii_digit()) {
+            saw_digit = true;
+            self.advance();
+        }
+        if self.peek() == Some('.') {
+            self.advance();
+            while matches!(self.peek(), Some(ch) if ch.is_ascii_digit()) {
+                saw_digit = true;
+                self.advance();
+            }
+        }
+        if !saw_digit {
+            return Err("expected numeric operand".to_string());
+        }
+        self.input[start..self.pos]
+            .parse::<f64>()
+            .map_err(|_| "expected numeric operand".to_string())
+    }
+
+    fn skip_ws(&mut self) {
+        while matches!(self.peek(), Some(ch) if ch.is_whitespace()) {
+            self.advance();
+        }
+    }
+
+    fn consume(&mut self, expected: char) -> bool {
+        if self.peek() == Some(expected) {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn peek(&self) -> Option<char> {
+        self.input[self.pos..].chars().next()
+    }
+
+    fn advance(&mut self) {
+        if let Some(ch) = self.peek() {
+            self.pos += ch.len_utf8();
+        }
+    }
+
+    fn is_at_end(&self) -> bool {
+        self.pos >= self.input.len()
+    }
+
+    fn remaining(&self) -> &str {
+        &self.input[self.pos..]
+    }
+}
+
+fn looks_like_numeric_expr(text: &str) -> bool {
+    let trimmed = text.trim();
+    trimmed.starts_with('$')
+        || trimmed.starts_with('-')
+        || trimmed.starts_with('+')
+        || trimmed.starts_with('(')
+        || trimmed
+            .chars()
+            .any(|ch| matches!(ch, '+' | '-' | '*' | '/' | '(' | ')' | '.'))
+}
+
+fn parse_filter(selector: &str) -> Option<(&'static str, &str)> {
+    for op in ["==", "!=", ">=", "<=", ">", "<"] {
+        if let Some(rhs) = selector.strip_prefix(op) {
+            return Some((op, rhs.trim()));
+        }
+    }
+    None
+}

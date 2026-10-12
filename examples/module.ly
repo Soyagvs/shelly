@@ -1,0 +1,10 @@
+# Module exporting a constant and a function. #
+export $$GREETING = "Hola"
+
+export fn greet $name
+    global $$GREETING
+    shellout "$$GREETING $name"
+end
+
+$private_note = "imports cannot see this variable"
+shellout "module side effect only runs when included"
