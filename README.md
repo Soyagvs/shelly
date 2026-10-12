@@ -1,3 +1,5 @@
+<img width="1672" height="941" alt="IMG_1640" src="https://github.com/user-attachments/assets/48130392-11ba-41b5-b655-71e32c88f1cd" />
+
 # Shelly
 
 Shelly is a Bash 2.0 style shell and script runner for `.ly` scripts. It is designed to make everyday scripting readable: variables, commands, lists, blocks, functions, modules, and explicit exits in one small language.
