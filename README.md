@@ -77,6 +77,11 @@ Start here: [`docs/language.md`](docs/language.md).
 | While loops | [`docs/while.md`](docs/while.md) |
 | Modules | [`docs/modules.md`](docs/modules.md) |
 
+## Editor support
+
+- Neovim: [`editors/nvim`](editors/nvim)
+- Shelly artwork: [`shelly.svg`](shelly.svg)
+
 ## Mental model
 
 - `$name` is mutable.
