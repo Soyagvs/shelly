@@ -13,7 +13,7 @@ syntax keyword shellySpecial first last contained
 syntax match shellyVariable /\$[A-Za-z][A-Za-z0-9_]*/
 syntax match shellyConstant /\$\$[A-Z][A-Z0-9_]*/
 syntax match shellyNumber /\v<[-+]?[0-9]+(\.[0-9]+)?>/
-syntax match shellyOperator /\v(->|==|!=|>=|<=|>|<|\+|-|\*|\/|=|\.\.)/
+syntax match shellyOperator /->\|==\|!=\|>=\|<=\|>\|<\|+\|-\|*\|\/\|=\|\.\./
 syntax match shellyListSelector /\[[^\]]*\]/ contains=shellyVariable,shellyConstant,shellyNumber,shellyString,shellyBoolean,shellyOperator,shellySpecial
 
 syntax region shellyString start=/"/ skip=/\\"/ end=/"/ contains=shellyInterpolation
