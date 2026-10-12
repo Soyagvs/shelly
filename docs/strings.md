@@ -2,7 +2,7 @@
 
 Strings use double quotes.
 
-```ly
+```shelly
 $name = "Ada"
 $$APP = "Shelly"
 shellout "hello $name from $$APP"
@@ -23,7 +23,7 @@ Single quotes are ordinary text inside double-quoted strings.
 
 Strings can interpolate variables, constants, and list selectors:
 
-```ly
+```shelly
 $name = "Ada"
 $names = ["Ana", "Luis", "Mora"]
 $$APP = "Shelly"
@@ -36,6 +36,6 @@ shellout "selected: $names[1,3]"
 
 A `#` inside a string is literal text, not a comment marker.
 
-```ly
+```shelly
 shellout "# not a comment #"
 ```

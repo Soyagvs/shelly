@@ -21,7 +21,7 @@ Feature: add basic list mutation operations.
 
 ## Examples
 
-```ly
+```shelly
 $names = ["Ana", "Luis"]
 append $names, "Mora"
 prepend $names, "Iris"
@@ -44,7 +44,7 @@ shellout $names[..]
 - RED: `cargo test` failed after tests were added, before implementation: 61 passed, 3 failed (`list_mutations_append_prepend_remove_replace_and_persist`, `list_mutations_accept_scalar_values`, `list_mutation_errors_are_clear`) because `append` was unknown.
 - GREEN: `cargo test` passed after implementation: 64 passed.
 - Format: `cargo fmt --check` passed.
-- Example: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.ly` passed after updating `example-01.ly`.
+- Example: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly` passed after updating `example-01.shelly`.
 
 ## Deferred list features
 

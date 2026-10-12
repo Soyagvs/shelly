@@ -32,8 +32,8 @@ Feature: mature existing Shelly behavior without adding new language features.
 
 - RED: `cargo test` failed after adding tests with 62 passed / 3 failed. Failures covered arrow ask still rejected as comma-argument syntax, missing migration guidance for old comma ask, and README still using old comma ask syntax.
 - GREEN: `cargo fmt --check && cargo test` passed. `cargo test` reported 65 passed / 0 failed.
-- Sample run: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.ly` passed and completed end-to-end, including `Do you want to continue? Great, continuing` and `Favorite color: blue`.
-- Files changed: `src/main.rs`, `src/comments.rs`, `src/parser.rs`, `src/shell.rs`, `src/value.rs`, `tests/cli_smoke.rs`, `README.md`, `docs/language.md`, `examples/ask-if.ly`, `example-01.ly`, `odd/tasks/shelly-quality-pass.md`.
+- Sample run: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly` passed and completed end-to-end, including `Do you want to continue? Great, continuing` and `Favorite color: blue`.
+- Files changed: `src/main.rs`, `src/comments.rs`, `src/parser.rs`, `src/shell.rs`, `src/value.rs`, `tests/cli_smoke.rs`, `README.md`, `docs/language.md`, `examples/ask-if.shelly`, `example-01.shelly`, `odd/tasks/shelly-quality-pass.md`.
 - Refactor module summary: `comments` owns comment stripping, `parser` owns lexical helpers/string and identifier parsing, `shell` owns stdin and system command helpers, `value` owns value/identifier types and value formatting/comparison helpers. `main.rs` retains CLI flow and interpreter control logic.
 - Diagnostics changed: old comma `ask` reports migration guidance to `ask "Question?" -> $answer`; invalid ask destinations report variable-destination guidance; list out-of-range diagnostics include the target and length where list context is available.
 - Deferred: no full error-system rewrite; interpreter control flow and numeric parser remain in `main.rs` to avoid a broad semantic rewrite during this quality pass.

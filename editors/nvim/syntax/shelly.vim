@@ -1,4 +1,4 @@
-" Vim syntax file for Shelly `.ly` scripts
+" Vim syntax file for Shelly `.shelly` scripts
 if exists("b:current_syntax")
   finish
 endif

@@ -30,7 +30,7 @@ Feature: add function definitions, calls, parameters, defaults, local scope, and
 ## Evidence
 
 - RED: `cargo test` after adding function tests failed as expected: `functions_call_with_parameters_defaults_local_scope_and_global_reads` failed on `line 4: unknown command or invalid syntax: fn person...`; `function_errors_cover_invalid_definitions_and_calls` failed because `missing end` was not implemented.
-- GREEN: `cargo fmt --check && cargo test && cargo run --quiet -- examples/functions.ly` passed after implementation.
+- GREEN: `cargo fmt --check && cargo test && cargo run --quiet -- examples/functions.shelly` passed after implementation.
 - Test result: `cargo test` reported 15 passed, 0 failed.
 - Manual sample output:
 

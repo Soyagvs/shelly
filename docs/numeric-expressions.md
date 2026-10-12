@@ -2,7 +2,7 @@
 
 Shelly supports integer and floating-point numeric expressions.
 
-```ly
+```shelly
 $a = 1 + 2 * 3
 $b = ($a + 4) / 2
 $c = 10.5 + 2.25

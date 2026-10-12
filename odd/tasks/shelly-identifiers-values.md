@@ -27,4 +27,4 @@ Feature: implement identifier and value rules for variables and constants.
 
 - RED: `cargo test` failed before implementation with 8 passed / 3 failed in `tests/cli_smoke.rs`: `identifiers_must_start_with_ascii_letter`, `values_support_numbers_booleans_and_constant_interpolation`, and `variables_are_case_insensitive_and_may_be_empty`.
 - GREEN: `cargo fmt --check && cargo test` passed after implementation: 11 passed / 0 failed.
-- SAMPLE: `cargo run --quiet -- example-01.ly` printed `me llamo Agustin, y tengo 27 años.`.
+- SAMPLE: `cargo run --quiet -- example-01.shelly` printed `me llamo Agustin, y tengo 27 años.`.

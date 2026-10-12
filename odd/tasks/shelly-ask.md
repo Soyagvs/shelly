@@ -24,4 +24,4 @@ Feature: add `ask` as a prompt-and-read convenience command.
 - RED: `cargo test` failed before implementation with `ask_prints_prompt_reads_stdin_line_and_stores_variable` and `ask_rejects_invalid_argument_forms`; observed `line 2: unknown command or invalid syntax: ask "Name? ", $name` and missing `ask requires exactly two arguments` diagnostics.
 - GREEN: `cargo fmt --check` passed.
 - GREEN: `cargo test` passed with 19 tests.
-- Manual example: `printf 'yes\n' | cargo run --quiet -- examples/ask-if.ly` printed `Continue? continuing`.
+- Manual example: `printf 'yes\n' | cargo run --quiet -- examples/ask-if.shelly` printed `Continue? continuing`.

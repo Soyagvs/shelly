@@ -2,7 +2,7 @@
 
 `repeat` runs a block a fixed number of times.
 
-```ly
+```shelly
 repeat 3
     shellout "hello"
 end
@@ -12,7 +12,7 @@ end
 
 Use `->` to bind the current 1-based iteration index into a local protected variable.
 
-```ly
+```shelly
 repeat 3 -> $turn
     shellout "turn $turn"
 end

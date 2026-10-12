@@ -17,7 +17,7 @@ Feature: add `exit` for terminating the whole script with an OS exit code.
 
 ## Examples
 
-```ly
+```shelly
 if $answer != "yes"
     shellout "Cancelled"
     exit 1
@@ -38,5 +38,5 @@ exit 0
 ## Evidence
 
 - RED: `cargo test` failed before implementation with 7 failing exit tests: top-level `exit`, `exit 0`, nested `if`/`repeat`/`while`/function propagation, and invalid-code diagnostics were unimplemented. `exit 1` already returned status 1 only because unknown-command errors exit 1, so it was not sufficient behavior by itself.
-- GREEN: `cargo fmt --check && cargo test && printf 'yes\nblue\n' | cargo run --quiet -- example-01.ly` passed after implementation. `cargo test` reported 74 passed, 0 failed.
-- Sample run: `example-01.ly` completed the full showcase and ended with `Status: count is high enough`.
+- GREEN: `cargo fmt --check && cargo test && printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly` passed after implementation. `cargo test` reported 74 passed, 0 failed.
+- Sample run: `example-01.shelly` completed the full showcase and ended with `Status: count is high enough`.

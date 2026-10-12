@@ -20,7 +20,7 @@ Feature: allow variables and constants as function call arguments.
 ## Evidence
 
 - RED: `cargo test` failed before implementation with `function_call_arguments_accept_variable_and_constant_references` and `function_call_reference_arguments_fail_when_undefined`; observed errors were `line 7: expected string, number, or boolean value` and `line 3: expected string, number, or boolean value`.
-- GREEN: `cargo fmt --check && cargo test && printf 'yes\nblue\n' | cargo run --quiet -- example-01.ly` passed after implementation.
+- GREEN: `cargo fmt --check && cargo test && printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly` passed after implementation.
 - Sample output included:
 
 ```text

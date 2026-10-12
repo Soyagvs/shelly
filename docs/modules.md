@@ -6,7 +6,7 @@ Shelly can split scripts across files with `import`, `include`, and `export`.
 
 Only constants and functions can be exported.
 
-```ly
+```shelly
 export $$GREETING = "Hola"
 
 export fn greet $name
@@ -21,8 +21,8 @@ Normal variables are not exportable yet. `export $name = "x"` is rejected.
 
 `import` loads only exported constants and functions from another file.
 
-```ly
-import "examples/module.ly"
+```shelly
+import "examples/module.shelly"
 greet "Ada"
 shellout $$GREETING
 ```
@@ -33,8 +33,8 @@ Private top-level code in the imported file does not run.
 
 `include` executes the whole target file in the current scope, like copying it at that point.
 
-```ly
-include "examples/setup.ly"
+```shelly
+include "examples/setup.shelly"
 shellout $color
 ```
 

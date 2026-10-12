@@ -5,7 +5,7 @@ Feature: create the initial Shelly project scaffold and MVP language skeleton.
 ## Decisions
 
 - Product name: Shelly.
-- Script extension: `.ly`.
+- Script extension: `.shelly`.
 - Implementation language: Rust.
 - Initial syntax has no semicolons.
 - Variables use `$name = value`.
@@ -17,15 +17,15 @@ Feature: create the initial Shelly project scaffold and MVP language skeleton.
 ## Tasks
 
 - [x] Create Rust CLI project scaffold under `/home/soyagvs/proyectos/personal/shelly`.
-- [x] Implement MVP interpreter for `.ly` files with variables, interpolation, `shellout`, `shellin`, `command`, and the original capture command later superseded by `command "..." -> $var`.
+- [x] Implement MVP interpreter for `.shelly` files with variables, interpolation, `shellout`, `shellin`, `command`, and the original capture command later superseded by `command "..." -> $var`.
 - [x] Add automated tests covering the initial Shelly syntax.
 - [x] Add README with syntax examples and MVP scope.
 
 ## Evidence
 
 - Scaffold: `cargo test` passed via worker; 1 smoke test passed. Files: `Cargo.toml`, `Cargo.lock`, `src/main.rs`, `tests/cli_smoke.rs`, `README.md`, `.gitignore`.
-- Interpreter/tests/docs: worker implemented line-oriented `.ly` runtime and expanded tests; `cargo test` passed with 7 integration tests.
-- Manual verifier run: temporary `.ly` script executed successfully through `cargo run -- <script>`.
+- Interpreter/tests/docs: worker implemented line-oriented `.shelly` runtime and expanded tests; `cargo test` passed with 7 integration tests.
+- Manual verifier run: temporary `.shelly` script executed successfully through `cargo run -- <script>`.
 - Final verification: `cargo fmt --check` passed; `cargo test` passed with 7 integration tests.
 - Git status note: `/home/soyagvs/proyectos/personal/shelly` is currently untracked under the enclosing `/home/soyagvs` git root.
 - Language usage documentation added in `docs/language.md`; `README.md` now links to it from the MVP syntax section.

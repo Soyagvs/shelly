@@ -28,7 +28,7 @@ Feature: make the public documentation more minimal, purple-accented, and badge-
 - `cargo fmt --check` PASS.
 - `cargo test` PASS: 74 tests.
 - Markdown local link check PASS: 15 markdown files checked.
-- `printf 'yes\nblue\n' | cargo run --quiet -- example-01.ly` PASS; final output included `Status: count is high enough`.
+- `printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly` PASS; final output included `Status: count is high enough`.
 
 ## Notes
 

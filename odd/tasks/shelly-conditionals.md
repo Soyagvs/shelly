@@ -32,4 +32,4 @@ Feature: add `if` / `elif` / `else` control flow.
 - RED: `cargo test` failed before implementation with `unknown command or invalid syntax: if $enabled` and `unknown command or invalid syntax: if true`.
 - GREEN: `cargo test` passed after implementation: 17 passed.
 - Format: `cargo fmt --check` passed.
-- Manual: `cargo run --quiet -- examples/conditionals.ly` printed `enabled branch` and `interpolation works`.
+- Manual: `cargo run --quiet -- examples/conditionals.shelly` printed `enabled branch` and `interpolation works`.

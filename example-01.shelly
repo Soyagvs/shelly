@@ -96,10 +96,10 @@ greet $name
 greet "Guest", "Hi"
 
 # Imports load exported constants/functions only; includes execute the whole file in current scope. #
-import "examples/module.ly"
+import "examples/module.shelly"
 greet "Ada"
 shellout "Imported constant: $$GREETING"
-include "examples/setup.ly"
+include "examples/setup.shelly"
 shellout "Included setup color: $color"
 
 # `command` streams a system command. #

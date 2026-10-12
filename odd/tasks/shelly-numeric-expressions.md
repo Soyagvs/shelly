@@ -27,4 +27,4 @@ Feature: add numeric expressions for assignments and value evaluation.
 
 - RED: `cargo test` failed before implementation with the new numeric tests: precedence/parentheses/floats/negatives/references failed with `expected string, number, or boolean value`; division by zero did not report `division by zero`; non-numeric operand test did not report `numeric operand`.
 - GREEN: `cargo fmt --check && cargo test` passed after implementation; `cargo test` reported 35 passed.
-- Example: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.ly` passed and printed arithmetic output including `count=7 half=4 temperature=12.75 negative=-6 total=127.5`.
+- Example: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly` passed and printed arithmetic output including `count=7 half=4 temperature=12.75 negative=-6 total=127.5`.

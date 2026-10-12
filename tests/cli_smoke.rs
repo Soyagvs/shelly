@@ -12,8 +12,8 @@ fn prints_placeholder_when_no_script_is_provided() {
     assert!(output.status.success());
 
     let stdout = String::from_utf8(output.stdout).expect("stdout is valid UTF-8");
-    assert!(stdout.contains("Pass a .ly script path"));
-    assert!(stdout.contains("Usage: shelly <script.ly>"));
+    assert!(stdout.contains("Pass a .shelly script path"));
+    assert!(stdout.contains("Usage: shelly <script.shelly>"));
 }
 
 #[test]
@@ -212,8 +212,8 @@ fn docs_and_examples_use_ask_arrow_syntax() {
     for path in [
         "README.md",
         "docs/language.md",
-        "example-01.ly",
-        "examples/ask-if.ly",
+        "example-01.shelly",
+        "examples/ask-if.shelly",
     ] {
         let content = fs::read_to_string(path).expect("read documented example");
         assert!(
@@ -550,14 +550,14 @@ fn conditional_errors_cover_structure_and_unsupported_expressions() {
 #[test]
 fn import_loads_exported_constant() {
     let dir = test_dir();
-    fs::write(dir.join("module.ly"), "export $$GREETING = \"Hola\"\n").expect("write module");
+    fs::write(dir.join("module.shelly"), "export $$GREETING = \"Hola\"\n").expect("write module");
     fs::write(
-        dir.join("main.ly"),
-        "import \"module.ly\"\nshellout $$GREETING\n",
+        dir.join("main.shelly"),
+        "import \"module.shelly\"\nshellout $$GREETING\n",
     )
     .expect("write main");
 
-    let output = run_script_path(dir.join("main.ly"));
+    let output = run_script_path(dir.join("main.shelly"));
 
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "Hola\n");
@@ -567,13 +567,17 @@ fn import_loads_exported_constant() {
 fn import_loads_exported_function() {
     let dir = test_dir();
     fs::write(
-        dir.join("module.ly"),
+        dir.join("module.shelly"),
         "export fn greet $name\n    shellout \"Hola $name\"\nend\n",
     )
     .expect("write module");
-    fs::write(dir.join("main.ly"), "import \"module.ly\"\ngreet \"Ada\"\n").expect("write main");
+    fs::write(
+        dir.join("main.shelly"),
+        "import \"module.shelly\"\ngreet \"Ada\"\n",
+    )
+    .expect("write main");
 
-    let output = run_script_path(dir.join("main.ly"));
+    let output = run_script_path(dir.join("main.shelly"));
 
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "Hola Ada\n");
@@ -588,17 +592,17 @@ fn import_keeps_private_symbols_unavailable() {
     ] {
         let dir = test_dir();
         fs::write(
-            dir.join("module.ly"),
+            dir.join("module.shelly"),
             "$secret = \"private var\"\n$$SECRET = \"private const\"\nfn hidden\n    shellout \"private fn\"\nend\n",
         )
         .expect("write module");
         fs::write(
-            dir.join("main.ly"),
-            format!("import \"module.ly\"\n{use_private}"),
+            dir.join("main.shelly"),
+            format!("import \"module.shelly\"\n{use_private}"),
         )
         .expect("write main");
 
-        let output = run_script_path(dir.join("main.ly"));
+        let output = run_script_path(dir.join("main.shelly"));
 
         assert!(
             !output.status.success(),
@@ -616,17 +620,17 @@ fn import_keeps_private_symbols_unavailable() {
 fn import_does_not_run_non_exported_top_level_side_effects() {
     let dir = test_dir();
     fs::write(
-        dir.join("module.ly"),
+        dir.join("module.shelly"),
         "shellout \"SHOULD NOT RUN\"\nexport $$VALUE = \"ok\"\n",
     )
     .expect("write module");
     fs::write(
-        dir.join("main.ly"),
-        "import \"module.ly\"\nshellout $$VALUE\n",
+        dir.join("main.shelly"),
+        "import \"module.shelly\"\nshellout $$VALUE\n",
     )
     .expect("write main");
 
-    let output = run_script_path(dir.join("main.ly"));
+    let output = run_script_path(dir.join("main.shelly"));
 
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "ok\n");
@@ -636,17 +640,17 @@ fn import_does_not_run_non_exported_top_level_side_effects() {
 fn include_runs_full_file_in_current_scope() {
     let dir = test_dir();
     fs::write(
-        dir.join("setup.ly"),
+        dir.join("setup.shelly"),
         "$color = \"blue\"\nshellout \"setup\"\n",
     )
     .expect("write setup");
     fs::write(
-        dir.join("main.ly"),
-        "include \"setup.ly\"\nshellout $color\n",
+        dir.join("main.shelly"),
+        "include \"setup.shelly\"\nshellout $color\n",
     )
     .expect("write main");
 
-    let output = run_script_path(dir.join("main.ly"));
+    let output = run_script_path(dir.join("main.shelly"));
 
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "setup\nblue\n");
@@ -659,27 +663,27 @@ fn import_include_errors_cover_export_variables_missing_files_cycles_and_duplica
     assert!(stderr(&output).contains("line 1"));
     assert!(stderr(&output).contains("only constants and functions can be exported"));
 
-    let output = run_script("import \"missing.ly\"\n");
+    let output = run_script("import \"missing.shelly\"\n");
     assert!(!output.status.success());
     assert!(stderr(&output).contains("line 1"));
     assert!(stderr(&output).contains("could not read file"));
 
     let dir = test_dir();
-    fs::write(dir.join("a.ly"), "import \"b.ly\"\n").expect("write a");
-    fs::write(dir.join("b.ly"), "import \"a.ly\"\n").expect("write b");
-    let output = run_script_path(dir.join("a.ly"));
+    fs::write(dir.join("a.shelly"), "import \"b.shelly\"\n").expect("write a");
+    fs::write(dir.join("b.shelly"), "import \"a.shelly\"\n").expect("write b");
+    let output = run_script_path(dir.join("a.shelly"));
     assert!(!output.status.success());
     assert!(stderr(&output).contains("cycle"));
     assert!(stderr(&output).contains("line 1"));
 
     let dir = test_dir();
-    fs::write(dir.join("module.ly"), "export $$VALUE = \"once\"\n").expect("write module");
+    fs::write(dir.join("module.shelly"), "export $$VALUE = \"once\"\n").expect("write module");
     fs::write(
-        dir.join("main.ly"),
-        "import \"module.ly\"\nimport \"module.ly\"\nshellout $$VALUE\n",
+        dir.join("main.shelly"),
+        "import \"module.shelly\"\nimport \"module.shelly\"\nshellout $$VALUE\n",
     )
     .expect("write main");
-    let output = run_script_path(dir.join("main.ly"));
+    let output = run_script_path(dir.join("main.shelly"));
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "once\n");
 }
@@ -1506,7 +1510,7 @@ fn run_script(source: &str) -> std::process::Output {
 }
 
 fn write_script(source: &str) -> std::path::PathBuf {
-    let path = test_dir().join("script.ly");
+    let path = test_dir().join("script.shelly");
     fs::write(&path, source).expect("write script");
     path
 }

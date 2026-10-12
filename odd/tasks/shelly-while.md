@@ -16,7 +16,7 @@ Feature: add `while` loops for condition-based repetition.
 
 ## Examples
 
-```ly
+```shelly
 $count = 0
 
 while $count < 3
@@ -27,7 +27,7 @@ end
 shellout "Done at $count"
 ```
 
-```ly
+```shelly
 $enabled = true
 while $enabled
     shellout "once"
@@ -47,4 +47,4 @@ end
 
 - RED: `cargo test` after adding tests failed with 7 while-loop failures, including `unknown command or invalid syntax: while $count < 3` and missing expected while diagnostics.
 - GREEN: `cargo fmt --check && cargo test` passed; 55 tests passed.
-- Example: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.ly` passed and printed the while countdown (`While countdown 2`, `While countdown 1`, `While finished at 0`) along with the existing example output.
+- Example: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly` passed and printed the while countdown (`While countdown 2`, `While countdown 1`, `While finished at 0`) along with the existing example output.

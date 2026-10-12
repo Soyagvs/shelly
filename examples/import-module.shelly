@@ -1,5 +1,5 @@
 # Import loads only exports and does not run module side effects. #
-import "module.ly"
+import "module.shelly"
 
 greet "Ada"
 shellout "Imported constant: $$GREETING"

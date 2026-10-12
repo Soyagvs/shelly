@@ -35,7 +35,7 @@ Feature: add advanced list selectors and filters.
 
 ## Examples
 
-```ly
+```shelly
 $names = ["Ana", "Luis", "Mora"]
 $numbers = [1, 3, 5, 8, 10]
 $mixed = ["Ana", 3, true]
@@ -63,7 +63,7 @@ shellout $mixed[!=3]
 - RED: `cargo test advanced_list -- --nocapture` failed before implementation: `first`/filter selectors reported `list index must be numeric`; reverse range reported an out-of-range index instead of the required reverse-range error.
 - Focused GREEN: `cargo test advanced_list -- --nocapture` passed after implementation: 3 passed.
 - Full GREEN: `cargo fmt --check && cargo test` passed after formatting: 61 tests passed.
-- Example run: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.ly` passed and printed advanced selector/filter examples such as `[Ana, Mora]`, `[8, 10]`, `[Ana]`, and `[true, true]`.
+- Example run: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly` passed and printed advanced selector/filter examples such as `[Ana, Mora]`, `[8, 10]`, `[Ana]`, and `[true, true]`.
 
 ## Intentionally deferred
 

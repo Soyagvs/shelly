@@ -2,7 +2,7 @@
 
 Use `if`, optional `elif`, optional `else`, and `end`.
 
-```ly
+```shelly
 $enabled = true
 $count = 3
 
@@ -27,7 +27,7 @@ end
 
 Direct truthy values are allowed:
 
-```ly
+```shelly
 if $enabled
     shellout "enabled"
 end

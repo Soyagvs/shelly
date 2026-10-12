@@ -24,7 +24,7 @@ Feature: add Shelly's single collection type: list.
 
 ## Examples
 
-```ly
+```shelly
 $empty = []
 $names = ["Ana", "Luis", "Mora"]
 $numbers = [1, 2, 3]
@@ -47,4 +47,4 @@ shellout "Second: $names[2]"
 - RED `cargo test`: failed as expected with new list tests (`lists_accept_empty_assignment_and_index_values`, `lists_accept_variable_and_constant_elements_and_interpolation_indexing`, `list_indexing_errors_are_clear`) before implementation.
 - GREEN `cargo fmt --check`: passed.
 - GREEN `cargo test`: passed, 58 tests.
-- GREEN `printf 'yes\nblue\n' | cargo run --quiet -- example-01.ly`: passed and printed the list demo plus the existing sample flow.
+- GREEN `printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly`: passed and printed the list demo plus the existing sample flow.

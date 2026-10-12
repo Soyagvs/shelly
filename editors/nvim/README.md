@@ -1,10 +1,10 @@
 # Shelly for Neovim
 
-Local Neovim support for Shelly `.ly` files.
+Local Neovim support for Shelly `.shelly` files.
 
 ## What this adds
 
-- `.ly` filetype detection as `shelly`.
+- `.shelly` filetype detection as `shelly`.
 - Basic syntax highlighting.
 - Shelly comment settings for `# comment #`.
 - Optional purple file icon mapping for common Neovim icon plugins.
@@ -13,14 +13,14 @@ Local Neovim support for Shelly `.ly` files.
 
 Terminal Neovim cannot normally render an SVG file as the file explorer icon. Plugins such as `nvim-web-devicons` and `mini.icons` show **Nerd Font glyphs** with colors.
 
-So this package keeps `../../shelly.svg` as the real Shelly artwork for future editor packages, and maps `.ly` to a purple Shelly-like glyph for Neovim.
+So this package keeps `../../shelly.svg` as the real Shelly artwork for future editor packages, and maps `.shelly` to a purple Shelly-like glyph for Neovim.
 
 ## Try it without installing
 
 From the repository root, open Neovim with this runtime path:
 
 ```sh
-nvim --cmd 'set runtimepath^=./editors/nvim' example-01.ly
+nvim --cmd 'set runtimepath^=./editors/nvim' example-01.shelly
 ```
 
 Inside Neovim, check:
@@ -37,7 +37,7 @@ Expected filetype:
 filetype=shelly
 ```
 
-Neovim maps `.ly` to LilyPond by default, so Shelly's runtime files intentionally override `.ly` locally.
+Shelly uses `.shelly` to avoid extension conflicts in Neovim and other editor tooling.
 
 ## Install locally
 

@@ -23,4 +23,4 @@ Feature: replace standalone `capture` with `command "..." -> $var`.
 
 - RED: `cargo test` failed with 6 new failing CLI smoke tests before implementation: arrow capture stdout/no direct print, newline trimming, interpolation, old `capture` rejection, constant destination rejection, and malformed destination rejection.
 - GREEN: `cargo fmt --check && cargo test` passed; CLI smoke suite reported 40 passed.
-- Example: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.ly` passed and printed the updated command-capture flow, including `Running from /home/soyagvs/proyectos/personal/shelly`.
+- Example: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly` passed and printed the updated command-capture flow, including `Running from /home/soyagvs/proyectos/personal/shelly`.

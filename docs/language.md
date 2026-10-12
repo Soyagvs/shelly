@@ -4,11 +4,11 @@
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
 
-Shelly scripts use the `.ly` extension. One instruction per line. No semicolons.
+Shelly scripts use the `.shelly` extension. One instruction per line. No semicolons.
 
 ## Mental model
 
-```ly
+```shelly
 $name = "Ada"          # mutable variable #
 $$APP = "Shelly"       # immutable constant #
 ask "Name? " -> $name  # result binding #
@@ -41,10 +41,10 @@ ask "Name? " -> $name  # result binding #
 ## Run
 
 ```sh
-cargo run -- path/to/script.ly
+cargo run -- path/to/script.shelly
 ```
 
-Complete showcase: [`../example-01.ly`](../example-01.ly).
+Complete showcase: [`../example-01.shelly`](../example-01.shelly).
 
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />

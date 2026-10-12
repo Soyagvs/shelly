@@ -2,7 +2,7 @@
 
 `while` repeats a block while a condition is true.
 
-```ly
+```shelly
 $count = 0
 while $count < 3
     shellout "Count $count"
@@ -19,7 +19,7 @@ shellout "Done at $count"
 - comparisons with `==`, `!=`, `>`, `>=`, `<`, and `<=`
 - normal value forms including variables, constants, strings, booleans, and numeric expressions where condition handling supports them
 
-```ly
+```shelly
 $enabled = true
 while $enabled
     shellout "once"

@@ -28,8 +28,8 @@ fn main() {
     let result = match script_path {
         Some(path) => run_script(path),
         None => {
-            println!("Shelly is ready. Pass a .ly script path to run it.");
-            println!("Usage: shelly <script.ly>");
+            println!("Shelly is ready. Pass a .shelly script path to run it.");
+            println!("Usage: shelly <script.shelly>");
             Ok(())
         }
     };

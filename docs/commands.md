@@ -2,7 +2,7 @@
 
 Shelly has built-in commands for output, input, prompts, and system shell execution.
 
-```ly
+```shelly
 shellout "hello"
 shellout $name
 shellin $answer
@@ -15,7 +15,7 @@ command "printf captured" -> $value
 
 Prints the evaluated value and adds a newline.
 
-```ly
+```shelly
 shellout "hello"
 shellout $name
 shellout "hello $name"
@@ -25,7 +25,7 @@ shellout "hello $name"
 
 Reads one line from stdin and stores it without the line ending.
 
-```ly
+```shelly
 shellin $answer
 ```
 
@@ -35,7 +35,7 @@ The destination must be a variable.
 
 Prints a prompt, flushes stdout, reads one line, trims the line ending, and stores it in a variable.
 
-```ly
+```shelly
 ask "Name? " -> $name
 ```
 
@@ -51,7 +51,7 @@ Rules:
 
 Streams a system shell command through `sh -c`.
 
-```ly
+```shelly
 command "printf hello"
 ```
 
@@ -61,7 +61,7 @@ A non-zero status fails the Shelly script.
 
 Capture stdout with arrow binding:
 
-```ly
+```shelly
 command "pwd" -> $cwd
 shellout "Current directory: $cwd"
 ```

@@ -2,7 +2,7 @@
 
 Variables store mutable values and use `$name` syntax.
 
-```ly
+```shelly
 $name = "world"
 $empty
 $count = 42
@@ -20,7 +20,7 @@ shellout "hello $NAME"
 
 ## Assignment
 
-```ly
+```shelly
 $name = "Ada"
 $count = 1 + 2 * 3
 $enabled = true

@@ -2,7 +2,7 @@
 
 Constants store immutable values and use `$$NAME` syntax.
 
-```ly
+```shelly
 $$APP = "Shelly"
 $$BASE = 10
 shellout "running $$APP"
@@ -18,7 +18,7 @@ shellout "running $$APP"
 
 ## Use in expressions
 
-```ly
+```shelly
 $$BASE = 10
 $total = $$BASE * 2
 shellout $total

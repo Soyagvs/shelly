@@ -2,7 +2,7 @@
 
 `exit` terminates the whole Shelly process immediately.
 
-```ly
+```shelly
 exit
 exit 0
 exit 1
@@ -17,7 +17,7 @@ exit 1
 
 Codes may be integer literals, numeric expressions, variables, or constants:
 
-```ly
+```shelly
 $code = 0
 exit $code
 

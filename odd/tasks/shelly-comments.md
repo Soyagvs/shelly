@@ -27,4 +27,4 @@ Feature: replace old loose comment handling with explicit line and block comment
 - RED: `cargo test` failed after adding tests with 23 passed / 3 failed. Failing cases: `explicit_block_comment_is_ignored`, `old_style_comment_without_closing_marker_is_rejected_when_never_closed`, and `unterminated_block_comment_reports_start_line`.
 - GREEN: `cargo fmt --check` passed.
 - GREEN: `cargo test` passed with 26 passed / 0 failed.
-- Sample: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.ly` passed and printed the updated example flow ending with `Status: count is high enough`.
+- Sample: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly` passed and printed the updated example flow ending with `Status: count is high enough`.

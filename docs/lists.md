@@ -2,7 +2,7 @@
 
 Shelly has one collection type: `list`.
 
-```ly
+```shelly
 $empty = []
 $names = ["Ana", "Luis", "Mora"]
 $numbers = [1, 2 + 3, 6]
@@ -28,7 +28,7 @@ Nested lists are not supported yet.
 
 List indexing is 1-based.
 
-```ly
+```shelly
 shellout $names[1]
 shellout $names[first]
 shellout $names[last]
@@ -40,7 +40,7 @@ Scalar selectors return one value.
 
 Multi-selectors return a new list:
 
-```ly
+```shelly
 shellout $names[1,3]
 shellout $names[1..3]
 shellout $names[..3]
@@ -55,7 +55,7 @@ Ranges are inclusive.
 
 Filters return a new list.
 
-```ly
+```shelly
 shellout $numbers[>5]
 shellout $numbers[<=5]
 shellout $names[=="Ana"]
@@ -73,7 +73,7 @@ Rules:
 
 ## Mutations
 
-```ly
+```shelly
 $names = ["Ana", "Luis"]
 append $names, "Mora"
 prepend $names, "Iris"

@@ -4,8 +4,8 @@ Feature: link Shelly files with explicit public imports and full-file includes.
 
 ## Decisions
 
-- `import "file.ly"` loads only exported symbols from the target file.
-- `include "file.ly"` executes the whole target file.
+- `import "file.shelly"` loads only exported symbols from the target file.
+- `include "file.shelly"` executes the whole target file.
 - `export` marks public symbols inside a file.
 - Initial exported symbols are constants and functions only.
 - Exported constants use `export $$NAME = value`.
@@ -36,7 +36,7 @@ RED before implementation:
 
 GREEN after implementation:
 
-- `cargo fmt --check && cargo test && printf 'yes\nblue\n' | cargo run --quiet -- example-01.ly`
+- `cargo fmt --check && cargo test && printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly`
 - Result: passed.
 - Test result: 32 passed, 0 failed.
 - Sample output included:

@@ -2,7 +2,7 @@
 
 Functions define reusable blocks with `fn` and `end`.
 
-```ly
+```shelly
 fn greet $name, $prefix = "Hola"
     shellout "$prefix $name"
 end
@@ -22,7 +22,7 @@ greet "Ada", "Hello"
 
 ## Default parameters
 
-```ly
+```shelly
 fn greet $name, $prefix = "Hola"
     shellout "$prefix $name"
 end
@@ -34,7 +34,7 @@ Defaulted parameters must come after required parameters. A required parameter a
 
 Function scope is local by default. Assignments inside a function do not mutate outer variables.
 
-```ly
+```shelly
 $outside = "outer"
 $$APP = "Shelly"
 

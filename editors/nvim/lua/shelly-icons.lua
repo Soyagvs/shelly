@@ -18,7 +18,7 @@ function M.setup_web_devicons(opts)
   local icon = vim.tbl_extend("force", defaults, opts or {})
   devicons.setup({
     override_by_extension = {
-      ly = icon,
+      shelly = icon,
     },
   })
   return true
@@ -33,7 +33,7 @@ function M.setup_mini_icons(opts)
   local icon = vim.tbl_extend("force", defaults, opts or {})
   mini_icons.setup({
     extension = {
-      ly = { glyph = icon.icon, hl = "ShellyIcon" },
+      shelly = { glyph = icon.icon, hl = "ShellyIcon" },
     },
   })
   vim.api.nvim_set_hl(0, "ShellyIcon", { fg = icon.color })

@@ -15,25 +15,25 @@
 
 # Shelly
 
-Shelly is a Bash 2.0 style shell and script runner for `.ly` scripts.
+Shelly is a Bash 2.0 style shell and script runner for `.shelly` scripts.
 
 Small scripts. Clear syntax. One readable way to compose variables, commands, lists, blocks, functions, modules, and explicit exits.
 
 ## Run
 
 ```sh
-cargo run -- path/to/script.ly
+cargo run -- path/to/script.shelly
 ```
 
 Future installed form:
 
 ```sh
-shelly path/to/script.ly
+shelly path/to/script.shelly
 ```
 
 ## Taste
 
-```ly
+```shelly
 $name = "Agustin"
 $$APP = "Shelly"
 $names = ["Ana", "Luis", "Mora"]
@@ -51,7 +51,7 @@ shellout "Running from $cwd"
 exit 0
 ```
 
-Full showcase: [`example-01.ly`](example-01.ly).
+Full showcase: [`example-01.shelly`](example-01.shelly).
 
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
@@ -97,5 +97,5 @@ Start here: [`docs/language.md`](docs/language.md).
 ```sh
 cargo fmt --check
 cargo test
-printf 'yes\nblue\n' | cargo run --quiet -- example-01.ly
+printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly
 ```

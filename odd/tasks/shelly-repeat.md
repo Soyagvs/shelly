@@ -18,7 +18,7 @@ Feature: add `repeat` loops for simple counted repetition.
 
 ## Examples
 
-```ly
+```shelly
 repeat 3
     shellout "Hola"
 end
@@ -47,4 +47,4 @@ shellout "count=$count"
 - RED: `cargo test` after adding tests failed as expected: 8 repeat tests failed with `unknown command or invalid syntax: repeat ...`; existing 40 tests passed.
 - GREEN: `cargo fmt --check` passed.
 - GREEN: `cargo test` passed: 48 tests passed.
-- Example: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.ly` passed and printed repeat turns `1`, `2`, `3` plus `Repeat visits counted: 2`.
+- Example: `printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly` passed and printed repeat turns `1`, `2`, `3` plus `Repeat visits counted: 2`.
