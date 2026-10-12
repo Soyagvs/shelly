@@ -1,50 +1,56 @@
 # Shelly language guide
 
-Shelly scripts use the `.ly` extension. The interpreter is line-oriented: one instruction per line, no semicolons.
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>
 
-## Guided mental model
+Shelly scripts use the `.ly` extension. One instruction per line. No semicolons.
 
-Start with values, then commands, then blocks. `$name` stores a mutable variable, `$$NAME` stores an immutable constant, and most commands read values from ordinary comma-separated arguments.
-
-The arrow `->` is special: it means the command or block produces or binds a result into a variable:
+## Mental model
 
 ```ly
-ask "Name? " -> $name
-command "pwd" -> $cwd
-repeat 3 -> $i
+$name = "Ada"          # mutable variable #
+$$APP = "Shelly"       # immutable constant #
+ask "Name? " -> $name  # result binding #
 ```
 
-Use commas for normal argument lists. Use `->` only for result binding.
+- `$name` stores a mutable value.
+- `$$NAME` stores an immutable constant.
+- `->` means “bind the result into this variable”.
+- Commas are for normal argument lists.
+- Blocks close with `end`.
 
-Run a script with:
+## Reference
+
+| Topic | Guide |
+| --- | --- |
+| Comments | [comments.md](comments.md) |
+| Variables | [variables.md](variables.md) |
+| Constants | [constants.md](constants.md) |
+| Strings and interpolation | [strings.md](strings.md) |
+| Numeric expressions | [numeric-expressions.md](numeric-expressions.md) |
+| Lists | [lists.md](lists.md) |
+| Commands and input | [commands.md](commands.md) |
+| Exit | [exit.md](exit.md) |
+| Functions | [functions.md](functions.md) |
+| Conditionals | [conditionals.md](conditionals.md) |
+| Repeat loops | [repeat.md](repeat.md) |
+| While loops | [while.md](while.md) |
+| Modules | [modules.md](modules.md) |
+
+## Run
 
 ```sh
 cargo run -- path/to/script.ly
 ```
 
-## Current language reference
+Complete showcase: [`../example-01.ly`](../example-01.ly).
 
-- [Comments](comments.md) — explicit `# ... #` line and block comments.
-- [Variables](variables.md) — mutable `$name` values and empty declarations.
-- [Constants](constants.md) — immutable uppercase `$$NAME` values.
-- [Strings and interpolation](strings.md) — double-quoted strings, escapes, `$name`, `$$NAME`, and list selectors inside strings.
-- [Numeric expressions](numeric-expressions.md) — integers, floats, operators, precedence, parentheses, and numeric variables/constants.
-- [Lists](lists.md) — list literals, 1-based selectors, ranges, filters, and mutations.
-- [Commands and input](commands.md) — `shellout`, `shellin`, `ask`, and `command`/capture.
-- [Exit](exit.md) — process-wide termination with status codes `0..255`.
-- [Functions](functions.md) — `fn`/`end`, parameters, defaults, local scope, and `global`.
-- [Conditionals](conditionals.md) — `if`/`elif`/`else`, comparisons, and truthiness.
-- [Repeat loops](repeat.md) — counted loops and optional local 1-based index binding.
-- [While loops](while.md) — condition-based loops with a safety limit.
-- [Modules](modules.md) — `import`, `include`, and `export`.
-
-## Complete showcase
-
-See [`../example-01.ly`](../example-01.ly) for a broad runnable example covering the current language.
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>
 
 ## Not implemented yet
-
-These are intentionally not part of the current language yet:
 
 - Function return values.
 - Logical operators `and`, `or`, and `not`.

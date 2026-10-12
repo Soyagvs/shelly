@@ -1,30 +1,37 @@
-<img width="1672" height="941" alt="IMG_1640" src="https://github.com/user-attachments/assets/48130392-11ba-41b5-b655-71e32c88f1cd" />
+<p align="center">
+  <img width="1672" height="941" alt="Shelly preview" src="https://github.com/user-attachments/assets/48130392-11ba-41b5-b655-71e32c88f1cd" />
+</p>
+
+<p align="center">
+  <img alt="Releases" src="https://img.shields.io/github/v/release/Soyagvs/shelly?include_prereleases&style=for-the-badge&label=release&color=7c3aed" />
+  <img alt="Downloads" src="https://img.shields.io/github/downloads/Soyagvs/shelly/total?style=for-the-badge&label=downloads&color=7c3aed" />
+  <img alt="Stars" src="https://img.shields.io/github/stars/Soyagvs/shelly?style=for-the-badge&label=stars&color=7c3aed" />
+  <img alt="License" src="https://img.shields.io/badge/license-private-7c3aed?style=for-the-badge" />
+</p>
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=3&color=7c3aed" width="100%" alt="purple divider" />
+</p>
 
 # Shelly
 
-Shelly is a Bash 2.0 style shell and script runner for `.ly` scripts. It is designed to make everyday scripting readable: variables, commands, lists, blocks, functions, modules, and explicit exits in one small language.
+Shelly is a Bash 2.0 style shell and script runner for `.ly` scripts.
 
-## Status
+Small scripts. Clear syntax. One readable way to compose variables, commands, lists, blocks, functions, modules, and explicit exits.
 
-This repository contains the current Shelly interpreter prototype written in Rust.
-
-## Run a script
-
-During development:
+## Run
 
 ```sh
 cargo run -- path/to/script.ly
 ```
 
-After installing the binary, the intended command is:
+Future installed form:
 
 ```sh
 shelly path/to/script.ly
 ```
 
-Running without a script prints a short usage hint and exits successfully.
-
-## Quick example
+## Taste
 
 ```ly
 $name = "Agustin"
@@ -36,7 +43,6 @@ shellout "First name: $names[first]"
 
 ask "Continue? " -> $answer
 if $answer != "yes"
-    shellout "Cancelled"
     exit 1
 end
 
@@ -45,39 +51,43 @@ shellout "Running from $cwd"
 exit 0
 ```
 
-See [`example-01.ly`](example-01.ly) for a complete runnable showcase.
+Full showcase: [`example-01.ly`](example-01.ly).
 
-## Language guide
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>
 
-Start with the overview: [`docs/language.md`](docs/language.md).
+## Docs
 
-Focused references:
+Start here: [`docs/language.md`](docs/language.md).
 
-- [Comments](docs/comments.md)
-- [Variables](docs/variables.md)
-- [Constants](docs/constants.md)
-- [Strings and interpolation](docs/strings.md)
-- [Numeric expressions](docs/numeric-expressions.md)
-- [Lists](docs/lists.md)
-- [Commands and input](docs/commands.md)
-- [Exit](docs/exit.md)
-- [Functions](docs/functions.md)
-- [Conditionals](docs/conditionals.md)
-- [Repeat loops](docs/repeat.md)
-- [While loops](docs/while.md)
-- [Modules: import, include, export](docs/modules.md)
+| Topic | Guide |
+| --- | --- |
+| Comments | [`docs/comments.md`](docs/comments.md) |
+| Variables | [`docs/variables.md`](docs/variables.md) |
+| Constants | [`docs/constants.md`](docs/constants.md) |
+| Strings | [`docs/strings.md`](docs/strings.md) |
+| Numeric expressions | [`docs/numeric-expressions.md`](docs/numeric-expressions.md) |
+| Lists | [`docs/lists.md`](docs/lists.md) |
+| Commands and input | [`docs/commands.md`](docs/commands.md) |
+| Exit | [`docs/exit.md`](docs/exit.md) |
+| Functions | [`docs/functions.md`](docs/functions.md) |
+| Conditionals | [`docs/conditionals.md`](docs/conditionals.md) |
+| Repeat loops | [`docs/repeat.md`](docs/repeat.md) |
+| While loops | [`docs/while.md`](docs/while.md) |
+| Modules | [`docs/modules.md`](docs/modules.md) |
 
-## Core mental model
+## Mental model
 
-- `$name` is a mutable variable.
-- `$$NAME` is an immutable constant.
-- `->` means a command or block binds a result into a variable, for example `ask "Name? " -> $name`, `command "pwd" -> $cwd`, and `repeat 3 -> $i`.
-- Commas separate ordinary arguments, for example function calls and list mutation commands.
-- Blocks use `end`.
-- Indexing is 1-based.
-- `exit 0` means success; `exit 1` means general failure.
+- `$name` is mutable.
+- `$$NAME` is immutable.
+- `->` binds a result into a variable.
+- Commas separate normal arguments.
+- Blocks close with `end`.
+- Indexing starts at `1`.
+- `exit 0` succeeds; `exit 1` fails.
 
-## Development checks
+## Checks
 
 ```sh
 cargo fmt --check
