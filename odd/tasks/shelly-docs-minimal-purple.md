@@ -18,7 +18,7 @@ Feature: make the public documentation more minimal, purple-accented, and badge-
 - [x] Redesign README with minimal structure, purple accents, and badges.
 - [x] Lightly adjust docs overview if needed.
 - [x] Verify markdown links and Rust checks.
-- [ ] Commit and push.
+- [x] Commit and push.
 
 ## Evidence
 
@@ -34,3 +34,4 @@ Feature: make the public documentation more minimal, purple-accented, and badge-
 
 - GitHub Markdown strips arbitrary CSS, so purple accents use GitHub-compatible image badges/dividers.
 - The repository is private and has no license file yet, so the README uses a purple `license-private` badge instead of inventing a license.
+- Committed and pushed as `643599e docs: polish minimal purple readme`.
