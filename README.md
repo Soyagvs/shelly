@@ -6,7 +6,7 @@
   <img alt="Releases" src="https://img.shields.io/github/v/release/Soyagvs/shelly?include_prereleases&style=for-the-badge&label=release&color=7c3aed" />
   <img alt="Downloads" src="https://img.shields.io/github/downloads/Soyagvs/shelly/total?style=for-the-badge&label=downloads&color=7c3aed" />
   <img alt="Stars" src="https://img.shields.io/github/stars/Soyagvs/shelly?style=for-the-badge&label=stars&color=7c3aed" />
-  <img alt="License" src="https://img.shields.io/badge/license-private-7c3aed?style=for-the-badge" />
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-7c3aed?style=for-the-badge" />
 </p>
 
 <p align="center">
@@ -18,6 +18,15 @@
 Shelly is a Bash 2.0 style shell and script runner for `.shelly` scripts.
 
 Small scripts. Clear syntax. One readable way to compose variables, commands, lists, blocks, functions, modules, and explicit exits.
+
+## Latest release
+
+**v3.0.1** is the latest public-ready Shelly release.
+
+- Linux/macOS installer: `curl -fsSL https://raw.githubusercontent.com/Soyagvs/shelly/main/install.sh | sh`
+- Release binaries are built for Linux x86_64, macOS Intel, macOS Apple Silicon, and Windows x86_64.
+- Language highlights: lists, selectors, filters, `for`, `while`, `repeat`, explicit `call`, function `return`, `break`, `continue`, logical `and` / `or` / `not`, modules, and `command` for system tools.
+- License: MIT.
 
 ## Install
 
