@@ -7,7 +7,7 @@ Local Neovim support for Shelly `.shelly` files.
 - `.shelly` filetype detection as `shelly`.
 - Basic syntax highlighting.
 - Shelly comment settings for `# comment #`.
-- Optional purple file icon mapping for common Neovim icon plugins.
+- Optional black file icon mapping for common Neovim icon plugins.
 
 ## Important icon note
 
@@ -64,8 +64,8 @@ Or customize the glyph/color:
 ```lua
 require("shelly-icons").setup_web_devicons({
   icon = "",
-  color = "#7c3aed",
-  cterm_color = "99",
+  color = "#000000",
+  cterm_color = "16",
   name = "Shelly",
 })
 ```
