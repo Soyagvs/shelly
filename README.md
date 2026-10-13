@@ -15,9 +15,9 @@
 
 # Shelly
 
-Shelly is a Bash 2.0 style shell and script runner for `.shelly` scripts.
+Shelly is a modern scripting language for readable automation with `.shelly` scripts.
 
-Small scripts. Clear syntax. One readable way to compose variables, commands, lists, dictionaries, blocks, functions, modules, and explicit exits.
+Small scripts. Clear syntax. One modern way to automate files, commands, structured data, menus, logs, helpers, modules, and safe checks.
 
 ## Latest release
 
