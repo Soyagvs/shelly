@@ -124,6 +124,7 @@ Start here: [`docs/language.md`](docs/language.md).
 ## Editor support
 
 - Neovim: [`editors/nvim`](editors/nvim)
+- VS Code: [`Soyagvs/shelly-vscode`](https://github.com/Soyagvs/shelly-vscode)
 - Shelly artwork: [`shelly.svg`](shelly.svg)
 
 ## Mental model
