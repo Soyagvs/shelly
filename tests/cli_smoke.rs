@@ -209,6 +209,127 @@ shellout "after"
 }
 
 #[test]
+fn dictionaries_support_access_mutation_interpolation_and_truthiness() {
+    let output = run_script(
+        r#"
+$user = {
+    name: "Ada"
+    "first-name": "Ada"
+    admin: true
+}
+shellout $user.name
+$user.name = "Grace"
+$key = "first-name"
+shellout $user[$key]
+$user[$key] = "Amazing"
+shellout "hello $user.name $user[$key]"
+if $user
+    shellout "truthy"
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "Ada\nAda\nhello Grace Amazing\ntruthy\n");
+}
+
+#[test]
+fn dictionaries_support_chained_read_mutation_interpolation_and_remove() {
+    let output = run_script(
+        r#"
+$user = {
+    pais: {
+        argentina: {
+            city: "Buenos Aires"
+            code: "AR"
+        }
+    }
+}
+$country = "argentina"
+shellout $user.pais.argentina.city
+shellout $user["pais"]["argentina"].city
+shellout $user.pais[$country].city
+$user.pais.argentina.city = "Córdoba"
+shellout "city=$user.pais.argentina.city"
+$user["pais"]["argentina"].city = "Rosario"
+shellout $user.pais.argentina.city
+remove $user["pais"]["argentina"].code
+shellout $user.pais.argentina
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "Buenos Aires\nBuenos Aires\nBuenos Aires\ncity=Córdoba\nRosario\n{city: Rosario}\n"
+    );
+}
+
+#[test]
+fn dictionaries_report_chained_missing_keys_non_dictionary_and_constant_mutation() {
+    let missing = run_script("$user = { pais: {} }\nshellout $user.pais.argentina.city\n");
+    assert!(!missing.status.success());
+    assert!(stderr(&missing).contains("missing key 'argentina'"));
+
+    let wrong_target = run_script("$user = { pais: \"AR\" }\nshellout $user.pais.city\n");
+    assert!(!wrong_target.status.success());
+    assert!(stderr(&wrong_target).contains("non-dictionary"));
+
+    let constant = run_script(
+        "$$USER = { pais: { argentina: { city: \"BA\" } } }\n$$USER.pais.argentina.city = \"Cordoba\"\n",
+    );
+    assert!(!constant.status.success());
+    assert!(stderr(&constant).contains("variable dictionary"));
+}
+
+#[test]
+fn remove_preserves_list_and_file_behavior_while_supporting_dictionary_paths() {
+    let dir = test_dir();
+    fs::write(
+        dir.join("script.shelly"),
+        r#"
+$items = ["a", "b", "c"]
+remove $items[2]
+shellout $items
+write "gone.txt" "bye"
+remove "gone.txt"
+exists "gone.txt" -> $exists
+shellout $exists
+$user = { profile: { city: "BA", other: "kept" } }
+remove $user.profile.city
+shellout $user.profile
+"#,
+    )
+    .expect("write script");
+
+    let output = run_script_path(dir.join("script.shelly"));
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "[a, c]\nfalse\n{other: kept}\n");
+}
+
+#[test]
+fn dictionaries_report_missing_keys_and_non_dictionary_mutation() {
+    let missing = run_script("$user = { name: \"Ada\" }\nshellout $user.age\n");
+    assert!(!missing.status.success());
+    assert!(stderr(&missing).contains("missing key 'age'"));
+
+    let wrong_target = run_script("$name = \"Ada\"\n$name.first = \"Grace\"\n");
+    assert!(!wrong_target.status.success());
+    assert!(stderr(&wrong_target).contains("non-dictionary"));
+}
+
+#[test]
+fn check_accepts_dictionary_syntax_and_rejects_malformed_literal() {
+    let valid = check_script("$user = { name: \"Ada\", age: 32 }\nshellout $user.name\n");
+    assert!(valid.status.success(), "stderr: {}", stderr(&valid));
+
+    let malformed = check_script("$user = { name \"Ada\" }\n");
+    assert!(!malformed.status.success());
+    assert!(stderr(&malformed).contains("malformed dictionary entry"));
+}
+
+#[test]
 fn variable_assignment_and_shellout_variable() {
     let output = run_script(
         r#"
@@ -269,6 +390,69 @@ fn command_streams_system_command_output() {
 }
 
 #[test]
+fn command_arrow_triple_captures_stdout_stderr_and_zero_code() {
+    let output = run_script(
+        r#"
+command "printf 'out\n'; printf 'err\n' >&2" -> $out, $err, $code
+shellout "out=<$out> err=<$err> code=$code"
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "out=<out> err=<err> code=0\n");
+}
+
+#[test]
+fn command_arrow_triple_captures_nonzero_status_without_failing() {
+    let output = run_script(
+        r#"
+command "printf 'bad\n' >&2; exit 7" -> $out, $err, $code
+shellout "continued code=$code err=<$err> out=<$out>"
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "continued code=7 err=<bad> out=<>\n");
+}
+
+#[test]
+fn command_arrow_one_destination_still_fails_on_nonzero_status() {
+    let output = run_script(r#"command "printf 'bad\n' >&2; exit 7" -> $out"#);
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("line 1"));
+    assert!(stderr(&output).contains("command exited with status"));
+}
+
+#[test]
+fn check_accepts_command_triple_capture() {
+    let output = check_script(r#"command "printf hello" -> $out, $err, $code"#);
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+}
+
+#[test]
+fn command_arrow_rejects_two_destinations() {
+    for output in [
+        run_script(r#"command "printf hello" -> $out, $err"#),
+        check_script(r#"command "printf hello" -> $out, $err"#),
+    ] {
+        assert!(!output.status.success());
+        assert!(stderr(&output).contains("line 1"));
+        assert!(stderr(&output).contains("2 destinations are not supported"));
+    }
+}
+
+#[test]
+fn command_arrow_rejects_more_than_three_destinations() {
+    let output = check_script(r#"command "printf hello" -> $out, $err, $code, $extra"#);
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("line 1"));
+    assert!(stderr(&output).contains("at most 3 destinations"));
+}
+
+#[test]
 fn old_capture_syntax_is_rejected() {
     let output = run_script(r#"capture $out, "printf hello""#);
 
@@ -279,11 +463,14 @@ fn old_capture_syntax_is_rejected() {
 
 #[test]
 fn command_arrow_rejects_constant_destination() {
-    let output = run_script(r#"command "pwd" -> $$CWD"#);
-
-    assert!(!output.status.success());
-    assert!(stderr(&output).contains("line 1"));
-    assert!(stderr(&output).contains("destination must be a variable"));
+    for output in [
+        run_script(r#"command "pwd" -> $$CWD"#),
+        check_script(r#"command "pwd" -> $out, $$ERR, $code"#),
+    ] {
+        assert!(!output.status.success());
+        assert!(stderr(&output).contains("line 1"));
+        assert!(stderr(&output).contains("destination must be a variable"));
+    }
 }
 
 #[test]
@@ -293,6 +480,8 @@ fn command_arrow_rejects_malformed_destination() {
         r#"command "printf hello" -> out"#,
         r#"command "printf hello" -> $9out"#,
         r#"command "printf hello" -> $out extra"#,
+        r#"command "printf hello" -> $out, err, $code"#,
+        r#"command "printf hello" -> $out, $err, $9code"#,
         r#"command "printf hello" - $out"#,
     ] {
         let output = run_script(source);
@@ -824,6 +1013,126 @@ fn conditional_errors_cover_structure_and_unsupported_expressions() {
             "stderr did not contain {expected:?}: {}",
             stderr(&output)
         );
+    }
+}
+
+#[test]
+fn case_blocks_cover_matching_else_no_match_multiple_and_first_match() {
+    let output = run_script(
+        r#"
+$color = "blue"
+case $color
+    when "red"
+        shellout "red"
+    when "blue"
+        shellout "blue"
+    else
+        shellout "fallback"
+end
+case "missing"
+    when "other"
+        shellout "bad"
+    else
+        shellout "else"
+end
+case "none"
+    when "other"
+        shellout "bad"
+end
+case "b"
+    when "a", "b", "c"
+        shellout "multi"
+end
+case "same"
+    when "same"
+        shellout "first"
+    when "same"
+        shellout "second"
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "blue\nelse\nmulti\nfirst\n");
+}
+
+#[test]
+fn case_blocks_match_numbers_booleans_constants_variables_and_nested_blocks() {
+    let output = run_script(
+        r#"
+$count = 2
+$enabled = true
+$$MODE = "prod"
+case $count
+    when 1
+        shellout "one"
+    when 1 + 1
+        shellout "two"
+end
+case $enabled
+    when false
+        shellout "disabled"
+    when true
+        shellout "enabled"
+end
+case $$MODE
+    when "prod"
+        if $enabled
+            shellout "prod-if"
+        end
+        case $count
+            when 2
+                shellout "nested-case"
+        end
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "two\nenabled\nprod-if\nnested-case\n");
+}
+
+#[test]
+fn check_accepts_valid_case_syntax() {
+    let output = check_script(
+        r#"
+case "a"
+    when "a", "b"
+        shellout "ok"
+    else
+        shellout "fallback"
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+}
+
+#[test]
+fn case_errors_cover_malformed_forms() {
+    for (source, expected) in [
+        ("case\n    when \"a\"\nend\n", "case value required"),
+        ("when \"a\"\n", "when outside case"),
+        (
+            "case \"a\"\n    when \"a\"\n    else\n    else\nend\n",
+            "duplicate else",
+        ),
+        (
+            "case \"a\"\n    else\n    when \"a\"\nend\n",
+            "when after else",
+        ),
+        ("case \"a\"\n    when\nend\n", "when value required"),
+        ("case \"a\"\n    when \"a\"\n", "missing end for case"),
+        ("case \"a\"\nend\n", "case requires at least one when"),
+    ] {
+        for output in [run_script(source), check_script(source)] {
+            assert!(!output.status.success(), "source succeeded: {source}");
+            assert!(
+                stderr(&output).contains(expected),
+                "stderr did not contain {expected:?}: {}",
+                stderr(&output)
+            );
+        }
     }
 }
 
@@ -2830,12 +3139,124 @@ fn check_accepts_log_blocks_and_rejects_missing_identifier_or_end() {
     assert!(stderr(&missing_end).contains("missing end for log"));
 }
 
+#[test]
+fn script_arguments_support_positionals_flags_and_iteration() {
+    let script = write_script(
+        r#"
+arg 1 -> $name
+arg 3 -> $missing
+hasArg "--dry-run" -> $dryRun
+hasArg "--force" -> $force
+args -> $all
+shellout "name=$name missing=<$missing> dry=$dryRun force=$force"
+for $item in $all
+    shellout "arg:$item"
+end
+"#,
+    );
+
+    let output = run_script_path_with_args(script, &["Ada", "--dry-run"]);
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "name=Ada missing=<> dry=true force=false\narg:Ada\narg:--dry-run\n"
+    );
+}
+
+#[test]
+fn script_argument_index_can_use_numeric_expression_or_variable() {
+    let output = run_script_with_args(
+        r#"
+$which = 1 + 1
+arg $which -> $value
+hasArg $value -> $found
+shellout "$value/$found"
+"#,
+        &["first", "second"],
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "second/true\n");
+}
+
+#[test]
+fn check_accepts_script_argument_syntax_and_rejects_bad_forms() {
+    let valid = check_script(
+        r#"
+arg 1 -> $name
+hasArg "--dry-run" -> $dryRun
+args -> $all
+"#,
+    );
+    assert!(valid.status.success(), "stderr: {}", stderr(&valid));
+
+    for (source, expected) in [
+        ("arg 0 -> $name\n", "arg index must be a positive integer"),
+        ("arg -1 -> $name\n", "arg index must be a positive integer"),
+        (
+            "arg \"one\" -> $name\n",
+            "arg index must be a positive integer",
+        ),
+        ("arg 1\n", "arg syntax is arg N -> $var"),
+        ("arg 1 -> $$NAME\n", "arg destination must be a variable"),
+        ("arg 1 -> name\n", "arg destination must be a variable"),
+        (
+            "arg 1 -> $name extra\n",
+            "arg destination must be a variable",
+        ),
+        ("hasArg -> $found\n", "hasArg value required"),
+        (
+            "hasArg \"x\" -> $$FOUND\n",
+            "hasArg destination must be a variable",
+        ),
+        ("args\n", "args syntax is args -> $var"),
+        ("args -> $$ALL\n", "args destination must be a variable"),
+    ] {
+        let output = check_script(source);
+        assert!(!output.status.success(), "source should fail: {source}");
+        assert!(
+            stderr(&output).contains(expected),
+            "stderr did not contain {expected:?}: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
+fn runtime_rejects_script_argument_index_expressions_that_are_not_positive_integers() {
+    for (source, expected) in [
+        (
+            "$which = 0\narg $which -> $value\n",
+            "arg index must be a positive integer",
+        ),
+        (
+            "arg 1.5 -> $value\n",
+            "arg index must be a positive integer",
+        ),
+        (
+            "arg missing -> $value\n",
+            "arg index must be a positive integer",
+        ),
+    ] {
+        let output = run_script(source);
+        assert!(!output.status.success(), "source succeeded: {source}");
+        assert!(stderr(&output).contains("line"));
+        assert!(
+            stderr(&output).contains(expected),
+            "stderr: {}",
+            stderr(&output)
+        );
+    }
+}
+
 fn run_script(source: &str) -> std::process::Output {
+    run_script_with_args(source, &[])
+}
+
+fn run_script_with_args(source: &str, args: &[&str]) -> std::process::Output {
     let script = write_script(source);
-    Command::new(env!("CARGO_BIN_EXE_shelly"))
-        .arg(script)
-        .output()
-        .expect("run shelly binary")
+    run_script_path_with_args(script, args)
 }
 
 fn run_script_with_stdin(source: &str, input: &[u8]) -> std::process::Output {
@@ -2873,8 +3294,13 @@ fn write_script(source: &str) -> std::path::PathBuf {
 }
 
 fn run_script_path(path: std::path::PathBuf) -> std::process::Output {
+    run_script_path_with_args(path, &[])
+}
+
+fn run_script_path_with_args(path: std::path::PathBuf, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_shelly"))
         .arg(path)
+        .args(args)
         .output()
         .expect("run shelly binary")
 }
@@ -2905,6 +3331,90 @@ fn read_single_log(dir: &std::path::Path, prefix: &str) -> String {
         .collect();
     assert_eq!(matches.len(), 1, "expected one log matching {prefix}");
     fs::read_to_string(&matches[0]).expect("read log")
+}
+
+#[test]
+fn json_helpers_nested_lists_dictionaries_and_null() {
+    let output = run_script(
+        r#"
+$text = "{\"users\":[{\"name\":\"Ada\",\"role\":\"admin\"},{\"name\":\"Luis\",\"role\":\"user\"}],\"matrix\":[[1,2],[3,4]],\"empty\":null}"
+jsonParse $text -> $data
+shellout $data.users[1].name
+shellout $data.matrix[2][1]
+shellout "null=$data.empty"
+jsonStringify $data -> $json
+jsonParse $json -> $again
+shellout $again.users[2].role
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "Ada\n3\nnull=\nuser\n");
+}
+
+#[test]
+fn dictionary_helpers_return_key_ordered_nested_values() {
+    let output = run_script(
+        r#"
+$data = { b: [2, 1], a: { name: "Ada" } }
+keys $data -> $keys
+values $data -> $values
+shellout $keys
+shellout $values[1].name
+shellout $values[2][1]
+isDict $values[1] -> $ok
+shellout $ok
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "[a, b]\nAda\n2\ntrue\n");
+}
+
+#[test]
+fn nested_list_and_dictionary_access_interpolates() {
+    let output = run_script(
+        r#"
+$users = [{ name: "Ada", role: "admin" }, { name: "Luis", role: "user" }]
+$matrix = [[1, 2], [3, 4]]
+shellout $users[1].name
+shellout $matrix[2][1]
+shellout "name=$users[2].name cell=$matrix[1][2]"
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "Ada\n3\nname=Luis cell=2\n");
+}
+
+#[test]
+fn scalar_list_helpers_still_work_and_nested_limitations_are_clear() {
+    let output = run_script(
+        r#"
+$items = ["b", "a", "b"]
+sort $items -> $sorted
+unique $sorted -> $unique
+join $unique "," -> $joined
+shellout $joined
+$nested = [[2], [1]]
+sort $nested -> $nope
+"#,
+    );
+
+    assert!(!output.status.success());
+    assert!(stdout(&output).contains("a,b"));
+    assert!(stderr(&output).contains("sort requires a scalar list"));
+}
+
+#[test]
+fn json_helper_checker_and_runtime_errors_are_clear() {
+    let checked = check_script("jsonParse \"{}\" -> name\n");
+    assert!(!checked.status.success());
+    assert!(stderr(&checked).contains("jsonParse destination must be a variable"));
+
+    let output = run_script("jsonParse \"{\" -> $value\n");
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("jsonParse failed"));
 }
 
 fn stdout(output: &std::process::Output) -> String {

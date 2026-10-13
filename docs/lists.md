@@ -15,8 +15,7 @@ $mixed = ["Ana", 3, true]
 ## Rules
 
 - Empty list: `[]`.
-- Lists can contain strings, numbers, booleans, variables, and constants.
-- Nested lists are not supported yet.
+- Lists can contain strings, numbers, booleans, variables, constants, dictionaries, and other lists.
 - Indexing starts at `1`.
 - `first` and `last` are supported selectors.
 - Selectors can return one scalar or a new list.
@@ -80,3 +79,29 @@ shellout $queue[..]
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
+
+## Dictionaries and lists
+
+Dictionary values can contain lists, and lists can contain dictionaries:
+
+```shelly
+$user = { name: "Ada", tags: ["admin", "ops"] }
+$users = [{ name: "Ada" }, { name: "Luis" }]
+
+shellout $user.tags
+shellout $users[1].name
+```
+
+## Nested list values
+
+Lists can contain scalars, dictionaries, or other lists. Access chains can mix list brackets and dictionary dots.
+
+```shelly
+$users = [{ name: "Ada", role: "admin" }, { name: "Luis", role: "user" }]
+$matrix = [[1, 2], [3, 4]]
+shellout $users[1].name
+shellout $matrix[2][1]
+shellout "name=$users[2].name"
+```
+
+Selectors, ranges, `for`, and direct indexing preserve nested values. `join`, `sort`, `reverse`, `unique`, filters, and list mutations are scalar-list features; nested items are rejected with a clear scalar-list or mutation error.

@@ -17,16 +17,16 @@
 
 Shelly is a Bash 2.0 style shell and script runner for `.shelly` scripts.
 
-Small scripts. Clear syntax. One readable way to compose variables, commands, lists, blocks, functions, modules, and explicit exits.
+Small scripts. Clear syntax. One readable way to compose variables, commands, lists, dictionaries, blocks, functions, modules, and explicit exits.
 
 ## Latest release
 
-**v3.0.3** is the latest public-ready Shelly release.
+**v3.1.0** is the latest public-ready Shelly release.
 
 - Linux/macOS installer: `curl -fsSL https://raw.githubusercontent.com/Soyagvs/shelly/main/install.sh | sh`
 - Windows installer: `irm https://raw.githubusercontent.com/Soyagvs/shelly/main/install.ps1 | iex`
 - Release binaries are built for Linux x86_64, macOS Intel, macOS Apple Silicon, and Windows x86_64.
-- Language highlights: lists, selectors, filters, file commands/helpers, standard helpers, `for`, `while`, `repeat`, explicit `call`, function `return`, `break`, `continue`, logical `and` / `or` / `not` with grouped conditions, `exists` / `contains` predicates, modules, and `command` for system tools.
+- Language highlights: script arguments, nested lists, dictionaries, JSON helpers, `case`, file commands/helpers, standard helpers, `for`, `while`, `repeat`, explicit `call`, function `return`, `break`, `continue`, logical `and` / `or` / `not` with grouped conditions, `exists` / `contains` predicates, modules, and `command` with stdout/stderr/status capture.
 - Editor support: `shelly check` validates scripts safely without executing them, enabling VS Code diagnostics.
 - License: MIT.
 
@@ -105,8 +105,17 @@ if exists "README.md"
     shellout "README found"
 end
 
+case $answer
+    when "yes"
+        shellout "continuing"
+    else
+        shellout "stopping"
+end
+
 command "pwd" -> $cwd
+command "printf 'warning\n' >&2; exit 7" -> $out, $err, $code
 shellout "Running from $cwd"
+shellout "last command code: $code stderr: $err"
 exit 0
 ```
 
@@ -129,6 +138,8 @@ Start here: [`docs/language.md`](docs/language.md).
 | Strings | [`docs/strings.md`](docs/strings.md) |
 | Numeric expressions | [`docs/numeric-expressions.md`](docs/numeric-expressions.md) |
 | Lists | [`docs/lists.md`](docs/lists.md) |
+| Dictionaries | [`docs/dictionaries.md`](docs/dictionaries.md) |
+| JSON helpers | [`docs/json.md`](docs/json.md) |
 | Standard helpers | [`docs/helpers.md`](docs/helpers.md) |
 | Logging | [`docs/logging.md`](docs/logging.md) |
 | Files | [`docs/files.md`](docs/files.md) |
@@ -166,4 +177,19 @@ Start here: [`docs/language.md`](docs/language.md).
 cargo fmt --check
 cargo test
 printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly
+```
+
+
+### Script arguments
+
+Pass arguments after the script path and read them in Shelly:
+
+```sh
+shelly script.shelly Ada --dry-run
+```
+
+```shelly
+arg 1 -> $name
+hasArg "--dry-run" -> $dryRun
+args -> $all
 ```

@@ -19,7 +19,8 @@ use parser::{
 };
 use shell::{read_stdin_line, shell_command};
 use value::{
-    IdentKind, Value, compare_values, display_identifier, format_list, format_number, is_truthy,
+    IdentKind, Value, compare_values, display_identifier, format_number, format_value,
+    is_simple_key, is_truthy,
 };
 
 const WHILE_ITERATION_LIMIT: usize = 10_000;
@@ -49,7 +50,10 @@ fn main() {
                 Err(error) => Err(error),
             }
         }
-        Some(path) => run_script(PathBuf::from(path)),
+        Some(path) => {
+            let script_args = args.map(|arg| arg.to_string_lossy().into_owned()).collect();
+            run_script(PathBuf::from(path), script_args)
+        }
         None => {
             println!("Shelly is ready. Pass a .shelly script path to run it.");
             println!("Usage: shelly <script.shelly>");
@@ -239,6 +243,68 @@ fn normalize_multiline_strings(source: &str) -> Result<String, String> {
     Ok(out.join("\n"))
 }
 
+fn combine_dictionary_literals(lines: &[(usize, String)]) -> Result<Vec<(usize, String)>, String> {
+    let mut out = Vec::new();
+    let mut index = 0;
+    while index < lines.len() {
+        let (line_no, line) = &lines[index];
+        let trimmed = line.trim();
+        if trimmed.starts_with('$')
+            && trimmed.contains('=')
+            && trimmed
+                .split_once('=')
+                .is_some_and(|(_, rhs)| rhs.trim_start().starts_with('{'))
+        {
+            let mut combined = line.clone();
+            let mut depth = brace_delta(line)?;
+            while depth > 0 {
+                index += 1;
+                if index >= lines.len() {
+                    return Err(format!("line {line_no}: malformed dictionary literal"));
+                }
+                let next = lines[index].1.trim();
+                if !combined.trim_end().ends_with('{')
+                    && !combined.trim_end().ends_with(',')
+                    && next != "}"
+                {
+                    combined.push(',');
+                }
+                combined.push(' ');
+                combined.push_str(next);
+                depth += brace_delta(&lines[index].1)?;
+            }
+            out.push((*line_no, combined));
+        } else {
+            out.push((*line_no, line.clone()));
+        }
+        index += 1;
+    }
+    Ok(out)
+}
+
+fn brace_delta(input: &str) -> Result<i32, String> {
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut delta = 0;
+    for ch in input.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '{' if !in_string => delta += 1,
+            '}' if !in_string => delta -= 1,
+            _ => {}
+        }
+    }
+    if in_string {
+        return Err("unterminated string literal".to_string());
+    }
+    Ok(delta)
+}
+
 fn find_unquoted_triple_backtick(input: &str) -> Option<usize> {
     let mut in_string = false;
     let mut escaped = false;
@@ -287,6 +353,18 @@ fn check_source(source: &str, file: &str) -> Vec<Diagnostic> {
     };
     match strip_comments(&source) {
         Ok(lines) => {
+            let lines = match combine_dictionary_literals(&lines) {
+                Ok(lines) => lines,
+                Err(error) => {
+                    return vec![Diagnostic {
+                        file: file.to_string(),
+                        line: 1,
+                        column: 1,
+                        severity: "error",
+                        message: error,
+                    }];
+                }
+            };
             let mut checker = Checker::new(file.to_string());
             checker.check_lines(&lines);
             checker.diagnostics
@@ -301,13 +379,14 @@ fn check_source(source: &str, file: &str) -> Vec<Diagnostic> {
     }
 }
 
-fn run_script(path: PathBuf) -> Result<(), String> {
+fn run_script(path: PathBuf, script_args: Vec<String>) -> Result<(), String> {
     let path = path
         .canonicalize()
         .map_err(|error| format!("could not read script '{}': {error}", path.display()))?;
     let source = fs::read_to_string(&path)
         .map_err(|error| format!("could not read script '{}': {error}", path.display()))?;
     let mut interpreter = Interpreter::default();
+    interpreter.script_args = script_args;
     interpreter.current_dir = path.parent().map(PathBuf::from).unwrap_or_default();
     interpreter.stack.push(path);
     interpreter.run(&source)
@@ -322,6 +401,7 @@ struct Interpreter {
     stack: Vec<PathBuf>,
     imported: HashSet<PathBuf>,
     logs: Vec<LogContext>,
+    script_args: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -333,6 +413,7 @@ impl Interpreter {
     fn run(&mut self, source: &str) -> Result<(), String> {
         let source = normalize_multiline_strings(source)?;
         let lines = strip_comments(&source)?;
+        let lines = combine_dictionary_literals(&lines)?;
         match self.run_lines(&lines) {
             Err(error) if is_break_signal(&error) => Err("break outside loop".to_string()),
             Err(error) if is_continue_signal(&error) => Err("continue outside loop".to_string()),
@@ -376,6 +457,19 @@ impl Interpreter {
                 let (function, next_index) = parse_function(rest.trim(), lines, index)
                     .map_err(|error| line_error(line_no, error))?;
                 self.define_function(function, line_no)?;
+                index = next_index;
+                continue;
+            }
+            if line == "case" {
+                return Err(format!("line {line_no}: case value required"));
+            }
+            if line == "when" || line.starts_with("when ") {
+                return Err(format!("line {line_no}: when outside case"));
+            }
+            if let Some(value) = line.strip_prefix("case ") {
+                let next_index = self
+                    .run_case(value.trim(), lines, index)
+                    .map_err(|error| line_error(line_no, error))?;
                 index = next_index;
                 continue;
             }
@@ -436,7 +530,10 @@ impl Interpreter {
                 index = next_index;
                 continue;
             }
-            if matches!(line, "elif" | "else" | "catch" | "end") || line.starts_with("elif ") {
+            if matches!(line, "elif" | "else" | "catch" | "end" | "when")
+                || line.starts_with("elif ")
+                || line.starts_with("when ")
+            {
                 return Err(format!("line {line_no}: unexpected conditional marker"));
             }
             self.run_line(line, line_no)
@@ -514,6 +611,31 @@ impl Interpreter {
             index += 1;
         }
         Err("missing end for if".to_string())
+    }
+
+    fn run_case(
+        &mut self,
+        value_expr: &str,
+        lines: &[(usize, String)],
+        start: usize,
+    ) -> Result<usize, String> {
+        if value_expr.is_empty() {
+            return Err("case value required".to_string());
+        }
+        let case_value = self.eval_expr(value_expr)?;
+        let (branches, else_body, next_index) = collect_case_block(lines, start)?;
+        for (values, body) in branches {
+            for value in values {
+                if self.eval_expr(&value)? == case_value {
+                    self.run_lines(&body)?;
+                    return Ok(next_index);
+                }
+            }
+        }
+        if let Some(body) = else_body {
+            self.run_lines(&body)?;
+        }
+        Ok(next_index)
     }
 
     fn run_repeat(
@@ -596,11 +718,13 @@ impl Interpreter {
         let (body, next_index) = collect_block(lines, start, "for")?;
         let values = match self.eval_expr_value(&iterable)? {
             Value::List(values) => values,
-            Value::Scalar(_) => return Err("for iterable must be a list".to_string()),
+            Value::Scalar(_) | Value::Dict(_) => {
+                return Err("for iterable must be a list".to_string());
+            }
         };
 
         for value in values {
-            self.vars.insert(item_name.clone(), Value::Scalar(value));
+            self.vars.insert(item_name.clone(), value);
             match self.run_lines(&body) {
                 Ok(()) => {}
                 Err(error) if is_continue_signal(&error) => continue,
@@ -745,6 +869,15 @@ impl Interpreter {
     }
 
     fn run_line(&mut self, line: &str, line_no: usize) -> Result<(), String> {
+        if let Some(rest) = line.strip_prefix("arg ") {
+            return self.capture_arg(rest.trim());
+        }
+        if let Some(rest) = line.strip_prefix("hasArg ") {
+            return self.capture_has_arg(rest.trim());
+        }
+        if let Some(rest) = line.strip_prefix("args") {
+            return self.capture_args(rest.trim());
+        }
         if let Some(rest) = line.strip_prefix("import ") {
             return self.import_file(rest.trim(), line_no);
         }
@@ -808,11 +941,18 @@ impl Interpreter {
         }
         if let Some(rest) = line.strip_prefix("remove ") {
             let rest = rest.trim();
-            if rest.trim_start().starts_with('"') || !looks_like_list_mutation_target(rest) {
+            if rest.trim_start().starts_with('"') {
                 self.log_action(&format!("remove: {}", rest));
                 return self.remove_path(rest);
             }
-            return self.remove_list_item(rest);
+            if self.looks_like_dict_remove_target(rest) {
+                return self.remove_dict_item(rest);
+            }
+            if looks_like_list_mutation_target(rest) {
+                return self.remove_list_item(rest);
+            }
+            self.log_action(&format!("remove: {}", rest));
+            return self.remove_path(rest);
         }
         if line == "break" {
             return Err(break_signal());
@@ -884,7 +1024,7 @@ impl Interpreter {
             }
             println!("{question}");
             for (index, option) in options.iter().enumerate() {
-                println!("{}) {option}", index + 1);
+                println!("{}) {}", index + 1, format_value(option));
             }
             loop {
                 print!("Choose: ");
@@ -894,13 +1034,12 @@ impl Interpreter {
                 let input = read_stdin_line()?;
                 if let Ok(index) = input.parse::<usize>() {
                     if (1..=options.len()).contains(&index) {
-                        self.vars
-                            .insert(destination, Value::Scalar(options[index - 1].clone()));
+                        self.vars.insert(destination, options[index - 1].clone());
                         return Ok(());
                     }
                 }
-                if let Some(option) = options.iter().find(|option| *option == &input) {
-                    self.vars.insert(destination, Value::Scalar(option.clone()));
+                if let Some(option) = options.iter().find(|option| format_value(option) == input) {
+                    self.vars.insert(destination, option.clone());
                     return Ok(());
                 }
             }
@@ -936,27 +1075,34 @@ impl Interpreter {
                 }
                 return Ok(());
             }
-            let Some(destination) = tail.strip_prefix("->") else {
-                return Err("command capture syntax is command \"...\" -> $var".to_string());
+            let Some(destination_text) = tail.strip_prefix("->") else {
+                return Err(command_capture_syntax_error());
             };
-            let (kind, name, extra) = parse_identifier(destination.trim())
-                .map_err(|_| "command capture destination must be a variable".to_string())?;
-            if kind != IdentKind::Variable || !extra.trim().is_empty() {
-                return Err("command capture destination must be a variable".to_string());
-            }
+            let destinations = parse_command_capture_destinations(destination_text.trim())?;
             self.log_action(&format!("command: {command}"));
             let output = shell_command(&command)
                 .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
                 .output()
                 .map_err(|error| format!("failed to capture command: {error}"))?;
-            if !output.status.success() {
-                return Err(format!("command exited with status {}", output.status));
+            match destinations.as_slice() {
+                [stdout_name] => {
+                    if !output.status.success() {
+                        return Err(format!("command exited with status {}", output.status));
+                    }
+                    let value = command_output_to_string(output.stdout, "output")?;
+                    self.vars.insert(stdout_name.clone(), Value::Scalar(value));
+                }
+                [stdout_name, stderr_name, code_name] => {
+                    let stdout = command_output_to_string(output.stdout, "stdout")?;
+                    let stderr = command_output_to_string(output.stderr, "stderr")?;
+                    let code = output.status.code().unwrap_or(1).to_string();
+                    self.vars.insert(stdout_name.clone(), Value::Scalar(stdout));
+                    self.vars.insert(stderr_name.clone(), Value::Scalar(stderr));
+                    self.vars.insert(code_name.clone(), Value::Scalar(code));
+                }
+                _ => unreachable!("command destination count is validated"),
             }
-            let value = String::from_utf8(output.stdout)
-                .map_err(|error| format!("command output was not UTF-8: {error}"))?
-                .trim_end_matches(['\r', '\n'])
-                .to_string();
-            self.vars.insert(name, Value::Scalar(value));
             return Ok(());
         }
         if line.starts_with("capture") {
@@ -976,6 +1122,60 @@ impl Interpreter {
         Err(format!("unknown command or invalid syntax: {line}"))
     }
 
+    fn capture_arg(&mut self, text: &str) -> Result<(), String> {
+        let (index_text, destination) = parse_arg_capture(text)?;
+        let index = self.eval_arg_index(index_text)?;
+        let value = self.script_args.get(index - 1).cloned().unwrap_or_default();
+        self.vars.insert(destination, Value::Scalar(value));
+        Ok(())
+    }
+
+    fn capture_has_arg(&mut self, text: &str) -> Result<(), String> {
+        let (value_text, destination) = parse_has_arg_capture(text)?;
+        let needle = self.eval_value(value_text)?;
+        let found = self.script_args.iter().any(|arg| arg == &needle);
+        self.vars
+            .insert(destination, Value::Scalar(found.to_string()));
+        Ok(())
+    }
+
+    fn capture_args(&mut self, text: &str) -> Result<(), String> {
+        let destination = parse_args_capture(text)?;
+        self.vars.insert(
+            destination,
+            Value::List(
+                self.script_args
+                    .iter()
+                    .cloned()
+                    .map(Value::Scalar)
+                    .collect(),
+            ),
+        );
+        Ok(())
+    }
+
+    fn eval_arg_index(&self, expr: &str) -> Result<usize, String> {
+        let expr = expr.trim();
+        if expr.is_empty() {
+            return Err("arg index must be a positive integer".to_string());
+        }
+        if expr.starts_with('"') || expr.starts_with('[') || matches!(expr, "true" | "false") {
+            return Err("arg index must be a positive integer".to_string());
+        }
+        let mut parser = NumericParser::new(expr, self);
+        let value = parser
+            .parse_expr()
+            .map_err(|_| "arg index must be a positive integer".to_string())?;
+        parser.skip_ws();
+        if !parser.is_at_end() {
+            return Err("arg index must be a positive integer".to_string());
+        }
+        if value.fract() != 0.0 || value < 1.0 {
+            return Err("arg index must be a positive integer".to_string());
+        }
+        Ok(value as usize)
+    }
+
     fn resolve_user_path(&self, raw: &str) -> PathBuf {
         self.current_dir.join(raw)
     }
@@ -988,7 +1188,7 @@ impl Interpreter {
         if text.starts_with('$') {
             return match self.eval_expr_value(text).map_err(|_| error.to_string())? {
                 Value::Scalar(value) => Ok(value),
-                Value::List(_) => Err(error.to_string()),
+                Value::List(_) | Value::Dict(_) => Err(error.to_string()),
             };
         }
         self.eval_expr(text).map_err(|_| error.to_string())
@@ -1449,7 +1649,13 @@ impl Interpreter {
     fn assignment(&mut self, line: &str, _line_no: usize) -> Result<(), String> {
         let (kind, name, rest) = parse_identifier(line)?;
         let rest = rest.trim_start();
+        if rest.starts_with('.') {
+            return self.replace_dict_item(kind, &name, rest);
+        }
         if rest.starts_with('[') {
+            if matches!(self.lookup_value(kind, &name), Ok(Value::Dict(_))) {
+                return self.replace_dict_item(kind, &name, rest);
+            }
             return self.replace_list_item(kind, &name, rest);
         }
         if rest.is_empty() {
@@ -1500,8 +1706,10 @@ impl Interpreter {
             return Err("mutation target must be a variable list".to_string());
         }
         let value = match self.eval_value_kind(args[1])? {
-            Value::Scalar(value) => value,
-            Value::List(_) => return Err("nested lists are not supported yet".to_string()),
+            Value::Scalar(value) => Value::Scalar(value),
+            Value::List(_) | Value::Dict(_) => {
+                return Err("nested lists are not supported yet".to_string());
+            }
         };
         let target = self
             .vars
@@ -1516,7 +1724,7 @@ impl Interpreter {
                 }
                 Ok(())
             }
-            Value::Scalar(_) => Err("mutation target must be a list".to_string()),
+            Value::Scalar(_) | Value::Dict(_) => Err("mutation target must be a list".to_string()),
         }
     }
 
@@ -1527,7 +1735,9 @@ impl Interpreter {
         }
         let len = match self.vars.get(&name) {
             Some(Value::List(values)) => values.len(),
-            Some(Value::Scalar(_)) => return Err("mutation target must be a list".to_string()),
+            Some(Value::Scalar(_)) | Some(Value::Dict(_)) => {
+                return Err("mutation target must be a list".to_string());
+            }
             None => return Err(format!("undefined variable ${name}")),
         };
         let index = self.parse_mutation_index(len, selector.trim(), &format!("${name}"))?;
@@ -1556,19 +1766,62 @@ impl Interpreter {
         let selector = &selector[1..selector.len() - 1];
         let len = match self.vars.get(name) {
             Some(Value::List(values)) => values.len(),
-            Some(Value::Scalar(_)) => return Err("mutation target must be a list".to_string()),
+            Some(Value::Scalar(_)) | Some(Value::Dict(_)) => {
+                return Err("mutation target must be a list".to_string());
+            }
             None => return Err(format!("undefined variable ${name}")),
         };
         let index = self.parse_mutation_index(len, selector.trim(), &format!("${name}"))?;
         let value = match self.eval_value_kind(value_text.trim())? {
-            Value::Scalar(value) => value,
-            Value::List(_) => return Err("nested lists are not supported yet".to_string()),
+            Value::Scalar(value) => Value::Scalar(value),
+            Value::List(_) | Value::Dict(_) => {
+                return Err("nested lists are not supported yet".to_string());
+            }
         };
         let Value::List(values) = self.vars.get_mut(name).expect("checked list") else {
             unreachable!();
         };
         values[index - 1] = value;
         Ok(())
+    }
+
+    fn replace_dict_item(&mut self, kind: IdentKind, name: &str, rest: &str) -> Result<(), String> {
+        if kind != IdentKind::Variable {
+            return Err("mutation target must be a variable dictionary".to_string());
+        }
+        let (path_text, value_text) = rest
+            .rsplit_once('=')
+            .ok_or_else(|| "unexpected text after identifier".to_string())?;
+        let keys = self.resolve_dict_path(path_text.trim())?;
+        let value = self.eval_value_kind(value_text.trim())?;
+        let target = self
+            .vars
+            .get_mut(name)
+            .ok_or_else(|| format!("undefined variable ${name}"))?;
+        replace_nested_dict_value(target, &keys, value, &format!("${name}"))
+    }
+
+    fn remove_dict_item(&mut self, target: &str) -> Result<(), String> {
+        let (kind, name, rest) = parse_identifier(target)?;
+        if kind != IdentKind::Variable {
+            return Err("mutation target must be a variable dictionary".to_string());
+        }
+        let keys = self.resolve_dict_path(rest.trim())?;
+        let target = self
+            .vars
+            .get_mut(&name)
+            .ok_or_else(|| format!("undefined variable ${name}"))?;
+        remove_nested_dict_value(target, &keys, &format!("${name}"))
+    }
+
+    fn looks_like_dict_remove_target(&self, target: &str) -> bool {
+        let Ok((kind, name, rest)) = parse_identifier(target) else {
+            return false;
+        };
+        if kind != IdentKind::Variable || rest.trim().is_empty() {
+            return false;
+        }
+        rest.trim().starts_with('.') || matches!(self.lookup_value(kind, &name), Ok(Value::Dict(_)))
     }
 
     fn parse_mutation_target<'a>(
@@ -1636,7 +1889,8 @@ impl Interpreter {
         let search = self.eval_value(search_text)?;
         match self.eval_expr_value(value_text)? {
             Value::Scalar(value) => Ok(value.contains(&search)),
-            Value::List(values) => Ok(values.iter().any(|value| value == &search)),
+            Value::List(values) => Ok(values.iter().any(|value| format_value(value) == search)),
+            Value::Dict(values) => Ok(values.contains_key(&search)),
         }
     }
 
@@ -1677,7 +1931,9 @@ impl Interpreter {
                 let items = if text.is_empty() {
                     Vec::new()
                 } else {
-                    text.split(&sep).map(ToString::to_string).collect()
+                    text.split(&sep)
+                        .map(|item| Value::Scalar(item.to_string()))
+                        .collect()
                 };
                 Value::List(items)
             }
@@ -1697,6 +1953,7 @@ impl Interpreter {
                 let len = match self.eval_expr_value(args[0])? {
                     Value::Scalar(v) => v.chars().count(),
                     Value::List(v) => v.len(),
+                    Value::Dict(v) => v.len(),
                 };
                 Value::Scalar(len.to_string())
             }
@@ -1705,23 +1962,25 @@ impl Interpreter {
                 let Value::List(items) = self.eval_expr_value(args[0])? else {
                     return Err("join requires a list".to_string());
                 };
+                let items = scalar_list(name, &items)?;
                 Value::Scalar(items.join(&self.eval_value(args[1])?))
             }
             "sort" | "reverse" | "unique" => {
                 expect_arg_count(name, &args, 1)?;
-                let Value::List(mut items) = self.eval_expr_value(args[0])? else {
+                let Value::List(items) = self.eval_expr_value(args[0])? else {
                     return Err(format!("{name} requires a list"));
                 };
+                let mut scalars = scalar_list(name, &items)?;
                 match name {
-                    "sort" => items.sort(),
-                    "reverse" => items.reverse(),
+                    "sort" => scalars.sort(),
+                    "reverse" => scalars.reverse(),
                     "unique" => {
                         let mut seen = HashSet::new();
-                        items.retain(|item| seen.insert(item.clone()));
+                        scalars.retain(|item| seen.insert(item.clone()));
                     }
                     _ => {}
                 }
-                Value::List(items)
+                Value::List(scalars.into_iter().map(Value::Scalar).collect())
             }
             "toNumber" => {
                 expect_arg_count(name, &args, 1)?;
@@ -1741,15 +2000,17 @@ impl Interpreter {
                     match self.eval_expr_value(args[0])? {
                         Value::Scalar(v) => v.is_empty(),
                         Value::List(v) => v.is_empty(),
+                        Value::Dict(v) => v.is_empty(),
                     }
                     .to_string(),
                 )
             }
-            "isNumber" | "isText" | "isList" => {
+            "isNumber" | "isText" | "isList" | "isDict" => {
                 expect_arg_count(name, &args, 1)?;
                 let value = self.eval_expr_value(args[0])?;
                 let ok = match (name, value) {
                     ("isList", Value::List(_)) => true,
+                    ("isDict", Value::Dict(_)) => true,
                     ("isNumber", Value::Scalar(v)) => v.parse::<f64>().is_ok(),
                     ("isText", Value::Scalar(v)) => {
                         v.parse::<f64>().is_err() && v != "true" && v != "false"
@@ -1757,6 +2018,32 @@ impl Interpreter {
                     _ => false,
                 };
                 Value::Scalar(ok.to_string())
+            }
+            "keys" => {
+                expect_arg_count(name, &args, 1)?;
+                let Value::Dict(values) = self.eval_expr_value(args[0])? else {
+                    return Err("keys requires a dictionary".to_string());
+                };
+                Value::List(values.keys().cloned().map(Value::Scalar).collect())
+            }
+            "values" => {
+                expect_arg_count(name, &args, 1)?;
+                let Value::Dict(values) = self.eval_expr_value(args[0])? else {
+                    return Err("values requires a dictionary".to_string());
+                };
+                Value::List(values.values().cloned().collect())
+            }
+            "jsonParse" => {
+                expect_arg_count(name, &args, 1)?;
+                let raw = self.eval_value(args[0])?;
+                json_to_value(
+                    serde_json::from_str(&raw)
+                        .map_err(|error| format!("jsonParse failed: {error}"))?,
+                )
+            }
+            "jsonStringify" => {
+                expect_arg_count(name, &args, 1)?;
+                Value::Scalar(value_to_json(&self.eval_expr_value(args[0])?).to_string())
             }
             "basename" | "dirname" | "extension" | "withoutExtension" => {
                 expect_arg_count(name, &args, 1)?;
@@ -1801,7 +2088,10 @@ impl Interpreter {
         let (pattern_text, destination) = parse_files_capture(text)?;
         let pattern = self.eval_string(pattern_text)?;
         let matches = glob_files(&self.current_dir, &pattern)?;
-        self.vars.insert(destination, Value::List(matches));
+        self.vars.insert(
+            destination,
+            Value::List(matches.into_iter().map(Value::Scalar).collect()),
+        );
         Ok(())
     }
 
@@ -1875,6 +2165,7 @@ impl Interpreter {
         match self.eval_expr_value(condition)? {
             Value::Scalar(value) => Ok(is_truthy(&value)),
             Value::List(values) => Ok(!values.is_empty()),
+            Value::Dict(values) => Ok(!values.is_empty()),
         }
     }
 
@@ -1886,8 +2177,8 @@ impl Interpreter {
             if rest.is_empty() {
                 return Ok(self.lookup_value(kind, &name)?.clone());
             }
-            if rest.starts_with('[') {
-                return self.eval_index_value(kind, &name, rest);
+            if rest.starts_with('.') || rest.starts_with('[') {
+                return self.eval_access_value(kind, &name, rest);
             }
             if looks_like_numeric_expr(expr) {
                 return Ok(Value::Scalar(self.eval_numeric_expr(expr)?));
@@ -1903,13 +2194,10 @@ impl Interpreter {
             let (kind, name, rest) = parse_identifier(expr)?;
             let rest = rest.trim();
             if rest.is_empty() {
-                return match self.lookup_value(kind, &name)? {
-                    Value::Scalar(value) => Ok(value.clone()),
-                    Value::List(values) => Ok(format_list(values)),
-                };
+                return Ok(format_value(self.lookup_value(kind, &name)?));
             }
-            if rest.starts_with('[') {
-                return self.eval_index(kind, &name, rest);
+            if rest.starts_with('.') || rest.starts_with('[') {
+                return Ok(format_value(&self.eval_access_value(kind, &name, rest)?));
             }
             if looks_like_numeric_expr(expr) {
                 return self.eval_numeric_expr(expr);
@@ -1923,6 +2211,7 @@ impl Interpreter {
         match self.eval_value_kind(text)? {
             Value::Scalar(value) => Ok(value),
             Value::List(_) => Err("cannot use list as scalar value".to_string()),
+            Value::Dict(_) => Err("cannot use dictionary as scalar value".to_string()),
         }
     }
 
@@ -1930,6 +2219,9 @@ impl Interpreter {
         let text = text.trim();
         if text.starts_with('[') {
             return self.eval_list(text);
+        }
+        if text.starts_with('{') {
+            return self.eval_dict(text);
         }
         if text.starts_with('"') {
             return Ok(Value::Scalar(self.eval_string(text)?));
@@ -1961,45 +2253,114 @@ impl Interpreter {
             return Ok(Value::List(Vec::new()));
         }
         let mut values = Vec::new();
-        for item in split_commas(inner)? {
-            match self.eval_value_kind(item)? {
-                Value::Scalar(value) => values.push(value),
-                Value::List(_) => return Err("nested lists are not supported yet".to_string()),
-            }
+        for item in split_top_level_commas(inner)? {
+            values.push(self.eval_value_kind(item)?);
         }
         Ok(Value::List(values))
     }
 
-    fn eval_index(&self, kind: IdentKind, name: &str, rest: &str) -> Result<String, String> {
-        match self.eval_index_value(kind, name, rest)? {
-            Value::Scalar(value) => Ok(value),
-            Value::List(values) => Ok(format_list(&values)),
+    fn eval_dict(&self, text: &str) -> Result<Value, String> {
+        let text = text.trim();
+        if !text.ends_with('}') {
+            return Err("malformed dictionary literal".to_string());
         }
+        let inner = &text[1..text.len() - 1];
+        let mut values = std::collections::BTreeMap::new();
+        if inner.trim().is_empty() {
+            return Ok(Value::Dict(values));
+        }
+        for item in split_top_level_commas(inner)? {
+            let (key_text, value_text) = split_dict_entry(item)?;
+            let key = if key_text.trim().starts_with('"') {
+                parse_string_literal(key_text.trim())?
+            } else {
+                let key = key_text.trim();
+                if !is_simple_key(key) {
+                    return Err("dictionary key must be an identifier or quoted string".to_string());
+                }
+                key.to_string()
+            };
+            values.insert(key, self.eval_value_kind(value_text.trim())?);
+        }
+        Ok(Value::Dict(values))
     }
 
-    fn eval_index_value(&self, kind: IdentKind, name: &str, rest: &str) -> Result<Value, String> {
-        if !rest.ends_with(']') || rest.matches('[').count() != 1 || rest.matches(']').count() != 1
-        {
-            return Err("malformed list index syntax".to_string());
+    fn eval_access_value(&self, kind: IdentKind, name: &str, rest: &str) -> Result<Value, String> {
+        let mut current = self.lookup_value(kind, name)?.clone();
+        let mut path = display_identifier(kind, name);
+        let mut remaining = rest.trim();
+        while !remaining.is_empty() {
+            if let Some(after_dot) = remaining.strip_prefix('.') {
+                let key_len = after_dot
+                    .chars()
+                    .take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+                    .map(char::len_utf8)
+                    .sum::<usize>();
+                if key_len == 0 {
+                    return Err(
+                        "invalid dot key; use bracket access for non-identifier keys".to_string(),
+                    );
+                }
+                let key = &after_dot[..key_len];
+                match current {
+                    Value::Dict(values) => {
+                        current = values
+                            .get(key)
+                            .cloned()
+                            .ok_or_else(|| format!("missing key '{key}' in {path}"))?;
+                        path.push_str(&format!(".{key}"));
+                    }
+                    Value::Scalar(_) | Value::List(_) => {
+                        return Err(format!("cannot access key on non-dictionary value {path}"));
+                    }
+                }
+                remaining = after_dot[key_len..].trim_start();
+            } else if remaining.starts_with('[') {
+                let end = matching_bracket_end(remaining)
+                    .map_err(|_| "malformed list index syntax".to_string())?;
+                let selector = remaining[1..end].trim();
+                if selector.is_empty() {
+                    return Err("malformed list index syntax".to_string());
+                }
+                current = match current {
+                    Value::List(values) => {
+                        self.eval_list_selector_value(kind, name, &values, selector)?
+                    }
+                    Value::Dict(values) => {
+                        let key = self.eval_value(selector)?;
+                        values
+                            .get(&key)
+                            .cloned()
+                            .ok_or_else(|| format!("missing key '{key}' in {path}"))?
+                    }
+                    Value::Scalar(_) => return Err(format!("cannot index non-list value {path}")),
+                };
+                path.push_str(&remaining[..=end]);
+                remaining = remaining[end + 1..].trim_start();
+            } else {
+                return Err("unexpected text after identifier".to_string());
+            }
         }
-        let selector = rest[1..rest.len() - 1].trim();
-        if selector.is_empty() {
-            return Err("malformed list index syntax".to_string());
+        Ok(current)
+    }
+
+    fn resolve_dict_path(&self, rest: &str) -> Result<Vec<String>, String> {
+        let parts = parse_dict_path(rest)?;
+        let mut keys = Vec::new();
+        for part in parts {
+            match part {
+                DictPathPart::Dot(key) => keys.push(key),
+                DictPathPart::Bracket(expr) => keys.push(self.eval_value(&expr)?),
+            }
         }
-        match self.lookup_value(kind, name)? {
-            Value::List(values) => self.eval_list_selector_value(kind, name, values, selector),
-            Value::Scalar(_) => Err(format!(
-                "cannot index non-list value {}",
-                display_identifier(kind, name)
-            )),
-        }
+        Ok(keys)
     }
 
     fn eval_list_selector_value(
         &self,
         kind: IdentKind,
         name: &str,
-        values: &[String],
+        values: &[Value],
         selector: &str,
     ) -> Result<Value, String> {
         if let Some((op, rhs)) = parse_filter(selector) {
@@ -2032,7 +2393,7 @@ impl Interpreter {
             return Ok(Value::List(values[start - 1..end].to_vec()));
         }
         let index = self.resolve_list_position(kind, name, values.len(), selector)?;
-        Ok(Value::Scalar(values[index - 1].clone()))
+        Ok(values[index - 1].clone())
     }
 
     fn resolve_list_position(
@@ -2090,10 +2451,10 @@ impl Interpreter {
 
     fn eval_list_filter(
         &self,
-        values: &[String],
+        values: &[Value],
         op: &str,
         rhs: &str,
-    ) -> Result<Vec<String>, String> {
+    ) -> Result<Vec<Value>, String> {
         let target = self.eval_value(rhs)?;
         if matches!(op, ">" | ">=" | "<" | "<=") {
             if rhs.trim().starts_with('"') {
@@ -2104,7 +2465,10 @@ impl Interpreter {
                 .map_err(|_| "ordered list filters require numeric comparison value".to_string())?;
             let mut selected = Vec::new();
             for item in values {
-                let item_num = item
+                let Value::Scalar(item_text) = item else {
+                    return Err("list filters require scalar items".to_string());
+                };
+                let item_num = item_text
                     .parse::<f64>()
                     .map_err(|_| "ordered list filters require numeric items".to_string())?;
                 let keep = match op {
@@ -2120,11 +2484,14 @@ impl Interpreter {
             }
             return Ok(selected);
         }
-        let selected: Vec<String> = values
+        let selected: Vec<Value> = values
             .iter()
-            .filter(|item| match op {
-                "==" => *item == &target,
-                "!=" => *item != &target,
+            .filter(|item| match item {
+                Value::Scalar(item) => match op {
+                    "==" => item == &target,
+                    "!=" => item != &target,
+                    _ => false,
+                },
                 _ => false,
             })
             .cloned()
@@ -2150,12 +2517,25 @@ impl Interpreter {
                 if rest_trim.starts_with('[') {
                     let leading_ws = rest.len() - rest_trim.len();
                     let index_tail = &rest[leading_ws..];
-                    let end = index_tail
-                        .find(']')
-                        .ok_or_else(|| "malformed list index syntax".to_string())?
-                        + 1;
-                    output.push_str(&self.eval_index(kind, &name, &index_tail[..end])?);
+                    let end = access_prefix_len(index_tail)?;
+                    output.push_str(&format_value(&self.eval_access_value(
+                        kind,
+                        &name,
+                        &index_tail[..end],
+                    )?));
                     index += consumed + leading_ws + end;
+                } else if rest_trim.starts_with('.') {
+                    let leading_ws = rest.len() - rest_trim.len();
+                    let key_len = access_prefix_len(rest_trim)? - 1;
+                    if key_len == 0 {
+                        return Err(
+                            "invalid dot key; use bracket access for non-identifier keys"
+                                .to_string(),
+                        );
+                    }
+                    let access = &rest[leading_ws..leading_ws + 1 + key_len];
+                    output.push_str(&format_value(&self.eval_access_value(kind, &name, access)?));
+                    index += consumed + leading_ws + 1 + key_len;
                 } else {
                     output.push_str(&self.lookup(kind, &name)?);
                     index = input.len() - rest.len();
@@ -2198,10 +2578,165 @@ impl Interpreter {
     fn lookup(&self, kind: IdentKind, name: &str) -> Result<String, String> {
         match self.lookup_value(kind, name)? {
             Value::Scalar(value) => Ok(value.clone()),
-            Value::List(_) => Err(format!(
-                "cannot use list {} as scalar value",
+            Value::List(_) | Value::Dict(_) => Err(format!(
+                "cannot use list/dictionary {} as scalar value",
                 display_identifier(kind, name)
             )),
+        }
+    }
+}
+
+enum DictPathPart {
+    Dot(String),
+    Bracket(String),
+}
+
+fn parse_dict_path(rest: &str) -> Result<Vec<DictPathPart>, String> {
+    let mut parts = Vec::new();
+    let mut index = 0;
+    let rest = rest.trim();
+    while index < rest.len() {
+        let tail = &rest[index..];
+        if let Some(after_dot) = tail.strip_prefix('.') {
+            let key_len = after_dot
+                .chars()
+                .take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+                .map(char::len_utf8)
+                .sum::<usize>();
+            if key_len == 0 {
+                return Err(
+                    "invalid dot key; use bracket access for non-identifier keys".to_string(),
+                );
+            }
+            let key = &after_dot[..key_len];
+            if !is_simple_key(key) {
+                return Err(
+                    "invalid dot key; use bracket access for non-identifier keys".to_string(),
+                );
+            }
+            parts.push(DictPathPart::Dot(key.to_string()));
+            index += 1 + key_len;
+        } else if tail.starts_with('[') {
+            let end = matching_bracket_end(tail)?;
+            let expr = tail[1..end].trim();
+            if expr.is_empty() {
+                return Err("malformed dictionary key syntax".to_string());
+            }
+            parts.push(DictPathPart::Bracket(expr.to_string()));
+            index += end + 1;
+        } else {
+            return Err("malformed dictionary key syntax".to_string());
+        }
+    }
+    if parts.is_empty() {
+        return Err("malformed dictionary key syntax".to_string());
+    }
+    Ok(parts)
+}
+
+fn matching_bracket_end(text: &str) -> Result<usize, String> {
+    let mut in_string = false;
+    let mut escaped = false;
+    for (idx, ch) in text.char_indices().skip(1) {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            ']' if !in_string => return Ok(idx),
+            _ => {}
+        }
+    }
+    Err("malformed dictionary key syntax".to_string())
+}
+
+fn access_prefix_len(text: &str) -> Result<usize, String> {
+    let mut index = 0;
+    while index < text.len() {
+        let tail = &text[index..];
+        if let Some(after_dot) = tail.strip_prefix('.') {
+            let key_len = after_dot
+                .chars()
+                .take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+                .map(char::len_utf8)
+                .sum::<usize>();
+            if key_len == 0 {
+                return Err(
+                    "invalid dot key; use bracket access for non-identifier keys".to_string(),
+                );
+            }
+            index += 1 + key_len;
+        } else if tail.starts_with('[') {
+            index += matching_bracket_end(tail)? + 1;
+        } else {
+            break;
+        }
+    }
+    Ok(index)
+}
+
+fn replace_nested_dict_value(
+    target: &mut Value,
+    keys: &[String],
+    value: Value,
+    base: &str,
+) -> Result<(), String> {
+    let (last, parents) = keys.split_last().expect("path has at least one key");
+    let mut current = target;
+    let mut path = base.to_string();
+    for key in parents {
+        match current {
+            Value::Dict(values) => {
+                current = values
+                    .get_mut(key)
+                    .ok_or_else(|| format!("missing key '{key}' in {path}"))?;
+                path.push_str(&format!(".{key}"));
+            }
+            Value::Scalar(_) | Value::List(_) => {
+                return Err(format!("cannot access key on non-dictionary value {path}"));
+            }
+        }
+    }
+    match current {
+        Value::Dict(values) => {
+            if !values.contains_key(last) {
+                return Err(format!("missing key '{last}' in {path}"));
+            }
+            values.insert(last.clone(), value);
+            Ok(())
+        }
+        Value::Scalar(_) | Value::List(_) => {
+            Err(format!("cannot access key on non-dictionary value {path}"))
+        }
+    }
+}
+
+fn remove_nested_dict_value(target: &mut Value, keys: &[String], base: &str) -> Result<(), String> {
+    let (last, parents) = keys.split_last().expect("path has at least one key");
+    let mut current = target;
+    let mut path = base.to_string();
+    for key in parents {
+        match current {
+            Value::Dict(values) => {
+                current = values
+                    .get_mut(key)
+                    .ok_or_else(|| format!("missing key '{key}' in {path}"))?;
+                path.push_str(&format!(".{key}"));
+            }
+            Value::Scalar(_) | Value::List(_) => {
+                return Err(format!("cannot access key on non-dictionary value {path}"));
+            }
+        }
+    }
+    match current {
+        Value::Dict(values) => values
+            .remove(last)
+            .map(|_| ())
+            .ok_or_else(|| format!("missing key '{last}' in {path}")),
+        Value::Scalar(_) | Value::List(_) => {
+            Err(format!("cannot access key on non-dictionary value {path}"))
         }
     }
 }
@@ -2215,6 +2750,7 @@ struct Checker {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BlockKind {
     If,
+    Case { saw_when: bool, saw_else: bool },
     Loop,
     Function,
     Try { saw_catch: bool },
@@ -2240,9 +2776,10 @@ impl Checker {
                 self.error(*line_no, message);
             }
         }
-        if let Some(kind) = self.blocks.last() {
+        if let Some(kind) = self.blocks.last().copied() {
             let name = match kind {
                 BlockKind::If => "if",
+                BlockKind::Case { .. } => "case",
                 BlockKind::Loop => "loop",
                 BlockKind::Function => "function",
                 BlockKind::Try { saw_catch } => {
@@ -2256,6 +2793,18 @@ impl Checker {
                 }
                 BlockKind::Log => "log",
             };
+            if matches!(
+                kind,
+                BlockKind::Case {
+                    saw_when: false,
+                    ..
+                }
+            ) {
+                self.error(
+                    lines.last().map(|(n, _)| *n).unwrap_or(1),
+                    "case requires at least one when".to_string(),
+                );
+            }
             self.error(
                 lines.last().map(|(n, _)| *n).unwrap_or(1),
                 format!("missing end for {name}"),
@@ -2271,6 +2820,34 @@ impl Checker {
             parse_function_signature(rest.trim())?;
             self.blocks.push(BlockKind::Function);
             return Ok(());
+        }
+        if let Some(rest) = line.strip_prefix("case ") {
+            validate_case_value(rest.trim())?;
+            self.blocks.push(BlockKind::Case {
+                saw_when: false,
+                saw_else: false,
+            });
+            return Ok(());
+        }
+        if line == "case" {
+            return Err("case value required".to_string());
+        }
+        if let Some(rest) = line.strip_prefix("when ") {
+            match self.blocks.last_mut() {
+                Some(BlockKind::Case { saw_when, saw_else }) if !*saw_else => {
+                    validate_when_values(rest.trim())?;
+                    *saw_when = true;
+                    return Ok(());
+                }
+                Some(BlockKind::Case { .. }) => return Err("when after else".to_string()),
+                _ => return Err("when outside case".to_string()),
+            }
+        }
+        if line == "when" {
+            if matches!(self.blocks.last(), Some(BlockKind::Case { .. })) {
+                return Err("when value required".to_string());
+            }
+            return Err("when outside case".to_string());
         }
         if let Some(rest) = line.strip_prefix("if ") {
             validate_condition_form(rest.trim())?;
@@ -2288,10 +2865,15 @@ impl Checker {
             return Ok(());
         }
         if line == "else" {
-            if !matches!(self.blocks.last(), Some(BlockKind::If)) {
-                return Err("unexpected conditional marker".to_string());
+            match self.blocks.last_mut() {
+                Some(BlockKind::If) => return Ok(()),
+                Some(BlockKind::Case { saw_else, .. }) if !*saw_else => {
+                    *saw_else = true;
+                    return Ok(());
+                }
+                Some(BlockKind::Case { .. }) => return Err("duplicate else".to_string()),
+                _ => return Err("unexpected conditional marker".to_string()),
             }
-            return Ok(());
         }
         if let Some(rest) = line.strip_prefix("while ") {
             validate_condition_form(rest.trim())?;
@@ -2362,6 +2944,11 @@ impl Checker {
                 Some(BlockKind::Try { saw_catch: false }) => {
                     return Err("missing catch for try".to_string());
                 }
+                Some(BlockKind::Case {
+                    saw_when: false, ..
+                }) => {
+                    return Err("case requires at least one when".to_string());
+                }
                 Some(_) => {}
                 None => return Err("unexpected conditional marker".to_string()),
             }
@@ -2396,6 +2983,63 @@ impl Checker {
     }
 }
 
+fn parse_capture_destination(destination: &str, command: &str) -> Result<String, String> {
+    if destination.trim().is_empty() {
+        return Err(format!("{command} destination must be a variable"));
+    }
+    let (kind, name, extra) = parse_identifier(destination.trim())
+        .map_err(|_| format!("{command} destination must be a variable"))?;
+    if kind != IdentKind::Variable || !extra.trim().is_empty() {
+        return Err(format!("{command} destination must be a variable"));
+    }
+    Ok(name)
+}
+
+fn parse_arg_capture(text: &str) -> Result<(&str, String), String> {
+    let Some(index) = find_capture_arrow(text) else {
+        return Err("arg syntax is arg N -> $var".to_string());
+    };
+    let index_text = text[..index].trim();
+    if index_text.is_empty() {
+        return Err("arg index must be a positive integer".to_string());
+    }
+    let destination = parse_capture_destination(&text[index + 2..], "arg")?;
+    Ok((index_text, destination))
+}
+
+fn parse_has_arg_capture(text: &str) -> Result<(&str, String), String> {
+    let Some(index) = find_capture_arrow(text) else {
+        return Err("hasArg syntax is hasArg VALUE -> $var".to_string());
+    };
+    let value_text = text[..index].trim();
+    if value_text.is_empty() {
+        return Err("hasArg value required".to_string());
+    }
+    let destination = parse_capture_destination(&text[index + 2..], "hasArg")?;
+    Ok((value_text, destination))
+}
+
+fn parse_args_capture(text: &str) -> Result<String, String> {
+    let Some(destination) = text.trim().strip_prefix("->") else {
+        return Err("args syntax is args -> $var".to_string());
+    };
+    parse_capture_destination(destination, "args")
+}
+
+fn validate_arg_index_form(index_text: &str) -> Result<(), String> {
+    let index_text = index_text.trim();
+    if index_text.is_empty() || index_text == "0" || index_text.starts_with('-') {
+        return Err("arg index must be a positive integer".to_string());
+    }
+    if index_text.chars().all(|ch| ch.is_ascii_digit()) {
+        return Ok(());
+    }
+    if index_text.starts_with('"') || matches!(index_text, "true" | "false") {
+        return Err("arg index must be a positive integer".to_string());
+    }
+    Ok(())
+}
+
 fn validate_temp_capture(text: &str, command: &str) -> Result<(), String> {
     let Some(destination) = text.strip_prefix("->") else {
         return Err(format!("{command} syntax is {command} -> $path"));
@@ -2412,9 +3056,62 @@ fn parse_function_signature(rest: &str) -> Result<(), String> {
     parse_function_header(rest).map(|_| ())
 }
 
+fn validate_assignment_form(line: &str) -> Result<(), String> {
+    let (kind, name, rest) = parse_identifier(line)?;
+    let rest = rest.trim_start();
+    if rest.is_empty() {
+        if kind == IdentKind::Constant {
+            return Err("constant must have an initial value".to_string());
+        }
+        return Ok(());
+    }
+    if rest.starts_with('.') || rest.starts_with('[') {
+        let (path_text, value_text) = rest
+            .rsplit_once('=')
+            .ok_or_else(|| "unexpected text after identifier".to_string())?;
+        if rest.starts_with('.') || path_text.contains('.') || path_text.matches('[').count() > 1 {
+            parse_dict_path(path_text.trim())?;
+        } else if !path_text.starts_with('[') || !path_text.ends_with(']') {
+            return Err("malformed list index syntax".to_string());
+        }
+        if value_text.trim().is_empty() {
+            return Err("expected value after '='".to_string());
+        }
+        let _ = name;
+        return Ok(());
+    }
+    let value_text = rest
+        .strip_prefix('=')
+        .ok_or_else(|| "unexpected text after identifier".to_string())?
+        .trim_start();
+    if value_text.is_empty() {
+        return Err("expected value after '='".to_string());
+    }
+    if value_text.starts_with("capture") {
+        return Err("capture syntax was removed; use command \"...\" -> $var".to_string());
+    }
+    if value_text.starts_with('{') || value_text.starts_with('[') || value_text.starts_with('"') {
+        Interpreter::default().eval_value_kind(value_text)?;
+    }
+    Ok(())
+}
+
 fn validate_statement_form(line: &str) -> Result<(), String> {
     if line.starts_with('$') {
-        return Interpreter::default().assignment(line, 0).map(|_| ());
+        return validate_assignment_form(line);
+    }
+    if let Some(rest) = line.strip_prefix("arg ") {
+        let (index_text, _) = parse_arg_capture(rest.trim())?;
+        validate_arg_index_form(index_text)?;
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("hasArg ") {
+        parse_has_arg_capture(rest.trim())?;
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("args") {
+        parse_args_capture(rest.trim())?;
+        return Ok(());
     }
     if let Some(rest) = line.strip_prefix("ask") {
         let rest = rest.trim();
@@ -2560,13 +3257,9 @@ fn validate_statement_form(line: &str) -> Result<(), String> {
             return Ok(());
         }
         let Some(destination) = tail.strip_prefix("->") else {
-            return Err("command capture syntax is command \"...\" -> $var".to_string());
+            return Err(command_capture_syntax_error());
         };
-        let (kind, _, extra) = parse_identifier(destination.trim())
-            .map_err(|_| "command capture destination must be a variable".to_string())?;
-        if kind != IdentKind::Variable || !extra.trim().is_empty() {
-            return Err("command capture destination must be a variable".to_string());
-        }
+        parse_command_capture_destinations(destination.trim())?;
         return Ok(());
     }
     if let Some(rest) = line.strip_prefix("call ") {
@@ -2593,6 +3286,48 @@ fn validate_statement_form(line: &str) -> Result<(), String> {
         return Ok(());
     }
     Err(format!("unknown command or invalid syntax: {line}"))
+}
+
+fn command_capture_syntax_error() -> String {
+    "command capture syntax is command \"...\" -> $var or command \"...\" -> $stdout, $stderr, $code"
+        .to_string()
+}
+
+fn parse_command_capture_destinations(destination_text: &str) -> Result<Vec<String>, String> {
+    let destinations =
+        split_commas(destination_text).map_err(|_| command_capture_syntax_error())?;
+    match destinations.len() {
+        1 | 3 => {}
+        2 => {
+            return Err(
+                "command capture requires either 1 or 3 destinations; 2 destinations are not supported"
+                    .to_string(),
+            );
+        }
+        count if count > 3 => {
+            return Err("command capture supports at most 3 destinations".to_string());
+        }
+        _ => return Err(command_capture_syntax_error()),
+    }
+
+    destinations
+        .into_iter()
+        .map(|destination| {
+            let (kind, name, extra) = parse_identifier(destination.trim())
+                .map_err(|_| "command capture destination must be a variable".to_string())?;
+            if kind != IdentKind::Variable || !extra.trim().is_empty() {
+                return Err("command capture destination must be a variable".to_string());
+            }
+            Ok(name)
+        })
+        .collect()
+}
+
+fn command_output_to_string(bytes: Vec<u8>, stream_name: &str) -> Result<String, String> {
+    Ok(String::from_utf8(bytes)
+        .map_err(|error| format!("command {stream_name} was not UTF-8: {error}"))?
+        .trim_end_matches(['\r', '\n'])
+        .to_string())
 }
 
 #[derive(Clone)]
@@ -2674,6 +3409,11 @@ fn is_standard_helper(name: &str) -> bool {
             | "isNumber"
             | "isText"
             | "isList"
+            | "isDict"
+            | "keys"
+            | "values"
+            | "jsonParse"
+            | "jsonStringify"
             | "basename"
             | "dirname"
             | "extension"
@@ -2732,14 +3472,62 @@ fn validate_helper_form(name: &str, text: &str) -> Result<(), String> {
     let args = split_space_args(args_text)?;
     let n = match name {
         "trim" | "lower" | "upper" | "len" | "sort" | "reverse" | "unique" | "toNumber"
-        | "toString" | "isEmpty" | "isNumber" | "isText" | "isList" | "basename" | "dirname"
-        | "extension" | "withoutExtension" => 1,
+        | "toString" | "isEmpty" | "isNumber" | "isText" | "isList" | "isDict" | "keys"
+        | "values" | "jsonParse" | "jsonStringify" | "basename" | "dirname" | "extension"
+        | "withoutExtension" => 1,
         "split" | "startsWith" | "endsWith" | "join" | "randomInt" => 2,
         "replace" => 3,
         "now" | "today" | "random" => 0,
         _ => unreachable!(),
     };
     expect_arg_count(name, &args, n)
+}
+
+fn json_to_value(value: serde_json::Value) -> Value {
+    match value {
+        serde_json::Value::Null => Value::Scalar(String::new()),
+        serde_json::Value::Bool(value) => Value::Scalar(value.to_string()),
+        serde_json::Value::Number(value) => Value::Scalar(value.to_string()),
+        serde_json::Value::String(value) => Value::Scalar(value),
+        serde_json::Value::Array(values) => {
+            Value::List(values.into_iter().map(json_to_value).collect())
+        }
+        serde_json::Value::Object(values) => Value::Dict(
+            values
+                .into_iter()
+                .map(|(key, value)| (key, json_to_value(value)))
+                .collect(),
+        ),
+    }
+}
+
+fn value_to_json(value: &Value) -> serde_json::Value {
+    match value {
+        Value::Scalar(value) if value == "true" => serde_json::Value::Bool(true),
+        Value::Scalar(value) if value == "false" => serde_json::Value::Bool(false),
+        Value::Scalar(value) if value.is_empty() => serde_json::Value::Null,
+        Value::Scalar(value) => value
+            .parse::<serde_json::Number>()
+            .map(serde_json::Value::Number)
+            .unwrap_or_else(|_| serde_json::Value::String(value.clone())),
+        Value::List(values) => serde_json::Value::Array(values.iter().map(value_to_json).collect()),
+        Value::Dict(values) => serde_json::Value::Object(
+            values
+                .iter()
+                .map(|(key, value)| (key.clone(), value_to_json(value)))
+                .collect(),
+        ),
+    }
+}
+
+fn scalar_list(name: &str, items: &[Value]) -> Result<Vec<String>, String> {
+    items
+        .iter()
+        .map(|item| match item {
+            Value::Scalar(value) => Ok(value.clone()),
+            Value::List(_) | Value::Dict(_) => Err(format!("{name} requires a scalar list")),
+        })
+        .collect()
 }
 
 fn expect_arg_count(name: &str, args: &[&str], expected: usize) -> Result<(), String> {
@@ -2789,6 +3577,73 @@ fn split_space_args(text: &str) -> Result<Vec<&str>, String> {
         args.push(&text[s..]);
     }
     Ok(args)
+}
+
+fn split_top_level_commas(input: &str) -> Result<Vec<&str>, String> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut square_depth = 0usize;
+    let mut curly_depth = 0usize;
+    for (i, ch) in input.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '[' if !in_string => square_depth += 1,
+            ']' if !in_string => square_depth = square_depth.saturating_sub(1),
+            '{' if !in_string => curly_depth += 1,
+            '}' if !in_string => curly_depth = curly_depth.saturating_sub(1),
+            ',' if !in_string && square_depth == 0 && curly_depth == 0 => {
+                parts.push(input[start..i].trim());
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if in_string {
+        return Err("unterminated string literal".to_string());
+    }
+    parts.push(input[start..].trim());
+    if parts.iter().any(|p| p.is_empty()) {
+        return Err("expected value after comma".to_string());
+    }
+    Ok(parts)
+}
+
+fn split_dict_entry(input: &str) -> Result<(&str, &str), String> {
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut square_depth = 0usize;
+    let mut curly_depth = 0usize;
+    for (i, ch) in input.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '[' if !in_string => square_depth += 1,
+            ']' if !in_string => square_depth = square_depth.saturating_sub(1),
+            '{' if !in_string => curly_depth += 1,
+            '}' if !in_string => curly_depth = curly_depth.saturating_sub(1),
+            ':' if !in_string && square_depth == 0 && curly_depth == 0 => {
+                let key = input[..i].trim();
+                let value = input[i + 1..].trim();
+                if key.is_empty() || value.is_empty() {
+                    return Err("malformed dictionary entry".to_string());
+                }
+                return Ok((key, value));
+            }
+            _ => {}
+        }
+    }
+    Err("malformed dictionary entry; expected ':'".to_string())
 }
 
 fn parse_integer_arg(text: &str, error: &str) -> Result<i64, String> {
@@ -3429,6 +4284,24 @@ fn control_signal_name(error: &str) -> &'static str {
     }
 }
 
+fn validate_case_value(value: &str) -> Result<(), String> {
+    if value.trim().is_empty() {
+        return Err("case value required".to_string());
+    }
+    Ok(())
+}
+
+fn validate_when_values(values: &str) -> Result<(), String> {
+    if values.trim().is_empty() {
+        return Err("when value required".to_string());
+    }
+    let parts = split_commas(values).map_err(|_| "when value required".to_string())?;
+    if parts.is_empty() || parts.iter().any(|value| value.trim().is_empty()) {
+        return Err("when value required".to_string());
+    }
+    Ok(())
+}
+
 fn collect_block(
     lines: &[(usize, String)],
     start: usize,
@@ -3459,8 +4332,83 @@ fn collect_block(
     Err(format!("missing end for {kind}"))
 }
 
+fn collect_case_block(
+    lines: &[(usize, String)],
+    start: usize,
+) -> Result<
+    (
+        Vec<(Vec<String>, Vec<(usize, String)>)>,
+        Option<Vec<(usize, String)>>,
+        usize,
+    ),
+    String,
+> {
+    let mut branches: Vec<(Vec<String>, Vec<(usize, String)>)> = Vec::new();
+    let mut else_body: Option<Vec<(usize, String)>> = None;
+    let mut depth = 0;
+    let mut index = start + 1;
+    while index < lines.len() {
+        let line_no = lines[index].0;
+        let line = lines[index].1.trim();
+        if starts_block(line) {
+            depth += 1;
+        }
+        if line == "}" && depth > 0 {
+            depth -= 1;
+        }
+        if line == "end" {
+            if depth == 0 {
+                if branches.is_empty() {
+                    return Err("case requires at least one when".to_string());
+                }
+                return Ok((branches, else_body, index + 1));
+            }
+            depth -= 1;
+        }
+        if depth == 0 {
+            if let Some(values) = line.strip_prefix("when ") {
+                if else_body.is_some() {
+                    return Err(format!("line {line_no}: when after else"));
+                }
+                validate_when_values(values.trim())
+                    .map_err(|error| format!("line {line_no}: {error}"))?;
+                branches.push((
+                    split_commas(values.trim())?
+                        .into_iter()
+                        .map(|value| value.trim().to_string())
+                        .collect(),
+                    Vec::new(),
+                ));
+                index += 1;
+                continue;
+            }
+            if line == "when" {
+                return Err(format!("line {line_no}: when value required"));
+            }
+            if line == "else" {
+                if else_body.is_some() {
+                    return Err(format!("line {line_no}: duplicate else"));
+                }
+                else_body = Some(Vec::new());
+                index += 1;
+                continue;
+            }
+        }
+        if let Some(body) = else_body.as_mut() {
+            body.push(lines[index].clone());
+        } else if let Some((_, body)) = branches.last_mut() {
+            body.push(lines[index].clone());
+        } else if !line.is_empty() {
+            return Err(format!("line {line_no}: case requires a when before body"));
+        }
+        index += 1;
+    }
+    Err("missing end for case".to_string())
+}
+
 fn starts_block(line: &str) -> bool {
-    line.starts_with("if ")
+    line.starts_with("case ")
+        || line.starts_with("if ")
         || line.starts_with("while ")
         || line.starts_with("for ")
         || line.starts_with("repeat ")

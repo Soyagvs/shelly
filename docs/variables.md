@@ -49,3 +49,15 @@ A bare variable declaration creates an empty value. Empty values are falsey in c
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
+
+## Dictionary variables
+
+Variables can hold dictionaries:
+
+```shelly
+$user = { name: "Ada", age: 32 }
+shellout $user.name
+$user.name = "Grace"
+```
+
+Use bracket access for quoted or dynamic keys: `$user["first-name"]` or `$user[$key]`.

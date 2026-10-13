@@ -1,7 +1,10 @@
+use std::collections::BTreeMap;
+
 #[derive(Clone, Debug)]
 pub(crate) enum Value {
     Scalar(String),
-    List(Vec<String>),
+    List(Vec<Value>),
+    Dict(BTreeMap<String, Value>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -25,8 +28,39 @@ pub(crate) fn format_number(value: f64) -> String {
     }
 }
 
-pub(crate) fn format_list(values: &[String]) -> String {
-    format!("[{}]", values.join(", "))
+pub(crate) fn format_value(value: &Value) -> String {
+    match value {
+        Value::Scalar(value) => value.clone(),
+        Value::List(values) => format_list(values),
+        Value::Dict(values) => format_dict(values),
+    }
+}
+
+pub(crate) fn format_list(values: &[Value]) -> String {
+    let parts: Vec<String> = values.iter().map(format_value).collect();
+    format!("[{}]", parts.join(", "))
+}
+
+pub(crate) fn format_dict(values: &BTreeMap<String, Value>) -> String {
+    let parts: Vec<String> = values
+        .iter()
+        .map(|(key, value)| format!("{}: {}", format_dict_key(key), format_value(value)))
+        .collect();
+    format!("{{{}}}", parts.join(", "))
+}
+
+fn format_dict_key(key: &str) -> String {
+    if is_simple_key(key) {
+        key.to_string()
+    } else {
+        format!("\"{}\"", key.replace('\\', "\\\\").replace('"', "\\\""))
+    }
+}
+
+pub(crate) fn is_simple_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    matches!(chars.next(), Some(ch) if ch.is_ascii_alphabetic())
+        && chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
 }
 
 pub(crate) fn compare_values(left: &str, right: &str) -> std::cmp::Ordering {

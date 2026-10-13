@@ -76,3 +76,15 @@ randomInt 5 5 -> $five
 ```
 
 `randomInt` arguments must be integers, and `min` must be less than or equal to `max`.
+
+## JSON and dictionary helpers
+
+```shelly
+jsonParse $text -> $value
+jsonStringify $value -> $text
+keys $dict -> $keys
+values $dict -> $values
+isDict $value -> $ok
+```
+
+`len` works for strings, lists, and dictionaries. `join`, `sort`, `reverse`, and `unique` require scalar lists. JSON details are in [`json.md`](json.md).

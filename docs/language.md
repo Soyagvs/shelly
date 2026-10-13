@@ -26,7 +26,8 @@ text block
 - Commas separate normal argument lists.
 - Blocks close with `end`.
 - List indexes start at `1`.
-- `command` runs system commands.
+- `command` runs system commands; `command "..." -> $out, $err, $code` captures stdout, stderr, and exit code when you need to handle failures yourself.
+- `arg`, `hasArg`, and `args` read command-line arguments passed after the script path.
 - `"..."` is for one-line text; triple backticks are for multiline text.
 - `choose "Question" ["A", "B"] -> $choice` prints an interactive menu and stores the chosen value.
 - `log "identifier"` wraps a block with structured file logging in script-relative `logs/`.
@@ -34,6 +35,7 @@ text block
 - Standard helpers transform text, lists, values, path strings, time, and random numbers; see [helpers.md](helpers.md).
 - File commands (`create`, `copy`, `move`, `rename`, `remove`, `read`, `write`, `append`, `isFile`, `isDir`, `size`, `tempFile`, `tempDir`) and `files "pattern" -> $items` use script-relative paths where applicable.
 - `and`, `or`, `not`, and condition parentheses compose conditions; priority is `not`, then `and`, then `or`.
+- `case VALUE` / `when VALUE` / optional `else` dispatches exact value matches; see [conditionals.md](conditionals.md).
 
 ## Reference
 
@@ -77,7 +79,15 @@ shelly check --format json path/to/script.shelly
 Run a script:
 
 ```sh
-shelly path/to/script.shelly
+shelly path/to/script.shelly Ada --dry-run
+```
+
+Inside that script, read those arguments with:
+
+```shelly
+arg 1 -> $name
+hasArg "--dry-run" -> $dryRun
+args -> $all
 ```
 
 From source:
@@ -98,3 +108,27 @@ Complete showcase: [`../example-01.shelly`](../example-01.shelly).
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
+
+## Dictionaries
+
+Use `{}` for keyed data. Simple keys can be identifiers; other keys use quoted strings.
+
+```shelly
+$user = { name: "Ada", "first-name": "Ada" }
+shellout $user.name
+shellout $user["first-name"]
+```
+
+Dot and bracket access can also be assigned. See [dictionaries](dictionaries.md).
+
+## Nested values and JSON
+
+Shelly values are scalars, lists, and dictionaries. Lists may contain dictionaries or other lists, so access chains can be composed:
+
+```shelly
+$data = { users: [{ name: "Ada" }], matrix: [[1, 2]] }
+shellout $data.users[1].name
+shellout "cell=$data.matrix[1][2]"
+```
+
+JSON conversion uses `jsonParse $text -> $value` and `jsonStringify $value -> $text`; see [`json.md`](json.md).

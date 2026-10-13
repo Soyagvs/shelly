@@ -4,7 +4,7 @@
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
 
-Use `if`, optional `elif`, optional `else`, and `end` to choose which block runs.
+Use `if`, optional `elif`, optional `else`, and `end` to choose which block runs. Use `case` when one value should dispatch to exact matching branches.
 
 ```shelly
 $enabled = true
@@ -30,6 +30,49 @@ end
 - Blocks do not create a new scope.
 - Nested `if`, `repeat`, `while`, `for`, and `try` blocks are supported.
 - Parentheses group condition expressions and can override logical precedence.
+- `case VALUE` compares one evaluated value against one or more exact `when` values.
+- `case` requires at least one `when`; `else` is optional and must be last.
+
+## Case blocks
+
+Use `case` for exact value dispatch without fallthrough. The first matching `when` branch runs; no `break` is needed. If no `when` matches and there is no `else`, nothing runs.
+
+```shelly
+$mode = "prod"
+
+case $mode
+    when "dev", "test"
+        shellout "non-production"
+    when "prod"
+        shellout "production"
+    else
+        shellout "unknown mode"
+end
+```
+
+`case` values and `when` values can be strings, numbers, booleans, constants, variables, or numeric expressions. Blocks do not create a new scope, and nested blocks work inside branches.
+
+```shelly
+$$LIMIT = 3
+$count = 3
+
+case $count
+    when 1
+        shellout "one"
+    when $$LIMIT
+        if true
+            shellout "at limit"
+        end
+end
+```
+
+Rules:
+
+- `case VALUE` requires a value.
+- `when VALUE` requires at least one value.
+- `when VALUE, VALUE` matches if any listed value equals the `case` value.
+- `else` may appear once and must come after all `when` branches.
+- `when` outside `case`, duplicate `else`, `when` after `else`, missing `end`, and `case` with no `when` are errors.
 
 ## Comparisons
 
