@@ -21,9 +21,10 @@ Small scripts. Clear syntax. One readable way to compose variables, commands, li
 
 ## Latest release
 
-**v3.0.1** is the latest public-ready Shelly release.
+**v3.0.2** is the latest public-ready Shelly release.
 
 - Linux/macOS installer: `curl -fsSL https://raw.githubusercontent.com/Soyagvs/shelly/main/install.sh | sh`
+- Windows installer: `irm https://raw.githubusercontent.com/Soyagvs/shelly/main/install.ps1 | iex`
 - Release binaries are built for Linux x86_64, macOS Intel, macOS Apple Silicon, and Windows x86_64.
 - Language highlights: lists, selectors, filters, `for`, `while`, `repeat`, explicit `call`, function `return`, `break`, `continue`, logical `and` / `or` / `not`, modules, and `command` for system tools.
 - License: MIT.
@@ -48,10 +49,16 @@ Run it:
 shelly hello.shelly
 ```
 
-Windows users can download `shelly-windows-x86_64.zip` from the latest GitHub Release, unzip it, and run:
+Windows PowerShell:
 
 ```powershell
-.\shelly.exe hello.shelly
+irm https://raw.githubusercontent.com/Soyagvs/shelly/main/install.ps1 | iex
+```
+
+Then run:
+
+```powershell
+shelly hello.shelly
 ```
 
 Manual downloads are also available on GitHub Releases:
