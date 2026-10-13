@@ -18,8 +18,8 @@ Feature: add a simple PowerShell installer for Windows users.
 - [x] Update README Windows install instructions and latest release line.
 - [x] Bump package version to `3.0.2`.
 - [x] Verify scripts and project checks.
-- [ ] Commit and push changes.
-- [ ] Create and push `v3.0.2` tag.
+- [x] Commit and push changes.
+- [x] Create and push `v3.0.2` tag.
 
 ## Evidence
 
@@ -29,3 +29,5 @@ Feature: add a simple PowerShell installer for Windows users.
 - GREEN: `cargo check --quiet` passed after the version bump.
 - Local `pwsh` was unavailable, so `install.ps1` received a structural check for expected PowerShell installer operations.
 - GREEN: `sh -n install.sh && cargo fmt --check && cargo test && printf 'yes\\nblue\\n' | cargo run --quiet -- example-01.shelly` passed; full suite reported 84 tests passed.
+- Committed and pushed `9fcd477` with message `ci: add windows installer`.
+- Created and pushed SemVer tag `v3.0.2`, which triggers the release binary workflow.
