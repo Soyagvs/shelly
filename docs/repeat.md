@@ -20,6 +20,8 @@ end
 - `repeat count -> $var` binds the current 1-based iteration number.
 - The optional index binding is local/protected inside the loop.
 - Other assignments inside the loop persist after the loop.
+- `break` exits the nearest loop.
+- `continue` skips to the next iteration.
 - Nested `if`, `repeat`, `while`, and `for` blocks are supported.
 
 ## Index binding

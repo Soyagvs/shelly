@@ -25,10 +25,10 @@ end
 - `elif condition` adds an optional middle branch.
 - `else` adds one optional fallback branch.
 - `end` closes the block.
-- Conditions use truthiness or simple comparisons.
+- Conditions use truthiness, simple comparisons, and logical operators.
+- `not` binds before `and`; `and` binds before `or`.
 - Blocks do not create a new scope.
 - Nested `if`, `repeat`, `while`, and `for` blocks are supported.
-- Logical operators `and`, `or`, and `not` are not implemented yet.
 - Parenthesized condition expressions are not implemented yet.
 
 ## Comparisons
@@ -39,7 +39,15 @@ if $count >= 3
 end
 ```
 
-Supported operators: `==`, `!=`, `>`, `>=`, `<`, and `<=`.
+Supported comparison operators: `==`, `!=`, `>`, `>=`, `<`, and `<=`.
+
+Supported logical operators: `and`, `or`, and `not`.
+
+```shelly
+if not false and $count > 0
+    shellout "ready"
+end
+```
 
 ## Truthiness
 

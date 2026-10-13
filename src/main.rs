@@ -47,14 +47,47 @@ fn exit_signal(code: u8) -> String {
     format!("__shelly_exit:{code}")
 }
 
+fn break_signal() -> String {
+    "__shelly_break".to_string()
+}
+
+fn continue_signal() -> String {
+    "__shelly_continue".to_string()
+}
+
+fn return_signal(value: String) -> String {
+    format!("__shelly_return:{value}")
+}
+
 fn parse_exit_signal(error: &str) -> Option<i32> {
     error
         .strip_prefix("__shelly_exit:")
         .and_then(|code| code.parse::<i32>().ok())
 }
 
+fn parse_return_signal(error: &str) -> Option<String> {
+    error
+        .strip_prefix("__shelly_return:")
+        .map(ToString::to_string)
+}
+
+fn is_break_signal(error: &str) -> bool {
+    error == "__shelly_break"
+}
+
+fn is_continue_signal(error: &str) -> bool {
+    error == "__shelly_continue"
+}
+
+fn is_control_signal(error: &str) -> bool {
+    parse_exit_signal(error).is_some()
+        || parse_return_signal(error).is_some()
+        || is_break_signal(error)
+        || is_continue_signal(error)
+}
+
 fn line_error(line_no: usize, error: String) -> String {
-    if parse_exit_signal(&error).is_some() {
+    if is_control_signal(&error) {
         error
     } else {
         format!("line {line_no}: {error}")
@@ -86,7 +119,14 @@ struct Interpreter {
 impl Interpreter {
     fn run(&mut self, source: &str) -> Result<(), String> {
         let lines = strip_comments(source)?;
-        self.run_lines(&lines)
+        match self.run_lines(&lines) {
+            Err(error) if is_break_signal(&error) => Err("break outside loop".to_string()),
+            Err(error) if is_continue_signal(&error) => Err("continue outside loop".to_string()),
+            Err(error) if parse_return_signal(&error).is_some() => {
+                Err("return outside function".to_string())
+            }
+            result => result,
+        }
     }
 
     fn run_lines(&mut self, lines: &[(usize, String)]) -> Result<(), String> {
@@ -256,12 +296,21 @@ impl Interpreter {
             Some((name, previous))
         });
 
+        let mut loop_result = Ok(());
         for iteration in 1..=count {
             if let Some((name, _)) = &saved_index {
                 self.vars
                     .insert(name.clone(), Value::Scalar(iteration.to_string()));
             }
-            self.run_lines(&body)?;
+            match self.run_lines(&body) {
+                Ok(()) => {}
+                Err(error) if is_continue_signal(&error) => continue,
+                Err(error) if is_break_signal(&error) => break,
+                Err(error) => {
+                    loop_result = Err(error);
+                    break;
+                }
+            }
         }
 
         if let Some((name, previous)) = saved_index {
@@ -271,6 +320,7 @@ impl Interpreter {
                 self.vars.remove(&name);
             }
         }
+        loop_result?;
         Ok(next_index)
     }
 
@@ -292,7 +342,12 @@ impl Interpreter {
                 ));
             }
             iterations += 1;
-            self.run_lines(&body)?;
+            match self.run_lines(&body) {
+                Ok(()) => {}
+                Err(error) if is_continue_signal(&error) => continue,
+                Err(error) if is_break_signal(&error) => break,
+                Err(error) => return Err(error),
+            }
         }
         Ok(next_index)
     }
@@ -312,7 +367,12 @@ impl Interpreter {
 
         for value in values {
             self.vars.insert(item_name.clone(), Value::Scalar(value));
-            self.run_lines(&body)?;
+            match self.run_lines(&body) {
+                Ok(()) => {}
+                Err(error) if is_continue_signal(&error) => continue,
+                Err(error) if is_break_signal(&error) => break,
+                Err(error) => return Err(error),
+            }
         }
 
         Ok(next_index)
@@ -382,6 +442,18 @@ impl Interpreter {
         }
         if let Some(rest) = line.strip_prefix("remove ") {
             return self.remove_list_item(rest.trim());
+        }
+        if line == "break" {
+            return Err(break_signal());
+        }
+        if line == "continue" {
+            return Err(continue_signal());
+        }
+        if line == "return" {
+            return Err("return value required".to_string());
+        }
+        if let Some(rest) = line.strip_prefix("return ") {
+            return Err(return_signal(self.eval_expr(rest.trim())?));
         }
         if line == "exit" {
             return Err(exit_signal(0));
@@ -467,9 +539,15 @@ impl Interpreter {
         if line.starts_with("capture") {
             return Err("capture syntax was removed; use command \"...\" -> $var".to_string());
         }
+        if let Some(rest) = line.strip_prefix("call ") {
+            return self.call_function(rest.trim(), line_no);
+        }
+        if line == "call" {
+            return Err("call requires a function name".to_string());
+        }
         if let Some(name) = line.split_whitespace().next() {
             if self.functions.contains_key(name) {
-                return self.call_function(line, line_no);
+                return Err("function calls must use call".to_string());
             }
         }
         Err(format!("unknown command or invalid syntax: {line}"))
@@ -576,7 +654,20 @@ impl Interpreter {
     }
 
     fn call_function(&mut self, line: &str, _line_no: usize) -> Result<(), String> {
-        let (name, rest) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
+        let (call_text, destination) = match line.split_once("->") {
+            Some((call_text, destination)) => {
+                let (kind, name, extra) = parse_identifier(destination.trim())
+                    .map_err(|_| "function return destination must be a variable".to_string())?;
+                if kind != IdentKind::Variable || !extra.trim().is_empty() {
+                    return Err("function return destination must be a variable".to_string());
+                }
+                (call_text.trim(), Some(name))
+            }
+            None => (line.trim(), None),
+        };
+        let (name, rest) = call_text
+            .split_once(char::is_whitespace)
+            .unwrap_or((call_text, ""));
         let function = self
             .functions
             .get(name)
@@ -619,7 +710,23 @@ impl Interpreter {
             }
             executable_body.push((line_no, body_line));
         }
-        child.run_lines(&executable_body)
+        match child.run_lines(&executable_body) {
+            Ok(()) => {
+                if destination.is_some() {
+                    return Err(format!("function {name} did not return a value"));
+                }
+                Ok(())
+            }
+            Err(error) if let Some(value) = parse_return_signal(&error) => {
+                if let Some(destination) = destination {
+                    self.vars.insert(destination, Value::Scalar(value));
+                }
+                Ok(())
+            }
+            Err(error) if is_break_signal(&error) => Err("break outside loop".to_string()),
+            Err(error) if is_continue_signal(&error) => Err("continue outside loop".to_string()),
+            Err(error) => Err(error),
+        }
     }
 
     fn declare_globals(&mut self, rest: &str, parent: &Interpreter) -> Result<(), String> {
@@ -818,14 +925,35 @@ impl Interpreter {
         if condition.is_empty() {
             return Err("condition required".to_string());
         }
-        if condition.contains('(')
-            || condition.contains(')')
-            || condition
-                .split_whitespace()
-                .any(|word| matches!(word, "and" | "or" | "not"))
-        {
+        if condition.contains('(') || condition.contains(')') {
             return Err("unsupported complex condition".to_string());
         }
+        self.eval_or_condition(condition)
+    }
+
+    fn eval_or_condition(&self, condition: &str) -> Result<bool, String> {
+        if let Some((left, right)) = split_condition_keyword(condition, "or") {
+            return Ok(self.eval_or_condition(left)? || self.eval_and_condition(right)?);
+        }
+        self.eval_and_condition(condition)
+    }
+
+    fn eval_and_condition(&self, condition: &str) -> Result<bool, String> {
+        if let Some((left, right)) = split_condition_keyword(condition, "and") {
+            return Ok(self.eval_and_condition(left)? && self.eval_not_condition(right)?);
+        }
+        self.eval_not_condition(condition)
+    }
+
+    fn eval_not_condition(&self, condition: &str) -> Result<bool, String> {
+        let condition = condition.trim();
+        if let Some(rest) = condition.strip_prefix("not ") {
+            return Ok(!self.eval_not_condition(rest)?);
+        }
+        self.eval_simple_condition(condition)
+    }
+
+    fn eval_simple_condition(&self, condition: &str) -> Result<bool, String> {
         if let Some((left, operator, right)) = split_condition_operator(condition) {
             let left = self.eval_expr(left.trim())?;
             let right = self.eval_expr(right.trim())?;
@@ -1181,6 +1309,49 @@ struct Function {
 struct Param {
     name: String,
     default: Option<String>,
+}
+
+fn split_condition_keyword<'a>(condition: &'a str, keyword: &str) -> Option<(&'a str, &'a str)> {
+    let mut bracket_depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (index, ch) in condition.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' => in_string = true,
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            _ if bracket_depth == 0 => {
+                let tail = &condition[index..];
+                if tail.starts_with(keyword) {
+                    let before = condition[..index].chars().next_back();
+                    let after = condition[index + keyword.len()..].chars().next();
+                    let before_ok = before.is_none_or(char::is_whitespace);
+                    let after_ok = after.is_none_or(char::is_whitespace);
+                    if before_ok && after_ok {
+                        return Some((
+                            condition[..index].trim(),
+                            condition[index + keyword.len()..].trim(),
+                        ));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
 }
 
 fn split_condition_operator(condition: &str) -> Option<(&str, &str, &str)> {

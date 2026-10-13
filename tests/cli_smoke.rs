@@ -399,7 +399,7 @@ fn person $name, $age, $prefix = "Hola"
     $outer = "inside"
     shellout "$prefix $name age=$age outer=$outer app=$$APP"
 end
-person "Agustin", 27
+call person "Agustin", 27
 shellout $outer
 "#,
     );
@@ -420,7 +420,7 @@ $$APP = "Shelly"
 fn greet $name, $app, $age, $enabled
     shellout "$name from $app age=$age enabled=$enabled"
 end
-greet $name, $$APP, 27, true
+call greet $name, $$APP, 27, true
 "#,
     );
 
@@ -432,11 +432,11 @@ greet $name, $$APP, 27, true
 fn function_call_reference_arguments_fail_when_undefined() {
     for (source, expected) in [
         (
-            "fn greet $name\nend\ngreet $missing\n",
+            "fn greet $name\nend\ncall greet $missing\n",
             "undefined variable $missing",
         ),
         (
-            "fn greet $app\nend\ngreet $$MISSING\n",
+            "fn greet $app\nend\ncall greet $$MISSING\n",
             "undefined constant $$MISSING",
         ),
     ] {
@@ -457,14 +457,21 @@ fn function_errors_cover_invalid_definitions_and_calls() {
         ("fn missing\nshellout \"no end\"\n", "missing end"),
         ("fn same\nend\nfn same\nend\n", "duplicate function"),
         ("does_not_exist \"x\"\n", "unknown command"),
-        ("fn one $name\nend\none\n", "wrong argument count"),
+        (
+            "fn greet $name\nend\ngreet \"Ada\"\n",
+            "function calls must use call",
+        ),
+        ("fn one $name\nend\ncall one\n", "wrong argument count"),
         (
             "fn bad $first = \"x\", $second\nend\n",
             "required parameter cannot follow default",
         ),
-        ("fn bad\nglobal name\nend\nbad\n", "expected identifier"),
         (
-            "$outer = \"outside\"\nfn bad\nshellout $outer\nend\nbad\n",
+            "fn bad\nglobal name\nend\ncall bad\n",
+            "expected identifier",
+        ),
+        (
+            "$outer = \"outside\"\nfn bad\nshellout $outer\nend\ncall bad\n",
             "undefined variable",
         ),
     ] {
@@ -532,7 +539,6 @@ fn conditional_errors_cover_structure_and_unsupported_expressions() {
         ("if false\nelse\nelif true\nend\n", "elif after else"),
         ("if false\nelse\nelse\nend\n", "duplicate else"),
         ("if\nend\n", "condition required"),
-        ("if true and false\nend\n", "unsupported complex condition"),
         ("if (true)\nend\n", "unsupported complex condition"),
     ] {
         let output = run_script(source);
@@ -573,7 +579,7 @@ fn import_loads_exported_function() {
     .expect("write module");
     fs::write(
         dir.join("main.shelly"),
-        "import \"module.shelly\"\ngreet \"Ada\"\n",
+        "import \"module.shelly\"\ncall greet \"Ada\"\n",
     )
     .expect("write main");
 
@@ -1332,7 +1338,7 @@ fn stop
     shellout "function"
     exit 0
 end
-stop
+call stop
 shellout "after"
 "#,
     );
@@ -1661,6 +1667,103 @@ fn list_mutation_errors_are_clear() {
             stderr(&output)
         );
     }
+}
+
+#[test]
+fn break_and_continue_control_loop_iteration() {
+    let output = run_script(
+        r#"
+repeat 4 -> $i
+    if $i == 2
+        continue
+    end
+    if $i == 4
+        break
+    end
+    shellout "r$i"
+end
+$items = ["a", "skip", "b", "stop", "c"]
+for $item in $items
+    if $item == "skip"
+        continue
+    end
+    if $item == "stop"
+        break
+    end
+    shellout "f$item"
+end
+$count = 0
+while $count < 5
+    $count = $count + 1
+    if $count == 2
+        continue
+    end
+    if $count == 4
+        break
+    end
+    shellout "w$count"
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "r1\nr3\nfa\nfb\nw1\nw3\n");
+}
+
+#[test]
+fn break_continue_and_return_outside_their_scopes_are_errors() {
+    for (source, expected) in [
+        ("break\n", "break outside loop"),
+        ("continue\n", "continue outside loop"),
+        ("return \"nope\"\n", "return outside function"),
+    ] {
+        let output = run_script(source);
+        assert!(!output.status.success(), "source succeeded: {source}");
+        assert!(
+            stderr(&output).contains(expected),
+            "stderr did not contain {expected:?}: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
+fn function_return_can_be_captured_or_discarded() {
+    let output = run_script(
+        r#"
+fn label $name
+    return "hello $name"
+    shellout "unreachable"
+end
+call label "Ada" -> $message
+shellout $message
+call label "Bea"
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "hello Ada\n");
+}
+
+#[test]
+fn logical_condition_operators_use_expected_precedence() {
+    let output = run_script(
+        r#"
+$empty = []
+$items = ["x"]
+if not false and $items or $empty
+    shellout "first"
+end
+if false or false and true
+    shellout "bad"
+else
+    shellout "second"
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "first\nsecond\n");
 }
 
 fn run_script(source: &str) -> std::process::Output {

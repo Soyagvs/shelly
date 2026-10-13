@@ -23,6 +23,8 @@ shellout "Done at $count"
 - Conditions use the same rules as [conditionals](conditionals.md).
 - If the condition is false before the first iteration, the body is skipped.
 - Assignments inside the loop persist after the loop.
+- `break` exits the nearest loop.
+- `continue` skips to the next iteration.
 - A safety limit stops accidental infinite loops after 10,000 iterations.
 - Nested `if`, `repeat`, `while`, and `for` blocks are supported.
 

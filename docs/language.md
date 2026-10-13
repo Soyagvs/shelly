@@ -52,8 +52,6 @@ Complete showcase: [`../example-01.shelly`](../example-01.shelly).
 
 ## Not implemented yet
 
-- Function return values.
-- Logical operators `and`, `or`, and `not`.
 - Parenthesized condition expressions.
 - Nested lists.
 - Ordered string filters.

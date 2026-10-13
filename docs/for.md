@@ -22,6 +22,8 @@ end
 - Values are visited in list order.
 - Empty lists skip the block.
 - After a non-empty loop, the loop variable remains set to the last iterated value.
+- `break` exits the nearest loop.
+- `continue` skips to the next iteration.
 - Nested `if`, `repeat`, `while`, and `for` blocks are supported.
 
 ## Constants

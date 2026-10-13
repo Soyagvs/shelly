@@ -37,7 +37,7 @@ end
 ```shelly
 import "examples/module.shelly"
 
-greet "Ada"
+call greet "Ada"
 shellout $$GREETING
 ```
 

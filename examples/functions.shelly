@@ -7,5 +7,5 @@ fn greet $name, $age, $prefix = "Hola"
     $outside = "local only"
 end
 
-greet "Agustin", 27
+call greet "Agustin", 27
 shellout $outside

@@ -66,7 +66,7 @@ shellout "For loop ended on $name"
 # `ask` prints a prompt and stores one input line in a variable. #
 ask "Do you want to continue? " -> $answer
 
-if $answer == "yes"
+if $answer == "yes" and not false
     shellout "Great, continuing"
 elif $answer == "no"
     shellout "Stopping soon"
@@ -81,6 +81,9 @@ shellout "Favorite color: $color"
 
 # Repeat loops run a fixed number of times. The optional index is local/protected. #
 repeat 3 -> $turn
+    if $turn == 2
+        continue
+    end
     shellout "Repeat turn $turn"
 end
 
@@ -98,7 +101,14 @@ while $countdown > 0
 end
 shellout "While finished at $countdown"
 
-# Functions use fn/end, comma-separated arguments, defaults, and local scope. #
+# Functions use fn/end, comma-separated arguments, defaults, local scope, and return values. #
+fn label $person
+    return "Label for $person"
+end
+
+call label $name -> $label
+shellout $label
+
 fn greet $person, $prefix = "Hello"
     global $$APP, $color
 
@@ -106,12 +116,12 @@ fn greet $person, $prefix = "Hello"
     shellout "$local_message; favorite color is $color"
 end
 
-greet $name
-greet "Guest", "Hi"
+call greet $name
+call greet "Guest", "Hi"
 
 # Imports load exported constants/functions only; includes execute the whole file in current scope. #
 import "examples/module.shelly"
-greet "Ada"
+call greet "Ada"
 shellout "Imported constant: $$GREETING"
 include "examples/setup.shelly"
 shellout "Included setup color: $color"

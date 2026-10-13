@@ -11,20 +11,22 @@ fn greet $name, $prefix = "Hola"
     shellout "$prefix $name"
 end
 
-greet "Ada"
-greet "Ada", "Hello"
+call greet "Ada"
+call greet "Ada", "Hello"
 ```
 
 ## Rules
 
 - Function definitions start with `fn` and close with `end`.
-- Functions are called by name.
+- Functions are called with `call name args`.
 - Parameters use `$` variable syntax.
 - Definitions and calls use comma-separated values.
 - Default parameters must come after required parameters.
 - Function scope is local by default.
-- Use `global` to read or write selected outer values.
-- Functions do not return values yet.
+- Use `global` to read selected outer values.
+- `return value` exits the function early.
+- Capture a returned value with `call function args -> $result`.
+- Calling a returning function without `->` discards the result.
 
 ## Local scope
 
@@ -36,8 +38,19 @@ fn demo
     shellout $outside
 end
 
-demo
+call demo
 shellout $outside
+```
+
+## Return values
+
+```shelly
+fn label $name
+    return "hello $name"
+end
+
+call label "Ada" -> $message
+shellout $message
 ```
 
 ## Global access
@@ -49,6 +62,8 @@ fn greet $name
     global $$APP
     shellout "hello $name from $$APP"
 end
+
+call greet "Ada"
 ```
 
 <p align="center">
