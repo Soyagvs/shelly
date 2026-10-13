@@ -1,0 +1,55 @@
+name: Release binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x86_64
+            os: ubuntu-latest
+            archive: shelly-linux-x86_64.tar.gz
+          - label: macos-x86_64
+            os: macos-13
+            archive: shelly-macos-x86_64.tar.gz
+          - label: macos-arm64
+            os: macos-latest
+            archive: shelly-macos-arm64.tar.gz
+          - label: windows-x86_64
+            os: windows-latest
+            archive: shelly-windows-x86_64.zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Package Unix binary
+        if: runner.os != 'Windows'
+        run: tar -C target/release -czf "${{ matrix.archive }}" shelly
+
+      - name: Package Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path target/release/shelly.exe -DestinationPath "${{ matrix.archive }}"
+
+      - name: Upload binary to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.archive }}

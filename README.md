@@ -19,16 +19,39 @@ Shelly is a Bash 2.0 style shell and script runner for `.shelly` scripts.
 
 Small scripts. Clear syntax. One readable way to compose variables, commands, lists, blocks, functions, modules, and explicit exits.
 
-## Run
+## Install
+
+Download Shelly from the latest GitHub Release for your computer:
+
+- Linux: `shelly-linux-x86_64.tar.gz`
+- macOS with Intel chip: `shelly-macos-x86_64.tar.gz`
+- macOS with Apple silicon: `shelly-macos-arm64.tar.gz`
+- Windows: `shelly-windows-x86_64.zip`
+
+Unpack the downloaded file. It contains the `shelly` program (`shelly.exe` on Windows).
+
+Run a script from the folder where you unpacked Shelly:
+
+```sh
+./shelly path/to/script.shelly
+```
+
+On Windows PowerShell:
+
+```powershell
+.\shelly.exe path\to\script.shelly
+```
+
+Advanced/developer option, if you already have Rust installed:
+
+```sh
+cargo install --path .
+```
+
+## Run from source
 
 ```sh
 cargo run -- path/to/script.shelly
-```
-
-Future installed form:
-
-```sh
-shelly path/to/script.shelly
 ```
 
 ## Taste
