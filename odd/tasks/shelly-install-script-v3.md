@@ -17,8 +17,8 @@ Feature: add a simple Linux/macOS installer and publish the next public release 
 - [x] Update README install instructions for non-technical users.
 - [x] Bump Cargo version to `3.0.0`.
 - [x] Verify script syntax and project checks.
-- [ ] Commit and push changes.
-- [ ] Create and push `v3.0.0` tag.
+- [x] Commit and push changes.
+- [x] Create and push `v3.0.0` tag.
 
 ## Evidence
 
@@ -27,3 +27,5 @@ Feature: add a simple Linux/macOS installer and publish the next public release 
 - Bumped `Cargo.toml` package version from `0.1.0` to `3.0.0` for the `v3.0.0` release.
 - GREEN: `cargo check --quiet` passed after the version bump.
 - GREEN: `sh -n install.sh && cargo fmt --check && cargo test && printf 'yes\\nblue\\n' | cargo run --quiet -- example-01.shelly` passed; full suite reported 84 tests passed.
+- Committed and pushed `f278793` with message `ci: add unix installer for v3 release`.
+- Created and pushed SemVer tag `v3.0.0`, which triggers the GitHub Release binary workflow.
