@@ -21,32 +21,36 @@ Small scripts. Clear syntax. One readable way to compose variables, commands, li
 
 ## Install
 
-Download Shelly from the latest GitHub Release for your computer:
+Linux and macOS:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Soyagvs/shelly/main/install.sh | sh
+```
+
+Create a script named `hello.shelly`:
+
+```shelly
+shellout "Hello from Shelly"
+```
+
+Run it:
+
+```sh
+shelly hello.shelly
+```
+
+Windows users can download `shelly-windows-x86_64.zip` from the latest GitHub Release, unzip it, and run:
+
+```powershell
+.\shelly.exe hello.shelly
+```
+
+Manual downloads are also available on GitHub Releases:
 
 - Linux: `shelly-linux-x86_64.tar.gz`
 - macOS with Intel chip: `shelly-macos-x86_64.tar.gz`
 - macOS with Apple silicon: `shelly-macos-arm64.tar.gz`
 - Windows: `shelly-windows-x86_64.zip`
-
-Unpack the downloaded file. It contains the `shelly` program (`shelly.exe` on Windows).
-
-Run a script from the folder where you unpacked Shelly:
-
-```sh
-./shelly path/to/script.shelly
-```
-
-On Windows PowerShell:
-
-```powershell
-.\shelly.exe path\to\script.shelly
-```
-
-Advanced/developer option, if you already have Rust installed:
-
-```sh
-cargo install --path .
-```
 
 ## Run from source
 
