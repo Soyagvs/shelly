@@ -21,7 +21,7 @@ Small scripts. Clear syntax. One readable way to compose variables, commands, li
 
 ## Latest release
 
-**v3.1.0** is the latest public-ready Shelly release.
+**v3.1.1** is the latest public-ready Shelly release.
 
 - Linux/macOS installer: `curl -fsSL https://raw.githubusercontent.com/Soyagvs/shelly/main/install.sh | sh`
 - Windows installer: `irm https://raw.githubusercontent.com/Soyagvs/shelly/main/install.ps1 | iex`
@@ -140,6 +140,7 @@ Start here: [`docs/language.md`](docs/language.md).
 | Lists | [`docs/lists.md`](docs/lists.md) |
 | Dictionaries | [`docs/dictionaries.md`](docs/dictionaries.md) |
 | JSON helpers | [`docs/json.md`](docs/json.md) |
+| File icons | [`docs/file-icons.md`](docs/file-icons.md) |
 | Standard helpers | [`docs/helpers.md`](docs/helpers.md) |
 | Logging | [`docs/logging.md`](docs/logging.md) |
 | Files | [`docs/files.md`](docs/files.md) |

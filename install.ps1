@@ -5,6 +5,47 @@ $Version = if ($env:SHELLY_VERSION) { $env:SHELLY_VERSION } else { "latest" }
 $InstallDir = if ($env:SHELLY_INSTALL_DIR) { $env:SHELLY_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA "Shelly\bin" }
 $Archive = "shelly-windows-x86_64.zip"
 
+
+function Install-ShellyFileAssociation($InstallDir, $IconUrl) {
+    $IconPath = Join-Path $InstallDir "shelly.ico"
+    try {
+        Invoke-WebRequest -Uri $IconUrl -OutFile $IconPath
+    } catch {
+        Write-Host "Could not download Shelly file icon; continuing without icon registration."
+        return
+    }
+
+    $ClassesRoot = "HKCU:\Software\Classes"
+    $ExtensionKey = Join-Path $ClassesRoot ".shelly"
+    $ProgId = "ShellyScript"
+    $ProgIdKey = Join-Path $ClassesRoot $ProgId
+
+    New-Item -Path $ExtensionKey -Force | Out-Null
+    Set-Item -Path $ExtensionKey -Value $ProgId
+    New-ItemProperty -Path $ExtensionKey -Name "Content Type" -Value "text/x-shelly" -PropertyType String -Force | Out-Null
+    New-ItemProperty -Path $ExtensionKey -Name "PerceivedType" -Value "text" -PropertyType String -Force | Out-Null
+
+    New-Item -Path $ProgIdKey -Force | Out-Null
+    Set-Item -Path $ProgIdKey -Value "Shelly script"
+
+    $DefaultIconKey = Join-Path $ProgIdKey "DefaultIcon"
+    New-Item -Path $DefaultIconKey -Force | Out-Null
+    Set-Item -Path $DefaultIconKey -Value $IconPath
+
+    $CommandKey = Join-Path $ProgIdKey "shell\open\command"
+    New-Item -Path $CommandKey -Force | Out-Null
+    $ExePath = Join-Path $InstallDir "shelly.exe"
+    Set-Item -Path $CommandKey -Value "`"$ExePath`" `"%1`""
+
+    try {
+        Start-Process -FilePath "ie4uinit.exe" -ArgumentList "-show" -WindowStyle Hidden -ErrorAction SilentlyContinue
+    } catch {
+        # Explorer icon refresh is best-effort.
+    }
+
+    Write-Host "Registered .shelly file association and icon for the current user."
+}
+
 function Fail($Message) {
     Write-Error $Message
     exit 1
@@ -16,6 +57,7 @@ if (-not [Environment]::Is64BitOperatingSystem) {
 
 if ($Version -eq "latest") {
     $Url = "https://github.com/$Repo/releases/latest/download/$Archive"
+    $IconRef = "main"
 } else {
     if ($Version.StartsWith("v")) {
         $Tag = $Version
@@ -23,7 +65,9 @@ if ($Version -eq "latest") {
         $Tag = "v$Version"
     }
     $Url = "https://github.com/$Repo/releases/download/$Tag/$Archive"
+    $IconRef = $Tag
 }
+$IconUrl = "https://raw.githubusercontent.com/$Repo/$IconRef/assets/icons/shelly.ico"
 
 $TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("shelly-install-" + [System.Guid]::NewGuid())
 New-Item -ItemType Directory -Path $TempDir | Out-Null
@@ -65,6 +109,7 @@ try {
     }
 
     Write-Host "Shelly installed to $(Join-Path $InstallDir 'shelly.exe')"
+    Install-ShellyFileAssociation -InstallDir $InstallDir -IconUrl $IconUrl
     Write-Host "Run: shelly hello.shelly"
 } finally {
     Remove-Item -Path $TempDir -Recurse -Force -ErrorAction SilentlyContinue
