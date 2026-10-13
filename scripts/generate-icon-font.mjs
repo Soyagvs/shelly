@@ -40,7 +40,7 @@ fontStream.on('error', (error) => {
 const glyph = fs.createReadStream(sourceSvg);
 glyph.metadata = {
   name: 'shelly',
-  unicode: ['\u{100000}'],
+  unicode: ['\uE000'],
 };
 fontStream.write(glyph);
 fontStream.end();

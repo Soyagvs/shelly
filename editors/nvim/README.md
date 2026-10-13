@@ -13,7 +13,7 @@ Local Neovim support for Shelly `.shelly` files.
 
 Terminal Neovim cannot normally render an SVG file as the file explorer icon. Plugins such as `nvim-web-devicons` and `mini.icons` show **Nerd Font glyphs** with colors.
 
-This package converts `../../shelly.svg` into `../../fonts/ShellyIcons.ttf` and maps `.shelly` to private-use glyph `U+100000` for Neovim. Install the font locally before expecting the exact logo to render.
+This package converts `../../shelly.svg` into `../../fonts/ShellyIcons.ttf` and maps `.shelly` to private-use glyph `U+E000` for Neovim. Install the font locally before expecting the exact logo to render.
 
 ## Try it without installing
 
@@ -63,7 +63,7 @@ Or customize the glyph/color:
 
 ```lua
 require("shelly-icons").setup_web_devicons({
-  icon = "􀀀",
+  icon = "",
   color = "#7c3aed",
   cterm_color = "99",
   name = "Shelly",
