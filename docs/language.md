@@ -6,12 +6,17 @@
 
 Shelly scripts use the `.shelly` extension. One instruction per line. No semicolons.
 
-```shelly
+````shelly
 $name = "Ada"
 $$APP = "Shelly"
 
 shellout "hello $name from $$APP"
+
+shellout ```
+multiline
+text block
 ```
+````
 
 ## Core rules
 
@@ -22,6 +27,13 @@ shellout "hello $name from $$APP"
 - Blocks close with `end`.
 - List indexes start at `1`.
 - `command` runs system commands.
+- `"..."` is for one-line text; triple backticks are for multiline text.
+- `choose "Question" ["A", "B"] -> $choice` prints an interactive menu and stores the chosen value.
+- `log "identifier"` wraps a block with structured file logging in script-relative `logs/`.
+- `exists` and `contains` provide built-in boolean predicates.
+- Standard helpers transform text, lists, values, path strings, time, and random numbers; see [helpers.md](helpers.md).
+- File commands (`create`, `copy`, `move`, `rename`, `remove`, `read`, `write`, `append`, `isFile`, `isDir`, `size`, `tempFile`, `tempDir`) and `files "pattern" -> $items` use script-relative paths where applicable.
+- `and`, `or`, `not`, and condition parentheses compose conditions; priority is `not`, then `and`, then `or`.
 
 ## Reference
 
@@ -33,10 +45,16 @@ shellout "hello $name from $$APP"
 | Strings and interpolation | [strings.md](strings.md) |
 | Numeric expressions | [numeric-expressions.md](numeric-expressions.md) |
 | Lists | [lists.md](lists.md) |
+| Standard helpers | [helpers.md](helpers.md) |
+| Logging | [logging.md](logging.md) |
+| Files | [files.md](files.md) |
 | Commands and input | [commands.md](commands.md) |
+| Choose menus | [choose.md](choose.md) |
 | Exit | [exit.md](exit.md) |
+| Error handling | [errors.md](errors.md) |
 | Functions | [functions.md](functions.md) |
 | Conditionals | [conditionals.md](conditionals.md) |
+| Predicates | [predicates.md](predicates.md) |
 | Repeat loops | [repeat.md](repeat.md) |
 | While loops | [while.md](while.md) |
 | For loops | [for.md](for.md) |
@@ -72,7 +90,6 @@ Complete showcase: [`../example-01.shelly`](../example-01.shelly).
 
 ## Not implemented yet
 
-- Parenthesized condition expressions.
 - Nested lists.
 - Ordered string filters.
 - Multi-index, range, or filter mutation targets.

@@ -4,7 +4,7 @@
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
 
-`for` iterates over values in a list, constant list, range, selector, or filter.
+`for` iterates over values in a list, constant list, range, selector, filter, or list returned by [`files`](files.md).
 
 ```shelly
 $names = ["Ana", "Luis", "Mora"]
@@ -35,6 +35,17 @@ for $name in $$NAMES
     shellout $name
 end
 ```
+
+## Files
+
+```shelly
+files "*.txt" -> $items
+for $file in $items
+    shellout $file
+end
+```
+
+`files` sorts matches and returns an empty list when nothing matches.
 
 ## Selectors and filters
 

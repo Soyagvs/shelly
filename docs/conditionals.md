@@ -25,11 +25,11 @@ end
 - `elif condition` adds an optional middle branch.
 - `else` adds one optional fallback branch.
 - `end` closes the block.
-- Conditions use truthiness, simple comparisons, and logical operators.
+- Conditions use truthiness, simple comparisons, predicates, and logical operators.
 - `not` binds before `and`; `and` binds before `or`.
 - Blocks do not create a new scope.
-- Nested `if`, `repeat`, `while`, and `for` blocks are supported.
-- Parenthesized condition expressions are not implemented yet.
+- Nested `if`, `repeat`, `while`, `for`, and `try` blocks are supported.
+- Parentheses group condition expressions and can override logical precedence.
 
 ## Comparisons
 
@@ -41,13 +41,73 @@ end
 
 Supported comparison operators: `==`, `!=`, `>`, `>=`, `<`, and `<=`.
 
-Supported logical operators: `and`, `or`, and `not`.
+## Logical operators
+
+Use `not`, `and`, and `or` to compose conditions. Priority is:
+
+1. `not`
+2. `and`
+3. `or`
+
+Use parentheses to group condition expressions when you need a different order or clearer logic. Groups can nest, and `not (condition)` is supported.
+
+### `not`
 
 ```shelly
-if not false and $count > 0
-    shellout "ready"
+if not false
+    shellout "true"
 end
 ```
+
+### `and`
+
+```shelly
+if $count > 0 and $count < 10
+    shellout "small positive number"
+end
+```
+
+### `or`
+
+```shelly
+if $mode == "dev" or $mode == "test"
+    shellout "non-production"
+end
+```
+
+### Grouping
+
+```shelly
+if ($mode == "dev" or $mode == "test") and not $disabled
+    shellout "enabled non-production"
+end
+
+if not (exists "dist/app" and contains $mode "prod")
+    shellout "needs attention"
+end
+```
+
+### Combined predicates
+
+```shelly
+$names = ["Ana", "Luis"]
+
+if exists "README.md" and contains $names "Luis"
+    shellout "ready"
+end
+
+if not exists "dist/app" or contains $mode "dev"
+    shellout "build needed"
+end
+```
+
+## Predicates
+
+Use `exists "path"` to check for a file or directory relative to the current script file. Missing paths return false instead of erroring.
+
+Use `contains $value "thing"` for substring checks on strings and exact item checks on lists.
+
+See [predicates.md](predicates.md) for capture forms, composition examples, and predicate-specific notes.
 
 ## Truthiness
 

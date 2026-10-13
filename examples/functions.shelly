@@ -1,11 +1,11 @@
 $outside = "outer"
 $$APP = "Shelly"
 
-fn greet $name, $age, $prefix = "Hola"
+fn greet($name, $age, $prefix = "Hola") {
     global $outside, $$APP
     shellout "$prefix $name age=$age from $$APP with $outside"
     $outside = "local only"
-end
+}
 
-call greet "Agustin", 27
+call greet("Agustin", 27)
 shellout $outside

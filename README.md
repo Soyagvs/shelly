@@ -26,7 +26,7 @@ Small scripts. Clear syntax. One readable way to compose variables, commands, li
 - Linux/macOS installer: `curl -fsSL https://raw.githubusercontent.com/Soyagvs/shelly/main/install.sh | sh`
 - Windows installer: `irm https://raw.githubusercontent.com/Soyagvs/shelly/main/install.ps1 | iex`
 - Release binaries are built for Linux x86_64, macOS Intel, macOS Apple Silicon, and Windows x86_64.
-- Language highlights: lists, selectors, filters, `for`, `while`, `repeat`, explicit `call`, function `return`, `break`, `continue`, logical `and` / `or` / `not`, modules, and `command` for system tools.
+- Language highlights: lists, selectors, filters, file commands/helpers, standard helpers, `for`, `while`, `repeat`, explicit `call`, function `return`, `break`, `continue`, logical `and` / `or` / `not` with grouped conditions, `exists` / `contains` predicates, modules, and `command` for system tools.
 - Editor support: `shelly check` validates scripts safely without executing them, enabling VS Code diagnostics.
 - License: MIT.
 
@@ -40,9 +40,14 @@ curl -fsSL https://raw.githubusercontent.com/Soyagvs/shelly/main/install.sh | sh
 
 Create a script named `hello.shelly`:
 
-```shelly
+````shelly
 shellout "Hello from Shelly"
+
+shellout ```
+Hello
+from multiple lines
 ```
+````
 
 Check it without executing commands:
 
@@ -91,9 +96,13 @@ $names = ["Ana", "Luis", "Mora"]
 shellout "Hello $name from $$APP"
 shellout "First name: $names[first]"
 
-ask "Continue? " -> $answer
-if $answer != "yes"
+choose "Continue?" ["yes", "no"] -> $answer
+if $answer != "yes" or not contains $names "Luis"
     exit 1
+end
+
+if exists "README.md"
+    shellout "README found"
 end
 
 command "pwd" -> $cwd
@@ -113,16 +122,23 @@ Start here: [`docs/language.md`](docs/language.md).
 
 | Topic | Guide |
 | --- | --- |
+| Language overview | [`docs/language.md`](docs/language.md) |
 | Comments | [`docs/comments.md`](docs/comments.md) |
 | Variables | [`docs/variables.md`](docs/variables.md) |
 | Constants | [`docs/constants.md`](docs/constants.md) |
 | Strings | [`docs/strings.md`](docs/strings.md) |
 | Numeric expressions | [`docs/numeric-expressions.md`](docs/numeric-expressions.md) |
 | Lists | [`docs/lists.md`](docs/lists.md) |
+| Standard helpers | [`docs/helpers.md`](docs/helpers.md) |
+| Logging | [`docs/logging.md`](docs/logging.md) |
+| Files | [`docs/files.md`](docs/files.md) |
 | Commands and input | [`docs/commands.md`](docs/commands.md) |
+| Choose menus | [`docs/choose.md`](docs/choose.md) |
 | Exit | [`docs/exit.md`](docs/exit.md) |
+| Error handling | [`docs/errors.md`](docs/errors.md) |
 | Functions | [`docs/functions.md`](docs/functions.md) |
 | Conditionals | [`docs/conditionals.md`](docs/conditionals.md) |
+| Predicates | [`docs/predicates.md`](docs/predicates.md) |
 | Repeat loops | [`docs/repeat.md`](docs/repeat.md) |
 | While loops | [`docs/while.md`](docs/while.md) |
 | For loops | [`docs/for.md`](docs/for.md) |

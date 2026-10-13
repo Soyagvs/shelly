@@ -26,10 +26,10 @@ include "examples/setup.shelly"
 ```shelly
 export $$GREETING = "Hola"
 
-export fn greet $name
+export fn greet($name) {
     global $$GREETING
     shellout "$$GREETING $name"
-end
+}
 ```
 
 ## Import
@@ -37,7 +37,7 @@ end
 ```shelly
 import "examples/module.shelly"
 
-call greet "Ada"
+call greet("Ada")
 shellout $$GREETING
 ```
 

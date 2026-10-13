@@ -114,6 +114,101 @@ shellout "hello $name"
 }
 
 #[test]
+fn shellout_multiline_string_prints_one_block() {
+    let output = run_script(
+        r#"
+shellout ```
+line one
+  line two
+```
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "line one\n  line two\n");
+}
+
+#[test]
+fn multiline_assignment_shellout_file_write_append_and_call_args() {
+    let dir = test_dir();
+    fs::write(
+        dir.join("script.shelly"),
+        r#"
+$value = ```
+assigned
+block
+```
+shellout $value
+write "out.txt" ```
+written
+block
+```
+append "out.txt" ```
+appended
+block
+```
+read "out.txt" -> $file_text
+shellout $file_text
+fn echo($text) {
+    shellout $text
+}
+call echo(```
+called
+block
+```
+)
+"#,
+    )
+    .expect("write script");
+
+    let output = run_script_path(dir.join("script.shelly"));
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "assigned\nblock\nwritten\nblockappended\nblock\n\ncalled\nblock\n"
+    );
+}
+
+#[test]
+fn unterminated_multiline_string_is_reported_by_check_and_runtime() {
+    let source = "shellout ```\nmissing close\n";
+
+    let checked = check_script(source);
+    assert!(!checked.status.success());
+    assert!(stderr(&checked).contains("line 1"));
+    assert!(stderr(&checked).contains("unterminated multiline string"));
+
+    let output = run_script(source);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("unterminated multiline string"));
+}
+
+#[test]
+fn multiline_content_does_not_affect_block_parsing_or_comments() {
+    let output = run_script(
+        r#"
+if true
+    shellout ```
+end
+}
+fn nope() {
+if false
+# not a comment
+```
+end
+shellout "after"
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "end\n}\nfn nope() {\nif false\n# not a comment\nafter\n"
+    );
+}
+
+#[test]
 fn variable_assignment_and_shellout_variable() {
     let output = run_script(
         r#"
@@ -252,6 +347,90 @@ end
 
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "Name? hello Ada\n");
+}
+
+#[test]
+fn choose_by_number_stores_selected_value_and_prints_menu() {
+    let output = run_script_with_stdin(
+        r#"
+choose "Pick one" ["A", "B", "C"] -> $choice
+shellout "choice=$choice"
+"#,
+        b"2\n",
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "Pick one\n1) A\n2) B\n3) C\nChoose: choice=B\n"
+    );
+}
+
+#[test]
+fn choose_by_exact_text_stores_selected_value() {
+    let output = run_script_with_stdin(
+        r#"
+choose "Pick one" ["A", "B"] -> $choice
+shellout $choice
+"#,
+        b"B\n",
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "Pick one\n1) A\n2) B\nChoose: B\n");
+}
+
+#[test]
+fn choose_invalid_input_reprompts_then_accepts_valid_input() {
+    let output = run_script_with_stdin(
+        r#"
+choose "Pick one" ["A", "B"] -> $choice
+shellout $choice
+"#,
+        b"nope\n1\n",
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "Pick one\n1) A\n2) B\nChoose: Choose: A\n");
+}
+
+#[test]
+fn choose_empty_option_list_fails() {
+    let output = run_script(r#"choose "Pick one" [] -> $choice"#);
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("choose options must not be empty"));
+}
+
+#[test]
+fn check_valid_choose_syntax_succeeds() {
+    let output = check_script(r#"choose "Pick one" ["A", "B"] -> $choice"#);
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+}
+
+#[test]
+fn check_validates_choose_invalid_syntax() {
+    for (source, expected) in [
+        (r#"choose "Pick one" ["A"]"#, "choose syntax is choose"),
+        (
+            r#"choose "Pick one" [] -> $choice"#,
+            "choose options must not be empty",
+        ),
+        (
+            r#"choose "Pick one" ["A"] -> $$CHOICE"#,
+            "choose destination must be a variable",
+        ),
+    ] {
+        let output = check_script(source);
+
+        assert!(!output.status.success(), "source succeeded: {source}");
+        assert!(
+            stderr(&output).contains(expected),
+            "stderr did not contain {expected:?}: {}",
+            stderr(&output)
+        );
+    }
 }
 
 #[test]
@@ -478,12 +657,13 @@ fn functions_call_with_parameters_defaults_local_scope_and_global_reads() {
         r#"
 $outer = "outside"
 $$APP = "Shelly"
-fn person $name, $age, $prefix = "Hola"
+
+fn person($name, $age, $prefix = "Hola") {
     global $outer, $$APP
     $outer = "inside"
     shellout "$prefix $name age=$age outer=$outer app=$$APP"
-end
-call person "Agustin", 27
+}
+call person("Agustin", 27)
 shellout $outer
 "#,
     );
@@ -501,10 +681,11 @@ fn function_call_arguments_accept_variable_and_constant_references() {
         r#"
 $name = "Ada"
 $$APP = "Shelly"
-fn greet $name, $app, $age, $enabled
+
+fn greet($name, $app, $age, $enabled) {
     shellout "$name from $app age=$age enabled=$enabled"
-end
-call greet $name, $$APP, 27, true
+}
+call greet($name, $$APP, 27, true)
 "#,
     );
 
@@ -516,11 +697,11 @@ call greet $name, $$APP, 27, true
 fn function_call_reference_arguments_fail_when_undefined() {
     for (source, expected) in [
         (
-            "fn greet $name\nend\ncall greet $missing\n",
+            "fn greet($name) {\n}\ncall greet($missing)\n",
             "undefined variable $missing",
         ),
         (
-            "fn greet $app\nend\ncall greet $$MISSING\n",
+            "fn greet($app) {\n}\ncall greet($$MISSING)\n",
             "undefined constant $$MISSING",
         ),
     ] {
@@ -538,24 +719,33 @@ fn function_call_reference_arguments_fail_when_undefined() {
 #[test]
 fn function_errors_cover_invalid_definitions_and_calls() {
     for (source, expected) in [
-        ("fn missing\nshellout \"no end\"\n", "missing end"),
-        ("fn same\nend\nfn same\nend\n", "duplicate function"),
+        ("fn missing() {\nshellout \"no end\"\n", "missing }"),
+        ("fn same() {\n}\nfn same() {\n}\n", "duplicate function"),
         ("does_not_exist \"x\"\n", "unknown command"),
+        ("fn old $name\nend\n", "old function syntax was removed"),
         (
-            "fn greet $name\nend\ngreet \"Ada\"\n",
+            "fn greet($name) {\n}\ngreet \"Ada\"\n",
             "function calls must use call",
         ),
-        ("fn one $name\nend\ncall one\n", "wrong argument count"),
         (
-            "fn bad $first = \"x\", $second\nend\n",
+            "fn greet($name) {\n}\ncall greet \"Ada\"\n",
+            "old call syntax was removed",
+        ),
+        (
+            "fn greet($name) {\n}\ncall greet(\"Ada\"\n",
+            "call arguments must be enclosed in parentheses",
+        ),
+        ("fn one($name) {\n}\ncall one()\n", "wrong argument count"),
+        (
+            "fn bad($first = \"x\", $second) {\n}\n",
             "required parameter cannot follow default",
         ),
         (
-            "fn bad\nglobal name\nend\ncall bad\n",
+            "fn bad() {\nglobal name\n}\ncall bad()\n",
             "expected identifier",
         ),
         (
-            "$outer = \"outside\"\nfn bad\nshellout $outer\nend\ncall bad\n",
+            "$outer = \"outside\"\nfn bad() {\nshellout $outer\n}\ncall bad()\n",
             "undefined variable",
         ),
     ] {
@@ -623,7 +813,7 @@ fn conditional_errors_cover_structure_and_unsupported_expressions() {
         ("if false\nelse\nelif true\nend\n", "elif after else"),
         ("if false\nelse\nelse\nend\n", "duplicate else"),
         ("if\nend\n", "condition required"),
-        ("if (true)\nend\n", "unsupported complex condition"),
+        ("if true)\nend\n", "unexpected ')'"),
     ] {
         let output = run_script(source);
 
@@ -658,12 +848,12 @@ fn import_loads_exported_function() {
     let dir = test_dir();
     fs::write(
         dir.join("module.shelly"),
-        "export fn greet $name\n    shellout \"Hola $name\"\nend\n",
+        "export fn greet($name) {\n    shellout \"Hola $name\"\n}\n",
     )
     .expect("write module");
     fs::write(
         dir.join("main.shelly"),
-        "import \"module.shelly\"\ncall greet \"Ada\"\n",
+        "import \"module.shelly\"\ncall greet(\"Ada\")\n",
     )
     .expect("write main");
 
@@ -683,7 +873,7 @@ fn import_keeps_private_symbols_unavailable() {
         let dir = test_dir();
         fs::write(
             dir.join("module.shelly"),
-            "$secret = \"private var\"\n$$SECRET = \"private const\"\nfn hidden\n    shellout \"private fn\"\nend\n",
+            "$secret = \"private var\"\n$$SECRET = \"private const\"\nfn hidden() {\n    shellout \"private fn\"\n}\n",
         )
         .expect("write module");
         fs::write(
@@ -1215,6 +1405,416 @@ end
 }
 
 #[test]
+fn files_collects_txt_paths_and_for_iterates_results() {
+    let dir = test_dir();
+    fs::write(dir.join("b.txt"), "b").expect("write b");
+    fs::write(dir.join("a.txt"), "a").expect("write a");
+    fs::write(dir.join("ignore.md"), "ignore").expect("write ignore");
+    fs::write(
+        dir.join("script.shelly"),
+        r#"
+files "*.txt" -> $items
+for $file in $items
+    shellout $file
+end
+"#,
+    )
+    .expect("write script");
+
+    let output = run_script_path(dir.join("script.shelly"));
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "a.txt\nb.txt\n");
+}
+
+#[test]
+fn files_shellout_displays_list_without_iterating() {
+    let dir = test_dir();
+    fs::write(dir.join("one.txt"), "one").expect("write one");
+    fs::write(dir.join("two.txt"), "two").expect("write two");
+    fs::write(
+        dir.join("script.shelly"),
+        "files \"*.txt\" -> $items\nshellout $items\n",
+    )
+    .expect("write script");
+
+    let output = run_script_path(dir.join("script.shelly"));
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "[one.txt, two.txt]\n");
+}
+
+#[test]
+fn files_empty_match_is_empty_list_and_falsey() {
+    let output = run_script(
+        r#"
+files "missing*.txt" -> $items
+shellout $items
+if $items
+    shellout "bad"
+else
+    shellout "empty"
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "[]\nempty\n");
+}
+
+#[test]
+fn files_supports_subdirectory_segment_glob() {
+    let dir = test_dir();
+    fs::create_dir_all(dir.join("dir")).expect("create dir");
+    fs::write(dir.join("dir/b.txt"), "b").expect("write b");
+    fs::write(dir.join("dir/a.txt"), "a").expect("write a");
+    fs::write(dir.join("dir/c.md"), "c").expect("write c");
+    fs::write(
+        dir.join("script.shelly"),
+        "files \"dir/*.txt\" -> $items\nshellout $items\n",
+    )
+    .expect("write script");
+
+    let output = run_script_path(dir.join("script.shelly"));
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "[dir/a.txt, dir/b.txt]\n");
+}
+
+#[test]
+fn check_accepts_files_and_rejects_invalid_files_syntax() {
+    let valid = check_script("files \"*.txt\" -> $items\n");
+    assert!(valid.status.success(), "stderr: {}", stderr(&valid));
+
+    for (source, expected) in [
+        ("files\n", "files syntax is files"),
+        ("files *.txt -> $items\n", "files requires a string pattern"),
+        ("files \"*.txt\"\n", "files syntax is files"),
+        (
+            "files \"*.txt\" -> $$ITEMS\n",
+            "files destination must be a variable",
+        ),
+        (
+            "files \"*.txt\" -> items\n",
+            "files destination must be a variable",
+        ),
+        (
+            "files \"*.txt\" -> $items extra\n",
+            "files destination must be a variable",
+        ),
+    ] {
+        let output = check_script(source);
+        assert!(!output.status.success(), "source should fail: {source}");
+        assert!(
+            stderr(&output).contains(expected),
+            "stderr did not contain {expected:?}: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
+fn file_commands_create_paths_relative_to_script_dir_and_preserve_existing_files() {
+    let dir = test_dir();
+    fs::write(dir.join("keep.txt"), "keep").expect("write existing");
+    fs::write(
+        dir.join("script.shelly"),
+        r#"
+create "./nested/file.txt"
+create "./nested/dir/"
+create "keep.txt"
+write "nested/dir/value.txt" "value"
+read "./nested/dir/value.txt" -> $value
+shellout $value
+"#,
+    )
+    .expect("write script");
+
+    let output = run_script_path(dir.join("script.shelly"));
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "value\n");
+    assert!(dir.join("nested/file.txt").is_file());
+    assert!(dir.join("nested/dir").is_dir());
+    assert_eq!(fs::read_to_string(dir.join("keep.txt")).unwrap(), "keep");
+}
+
+#[test]
+fn file_commands_copy_files_and_directories_and_fail_when_destination_exists() {
+    let dir = test_dir();
+    fs::create_dir_all(dir.join("srcdir/sub")).expect("create src dir");
+    fs::write(dir.join("source.txt"), "file").expect("write source");
+    fs::write(dir.join("srcdir/sub/item.txt"), "dir").expect("write dir item");
+    fs::write(dir.join("exists.txt"), "exists").expect("write exists");
+    fs::write(
+        dir.join("script.shelly"),
+        r#"
+copy "source.txt" "out/file.txt"
+copy "srcdir" "out/dircopy"
+read "out/file.txt" -> $file
+read "out/dircopy/sub/item.txt" -> $dir
+shellout "$file/$dir"
+"#,
+    )
+    .expect("write script");
+
+    let output = run_script_path(dir.join("script.shelly"));
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "file/dir\n");
+
+    fs::write(
+        dir.join("fail.shelly"),
+        "copy \"source.txt\" \"exists.txt\"\n",
+    )
+    .expect("write fail script");
+    let output = run_script_path(dir.join("fail.shelly"));
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("destination already exists"));
+}
+
+#[test]
+fn file_commands_move_rename_and_remove_behaviors() {
+    let dir = test_dir();
+    fs::write(dir.join("move.txt"), "moved").expect("write move");
+    fs::create_dir_all(dir.join("tree/child")).expect("create tree");
+    fs::write(dir.join("tree/child/item.txt"), "item").expect("write item");
+    fs::write(dir.join("rename.txt"), "renamed").expect("write rename");
+    fs::write(dir.join("remove.txt"), "remove").expect("write remove");
+    fs::create_dir_all(dir.join("remove-dir")).expect("create remove dir");
+    fs::write(dir.join("remove-dir/item.txt"), "x").expect("write remove dir item");
+    fs::write(
+        dir.join("script.shelly"),
+        r#"
+move "move.txt" "dest/move.txt"
+move "tree" "dest/tree"
+rename "rename.txt" "renamed.txt"
+remove "remove.txt"
+remove "missing.txt"
+remove "remove-dir/"
+read "dest/move.txt" -> $moved
+read "dest/tree/child/item.txt" -> $item
+read "renamed.txt" -> $renamed
+shellout "$moved/$item/$renamed"
+"#,
+    )
+    .expect("write script");
+
+    let output = run_script_path(dir.join("script.shelly"));
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "moved/item/renamed\n");
+    assert!(!dir.join("remove.txt").exists());
+    assert!(!dir.join("remove-dir").exists());
+
+    fs::create_dir_all(dir.join("must-trail")).expect("create must trail");
+    fs::write(dir.join("bad-remove.shelly"), "remove \"must-trail\"\n").expect("write bad remove");
+    let output = run_script_path(dir.join("bad-remove.shelly"));
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("must end with '/'"));
+
+    fs::write(
+        dir.join("bad-rename.shelly"),
+        "rename \"renamed.txt\" \"nested/name.txt\"\n",
+    )
+    .expect("write bad rename");
+    let output = run_script_path(dir.join("bad-rename.shelly"));
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("plain name"));
+}
+
+#[test]
+fn file_commands_read_write_errors_and_check_validation() {
+    let dir = test_dir();
+    fs::create_dir_all(dir.join("adir")).expect("create dir");
+    fs::write(
+        dir.join("script.shelly"),
+        r#"
+$text = "hello"
+write "./out/text.txt" $text
+read "out/text.txt" -> $read
+shellout $read
+"#,
+    )
+    .expect("write script");
+    let output = run_script_path(dir.join("script.shelly"));
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "hello\n");
+
+    for (source, expected) in [
+        ("read \"missing.txt\" -> $text\n", "could not read file"),
+        ("read \"adir\" -> $text\n", "is a directory"),
+        ("write \"adir\" \"x\"\n", "is a directory"),
+    ] {
+        fs::write(dir.join("fail.shelly"), source).expect("write fail script");
+        let output = run_script_path(dir.join("fail.shelly"));
+        assert!(!output.status.success(), "source succeeded: {source}");
+        assert!(
+            stderr(&output).contains(expected),
+            "stderr: {}",
+            stderr(&output)
+        );
+    }
+
+    let valid = check_script(
+        r#"
+create "a.txt"
+copy "a.txt" "b.txt"
+move "b.txt" "c.txt"
+rename "c.txt" "d.txt"
+remove "d.txt"
+read "d.txt" -> $text
+write "e.txt" $text
+"#,
+    );
+    assert!(valid.status.success(), "stderr: {}", stderr(&valid));
+
+    for (source, expected) in [
+        ("create a.txt\n", "create requires a string path"),
+        ("copy \"a\"\n", "copy syntax"),
+        ("move \"a\" $to\n", "move syntax"),
+        ("rename \"a\" \"dir/name\"\n", "plain name"),
+        (
+            "read \"a\" -> $$TEXT\n",
+            "read destination must be a variable",
+        ),
+        ("write \"a\"\n", "write syntax"),
+    ] {
+        let output = check_script(source);
+        assert!(!output.status.success(), "source should fail: {source}");
+        assert!(
+            stderr(&output).contains(expected),
+            "stderr: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
+fn file_helper_commands_check_file_dir_temp_size_and_append() {
+    let dir = test_dir();
+    fs::create_dir_all(dir.join("existing-dir")).expect("create dir");
+    fs::write(dir.join("existing.txt"), "hello").expect("write file");
+    fs::write(
+        dir.join("script.shelly"),
+        r#"
+isFile "existing.txt" -> $file_true
+isFile "missing.txt" -> $file_false
+isDir "existing-dir" -> $dir_true
+isDir "existing.txt" -> $dir_false
+size "existing.txt" -> $bytes
+tempFile -> $temp_file
+tempDir -> $temp_dir
+write $temp_file "alpha"
+append $temp_file "beta"
+read $temp_file -> $temp_text
+size $temp_file -> $temp_bytes
+isFile $temp_file -> $temp_file_ok
+isDir $temp_dir -> $temp_dir_ok
+remove $temp_file
+isFile $temp_file -> $temp_file_removed
+append "logs/out.txt" "first"
+append "logs/out.txt" "second"
+read "logs/out.txt" -> $log
+shellout "$file_true/$file_false/$dir_true/$dir_false/$bytes/$temp_file_ok/$temp_dir_ok/$temp_bytes/$temp_file_removed"
+shellout $temp_text
+shellout $log
+"#,
+    )
+    .expect("write script");
+
+    let output = run_script_path(dir.join("script.shelly"));
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "true/false/true/false/5/true/true/10/false\nalphabeta\n\nfirst\nsecond\n\n"
+    );
+    assert_eq!(
+        fs::read_to_string(dir.join("logs/out.txt")).expect("read appended file"),
+        "first\nsecond\n"
+    );
+}
+
+#[test]
+fn size_fails_for_directory_and_append_preserves_list_append() {
+    let dir = test_dir();
+    fs::create_dir_all(dir.join("adir")).expect("create dir");
+    fs::write(dir.join("size-dir.shelly"), "size \"adir\" -> $bytes\n").expect("write script");
+
+    let output = run_script_path(dir.join("size-dir.shelly"));
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("size path is not a file"));
+
+    let output = run_script(
+        r#"
+$items = ["one"]
+append $items, "two"
+shellout $items
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "[one, two]\n");
+}
+
+#[test]
+fn check_accepts_file_helpers_and_rejects_invalid_file_helper_syntax() {
+    let valid = check_script(
+        r#"
+isFile "a.txt" -> $ok
+isDir "dir" -> $ok
+tempFile -> $path
+tempDir -> $path
+size "a.txt" -> $bytes
+append "logs/out.txt" "entry"
+write $path "entry"
+append $path "entry"
+read $path -> $text
+size $path -> $bytes
+isFile $path -> $ok
+remove $path
+"#,
+    );
+    assert!(valid.status.success(), "stderr: {}", stderr(&valid));
+
+    for (source, expected) in [
+        ("isFile \"a\"\n", "isFile syntax"),
+        ("isDir a -> $ok\n", "isDir requires a string path"),
+        (
+            "isFile \"a\" -> $$OK\n",
+            "isFile destination must be a variable",
+        ),
+        ("tempFile\n", "tempFile syntax"),
+        ("tempDir -> path\n", "temp destination must be a variable"),
+        ("size \"a\"\n", "size syntax"),
+        ("append \"a\"\n", "append syntax"),
+    ] {
+        let output = check_script(source);
+        assert!(!output.status.success(), "source should fail: {source}");
+        assert!(
+            stderr(&output).contains(expected),
+            "stderr did not contain {expected:?}: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
+fn import_and_include_support_explicit_current_directory_paths() {
+    let dir = test_dir();
+    fs::write(dir.join("module.shelly"), "export $$VALUE = \"imported\"\n").expect("write module");
+    fs::write(dir.join("shared.shelly"), "$shared = \"included\"\n").expect("write shared");
+    fs::write(
+        dir.join("script.shelly"),
+        "import \"./module.shelly\"\ninclude \"./shared.shelly\"\nshellout \"$$VALUE/$shared\"\n",
+    )
+    .expect("write script");
+
+    let output = run_script_path(dir.join("script.shelly"));
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "imported/included\n");
+}
+
+#[test]
 fn for_list_errors_cover_malformed_headers_non_lists_and_missing_end() {
     for (source, expected) in [
         (
@@ -1418,11 +2018,11 @@ shellout "after"
 fn exit_inside_function_stops_whole_script() {
     let output = run_script(
         r#"
-fn stop
+fn stop() {
     shellout "function"
     exit 0
-end
-call stop
+}
+call stop()
 shellout "after"
 "#,
     );
@@ -1815,18 +2415,130 @@ fn break_continue_and_return_outside_their_scopes_are_errors() {
 fn function_return_can_be_captured_or_discarded() {
     let output = run_script(
         r#"
-fn label $name
+fn label($name) {
     return "hello $name"
     shellout "unreachable"
-end
-call label "Ada" -> $message
+}
+call label("Ada") -> $message
 shellout $message
-call label "Bea"
+call label("Bea")
 "#,
     );
 
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "hello Ada\n");
+}
+
+#[test]
+fn parenthesized_conditions_override_precedence_and_nest() {
+    let output = run_script(
+        r#"
+$items = ["x"]
+$force = false
+if (true or false) and false
+    shellout "bad-precedence"
+else
+    shellout "group-false"
+end
+if true and (false or true)
+    shellout "group-true"
+end
+if ((false or true) and (not false))
+    shellout "nested"
+end
+if not (true and false)
+    shellout "not-group"
+end
+if (exists "script.shelly" and contains $items "x") or $force
+    shellout "predicates"
+end
+if false
+    shellout "bad-if"
+elif (true and (false or true))
+    shellout "elif-group"
+end
+$count = 0
+while ($count < 2)
+    shellout "while $count"
+    $count = $count + 1
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "group-false
+group-true
+nested
+not-group
+predicates
+elif-group
+while 0
+while 1
+"
+    );
+}
+
+#[test]
+fn check_accepts_grouped_conditions_and_rejects_malformed_groups() {
+    let valid = check_script(
+        r#"
+$items = ["x"]
+$force = false
+if (exists "README.md" and contains $items "x") or $force
+    shellout "ok"
+elif not (false)
+    shellout "elif"
+end
+while (false or $force)
+    break
+end
+"#,
+    );
+    assert!(valid.status.success(), "stderr: {}", stderr(&valid));
+
+    for (source, expected) in [
+        (
+            r#"if (true
+    shellout "bad"
+end
+"#,
+            "missing ')'",
+        ),
+        (
+            r#"if true)
+    shellout "bad"
+end
+"#,
+            "unexpected ')'",
+        ),
+        (
+            r#"if ()
+    shellout "bad"
+end
+"#,
+            "empty parenthesized condition",
+        ),
+        (
+            "(true)
+",
+            "unknown command or invalid syntax",
+        ),
+        (
+            r#"shellout ("hi")
+"#,
+            "expected string",
+        ),
+    ] {
+        let output = check_script(source);
+        assert!(!output.status.success(), "source should fail: {source}");
+        assert!(
+            stderr(&output).contains(expected),
+            "stderr did not contain {expected:?}: {}",
+            stderr(&output)
+        );
+    }
 }
 
 #[test]
@@ -1850,12 +2562,299 @@ end
     assert_eq!(stdout(&output), "first\nsecond\n");
 }
 
+#[test]
+fn exists_predicate_supports_conditions_capture_and_missing_paths() {
+    let dir = test_dir();
+    fs::write(dir.join("present.txt"), "ok").expect("write present file");
+    fs::write(dir.join("has->arrow.txt"), "ok").expect("write arrow file");
+    let script = dir.join("script.shelly");
+    fs::write(
+        &script,
+        r#"
+if exists "present.txt"
+    shellout "present"
+end
+if not exists "missing.txt"
+    shellout "missing-ok"
+end
+exists "present.txt" -> $hasPresent
+exists "missing.txt" -> $hasMissing
+exists "has->arrow.txt" -> $hasArrow
+shellout "$hasPresent/$hasMissing/$hasArrow"
+"#,
+    )
+    .expect("write script");
+
+    let output = run_script_path(script);
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "present\nmissing-ok\ntrue/false/true\n");
+}
+
+#[test]
+fn contains_predicate_supports_string_list_logic_and_capture() {
+    let output = run_script(
+        r#"
+$name = "augustus"
+$names = ["Ana", "Luis"]
+if contains $name "gus" and contains $names "Luis"
+    shellout "contains"
+end
+if not contains $names "Mia" or false
+    shellout "not-mia"
+end
+contains $names "Luis" -> $hasLuis
+contains $name "gus" -> $hasGus
+shellout "$hasLuis/$hasGus"
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "contains\nnot-mia\ntrue/true\n");
+}
+
+#[test]
+fn check_accepts_predicates_and_rejects_malformed_predicates() {
+    let valid = check_script(
+        r#"
+$names = ["Luis"]
+if exists "README.md" and contains $names "Luis"
+    shellout "ok"
+end
+exists "README.md" -> $hasReadme
+contains $names "Luis" -> $hasLuis
+"#,
+    );
+    assert!(valid.status.success(), "stderr: {}", stderr(&valid));
+
+    for source in [
+        "if exists\n    shellout \"bad\"\nend\n",
+        "if contains $names\n    shellout \"bad\"\nend\n",
+        "exists README.md -> $hasReadme\n",
+        "contains $names -> $hasLuis\n",
+    ] {
+        let output = check_script(source);
+        assert!(!output.status.success(), "source should fail: {source}");
+    }
+}
+
+#[test]
+fn try_success_skips_catch_and_errors_enter_catch() {
+    let output = run_script(
+        r#"
+try
+    shellout "ok"
+catch
+    shellout "bad"
+end
+try
+    nope
+catch
+    shellout "caught"
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "ok\ncaught\n");
+}
+
+#[test]
+fn try_captures_error_message_and_nested_try_works() {
+    let output = run_script(
+        r#"
+try -> $error
+    unknown-command
+catch
+    shellout "error=$error"
+end
+try
+    try
+        bad-inner
+    catch
+        shellout "inner"
+    end
+    shellout "outer ok"
+catch
+    shellout "outer catch"
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    let out = stdout(&output);
+    assert!(
+        out.contains("error=line 3: unknown command or invalid syntax: unknown-command"),
+        "stdout: {out}"
+    );
+    assert!(out.contains("inner\nouter ok\n"), "stdout: {out}");
+}
+
+#[test]
+fn try_does_not_catch_exit_break_continue_or_return() {
+    let output = run_script("try\n    exit 7\ncatch\n    shellout \"caught\"\nend\n");
+    assert_eq!(output.status.code(), Some(7));
+    assert_eq!(stdout(&output), "");
+
+    for (source, expected) in [
+        (
+            "try\n    break\ncatch\n    shellout \"caught\"\nend\n",
+            "break outside loop",
+        ),
+        (
+            "try\n    continue\ncatch\n    shellout \"caught\"\nend\n",
+            "continue outside loop",
+        ),
+    ] {
+        let output = run_script(source);
+        assert!(!output.status.success(), "source succeeded: {source}");
+        assert!(
+            stderr(&output).contains(expected),
+            "stderr: {}",
+            stderr(&output)
+        );
+        assert!(
+            !stdout(&output).contains("caught"),
+            "stdout: {}",
+            stdout(&output)
+        );
+    }
+}
+
+#[test]
+fn check_validates_try_catch_structure() {
+    let valid =
+        check_script("try -> $error\n    command \"false\"\ncatch\n    shellout $error\nend\n");
+    assert!(valid.status.success(), "stderr: {}", stderr(&valid));
+
+    for (source, expected) in [
+        ("try\n    shellout \"x\"\nend\n", "missing catch"),
+        ("try\ncatch\ncatch\nend\n", "duplicate catch"),
+        ("catch\n", "catch outside try"),
+        (
+            "try -> error\ncatch\nend\n",
+            "try error destination must be a variable",
+        ),
+        (
+            "try -> $$ERROR\ncatch\nend\n",
+            "try error destination must be a variable",
+        ),
+    ] {
+        let output = check_script(source);
+        assert!(!output.status.success(), "source should fail: {source}");
+        assert!(
+            stderr(&output).contains(expected),
+            "stderr did not contain {expected:?}: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
+fn log_block_writes_structured_file_and_keeps_stdout() {
+    let dir = test_dir();
+    fs::write(
+        dir.join("script.shelly"),
+        r#"
+log "run"
+    shellout "visible"
+    command "printf cmd-out"
+end
+"#,
+    )
+    .expect("write script");
+
+    let output = run_script_path(dir.join("script.shelly"));
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "visible\ncmd-out");
+    let log = read_single_log(&dir, "run-");
+    assert!(log.contains("--- run ---"), "log: {log}");
+    assert!(log.contains("ENTER"), "log: {log}");
+    assert!(log.contains("shellout: visible"), "log: {log}");
+    assert!(log.contains("command: printf cmd-out"), "log: {log}");
+    assert!(log.contains("EXIT ok"), "log: {log}");
+}
+
+#[test]
+fn log_block_records_errors_and_preserves_failure() {
+    let dir = test_dir();
+    fs::write(dir.join("script.shelly"), "log \"err\"\n    unknown\nend\n").expect("write script");
+
+    let output = run_script_path(dir.join("script.shelly"));
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("unknown command"));
+    let log = read_single_log(&dir, "err-");
+    assert!(log.contains("ERROR"), "log: {log}");
+    assert!(log.contains("unknown command"), "log: {log}");
+}
+
+#[test]
+fn log_identifier_is_sanitized_and_nested_blocks_collect() {
+    let dir = test_dir();
+    fs::write(
+        dir.join("script.shelly"),
+        r#"
+log "bad/id!*"
+    log "inner"
+        shellout "inner out"
+    end
+end
+"#,
+    )
+    .expect("write script");
+
+    let output = run_script_path(dir.join("script.shelly"));
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "inner out\n");
+    let outer = read_single_log(&dir, "bad-id---");
+    assert!(outer.contains("log: inner"), "log: {outer}");
+    assert!(outer.contains("EXIT ok"), "log: {outer}");
+    let inner = read_single_log(&dir, "inner-");
+    assert!(inner.contains("shellout: inner out"), "log: {inner}");
+}
+
+#[test]
+fn check_accepts_log_blocks_and_rejects_missing_identifier_or_end() {
+    let valid = check_script("log \"id\"\n    shellout \"ok\"\nend\n");
+    assert!(valid.status.success(), "stderr: {}", stderr(&valid));
+
+    let missing_id = check_script("log\n    shellout \"bad\"\nend\n");
+    assert!(!missing_id.status.success());
+    assert!(stderr(&missing_id).contains("log identifier required"));
+
+    let missing_end = check_script("log \"id\"\n    shellout \"bad\"\n");
+    assert!(!missing_end.status.success());
+    assert!(stderr(&missing_end).contains("missing end for log"));
+}
+
 fn run_script(source: &str) -> std::process::Output {
     let script = write_script(source);
     Command::new(env!("CARGO_BIN_EXE_shelly"))
         .arg(script)
         .output()
         .expect("run shelly binary")
+}
+
+fn run_script_with_stdin(source: &str, input: &[u8]) -> std::process::Output {
+    let script = write_script(source);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .arg(script)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn shelly");
+
+    child
+        .stdin
+        .as_mut()
+        .expect("stdin is piped")
+        .write_all(input)
+        .expect("write stdin");
+    child.wait_with_output().expect("wait for shelly")
 }
 
 fn check_script(source: &str) -> std::process::Output {
@@ -1893,8 +2892,128 @@ fn test_dir() -> std::path::PathBuf {
     path
 }
 
+fn read_single_log(dir: &std::path::Path, prefix: &str) -> String {
+    let logs = dir.join("logs");
+    let matches: Vec<_> = fs::read_dir(&logs)
+        .expect("read logs dir")
+        .map(|entry| entry.expect("log entry").path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(prefix) && name.ends_with(".log"))
+        })
+        .collect();
+    assert_eq!(matches.len(), 1, "expected one log matching {prefix}");
+    fs::read_to_string(&matches[0]).expect("read log")
+}
+
 fn stdout(output: &std::process::Output) -> String {
     String::from_utf8(output.stdout.clone()).expect("stdout is valid UTF-8")
+}
+
+#[test]
+fn standard_helper_commands_cover_text_lists_types_paths_time_and_random() {
+    let output = run_script(
+        r#"
+$text = "  Hello,hello,World  "
+trim $text -> $trimmed
+lower $trimmed -> $lowered
+upper $lowered -> $uppered
+replace $lowered "hello" "hi" -> $replaced
+split $replaced "," -> $items
+startsWith $trimmed "Hello" -> $starts
+endsWith $trimmed "World" -> $ends
+len $trimmed -> $text_len
+len $items -> $list_len
+join $items "|" -> $joined
+sort $items -> $sorted
+reverse $items -> $reversed
+unique ["b", "a", "b"] -> $unique
+$number_text = "007.50"
+toNumber $number_text -> $number
+$flag = true
+toString $items -> $items_text
+isEmpty "" -> $empty_text
+isEmpty [] -> $empty_list
+isNumber $number -> $is_number
+isText "hello" -> $is_text
+isList $items -> $is_list
+basename "dir/archive.tar.gz" -> $base
+dirname "dir/archive.tar.gz" -> $dir
+extension "dir/archive.tar.gz" -> $ext
+withoutExtension "dir/archive.tar.gz" -> $stem
+now -> $timestamp
+today -> $date
+random -> $random_value
+randomInt 5 5 -> $random_int
+shellout $trimmed
+shellout $lowered
+shellout $uppered
+shellout $replaced
+shellout $items
+shellout "$starts/$ends/$text_len/$list_len/$joined"
+shellout $sorted
+shellout $reversed
+shellout $unique
+shellout "$number/$items_text/$empty_text/$empty_list/$is_number/$is_text/$is_list"
+shellout "$base/$dir/$ext/$stem/$random_int"
+if $timestamp != ""
+    shellout "timestamp-ok"
+end
+if $date != ""
+    shellout "date-ok"
+end
+if $random_value != ""
+    shellout "random-ok"
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "Hello,hello,World\nhello,hello,world\nHELLO,HELLO,WORLD\nhi,hi,world\n[hi, hi, world]\ntrue/true/17/3/hi|hi|world\n[hi, hi, world]\n[world, hi, hi]\n[b, a]\n7.5/[hi, hi, world]/true/true/true/true/true\narchive.tar.gz/dir/gz/archive.tar/5\ntimestamp-ok\ndate-ok\nrandom-ok\n"
+    );
+}
+
+#[test]
+fn standard_helpers_check_valid_syntax_and_reject_representative_errors() {
+    let valid = check_script(
+        r#"
+trim " x " -> $x
+split "" "," -> $items
+join $items "," -> $text
+now -> $now
+randomInt 1 2 -> $n
+"#,
+    );
+    assert!(valid.status.success(), "stderr: {}", stderr(&valid));
+
+    for (source, expected) in [
+        ("trim \"x\"\n", "trim syntax requires"),
+        ("join \"x\" \",\" -> $out\n", "join requires a list"),
+        ("toNumber \"no\" -> $n\n", "toNumber requires numeric input"),
+        ("randomInt 9 1 -> $n\n", "min cannot be greater than max"),
+        (
+            "upper \"x\" -> $$OUT\n",
+            "upper destination must be a variable",
+        ),
+    ] {
+        let output = if source.contains("join")
+            || source.contains("toNumber")
+            || source.contains("randomInt")
+        {
+            run_script(source)
+        } else {
+            check_script(source)
+        };
+        assert!(!output.status.success(), "source succeeded: {source}");
+        assert!(
+            stderr(&output).contains(expected),
+            "stderr: {}",
+            stderr(&output)
+        );
+    }
 }
 
 fn stderr(output: &std::process::Output) -> String {

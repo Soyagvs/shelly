@@ -9,7 +9,7 @@
 ```shelly
 $count = 0
 
-while $count < 3
+while ($count < 3)
     shellout "Count $count"
     $count = $count + 1
 end

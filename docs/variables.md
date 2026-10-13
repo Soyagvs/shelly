@@ -34,6 +34,18 @@ command "pwd" -> $cwd
 
 `=` assigns a value directly. `->` binds the result of an operation into a variable.
 
+## Empty value
+
+```shelly
+$note
+
+if not $note
+    shellout "note is empty"
+end
+```
+
+A bare variable declaration creates an empty value. Empty values are falsey in conditions.
+
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>

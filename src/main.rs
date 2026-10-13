@@ -2,8 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 mod comments;
 mod parser;
@@ -21,6 +23,7 @@ use value::{
 };
 
 const WHILE_ITERATION_LIMIT: usize = 10_000;
+static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 fn main() {
     let mut args = env::args_os().skip(1);
@@ -186,8 +189,103 @@ fn json_escape(value: &str) -> String {
     escaped
 }
 
+fn normalize_multiline_strings(source: &str) -> Result<String, String> {
+    let raw_lines: Vec<&str> = source.lines().collect();
+    let mut out = Vec::new();
+    let mut index = 0;
+    while index < raw_lines.len() {
+        let line_no = index + 1;
+        let raw_line = raw_lines[index];
+        if let Some(delimiter) = find_unquoted_triple_backtick(raw_line) {
+            if !raw_line[delimiter + 3..].trim().is_empty() {
+                return Err(format!(
+                    "line {line_no}: unexpected text after multiline string delimiter"
+                ));
+            }
+            let prefix = &raw_line[..delimiter];
+            let mut body = String::new();
+            out.push(String::new());
+            index += 1;
+            let mut end_index = None;
+            while index < raw_lines.len() {
+                if raw_lines[index].trim() == "```" {
+                    end_index = Some(index);
+                    break;
+                }
+                if !body.is_empty() {
+                    body.push('\n');
+                }
+                body.push_str(raw_lines[index]);
+                out.push(String::new());
+                index += 1;
+            }
+            let Some(end_index) = end_index else {
+                return Err(format!("line {line_no}: unterminated multiline string"));
+            };
+            let mut combined = format!("{}{}", prefix, encode_string_literal(&body));
+            index = end_index + 1;
+            if index < raw_lines.len() && raw_lines[index].trim() == ")" {
+                combined.push(')');
+                index += 1;
+                out.push(String::new());
+            }
+            out[line_no - 1] = combined;
+            out.push(String::new());
+            continue;
+        }
+        out.push(raw_line.to_string());
+        index += 1;
+    }
+    Ok(out.join("\n"))
+}
+
+fn find_unquoted_triple_backtick(input: &str) -> Option<usize> {
+    let mut in_string = false;
+    let mut escaped = false;
+    for (idx, ch) in input.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escaped = true,
+            '"' => in_string = !in_string,
+            '`' if !in_string && input[idx..].starts_with("```") => return Some(idx),
+            _ => {}
+        }
+    }
+    None
+}
+
+fn encode_string_literal(input: &str) -> String {
+    let mut out = String::from("\"");
+    for ch in input.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+    out
+}
+
 fn check_source(source: &str, file: &str) -> Vec<Diagnostic> {
-    match strip_comments(source) {
+    let source = match normalize_multiline_strings(source) {
+        Ok(source) => source,
+        Err(error) => {
+            return vec![Diagnostic {
+                file: file.to_string(),
+                line: 1,
+                column: 1,
+                severity: "error",
+                message: error,
+            }];
+        }
+    };
+    match strip_comments(&source) {
         Ok(lines) => {
             let mut checker = Checker::new(file.to_string());
             checker.check_lines(&lines);
@@ -223,11 +321,18 @@ struct Interpreter {
     current_dir: PathBuf,
     stack: Vec<PathBuf>,
     imported: HashSet<PathBuf>,
+    logs: Vec<LogContext>,
+}
+
+#[derive(Clone)]
+struct LogContext {
+    path: PathBuf,
 }
 
 impl Interpreter {
     fn run(&mut self, source: &str) -> Result<(), String> {
-        let lines = strip_comments(source)?;
+        let source = normalize_multiline_strings(source)?;
+        let lines = strip_comments(&source)?;
         match self.run_lines(&lines) {
             Err(error) if is_break_signal(&error) => Err("break outside loop".to_string()),
             Err(error) if is_continue_signal(&error) => Err("continue outside loop".to_string()),
@@ -314,7 +419,24 @@ impl Interpreter {
                 index = next_index;
                 continue;
             }
-            if matches!(line, "elif" | "else" | "end") || line.starts_with("elif ") {
+            if line == "try" || line.starts_with("try ") {
+                let next_index = self
+                    .run_try(line, lines, index)
+                    .map_err(|error| line_error(line_no, error))?;
+                index = next_index;
+                continue;
+            }
+            if line == "log" {
+                return Err(format!("line {line_no}: log identifier required"));
+            }
+            if let Some(rest) = line.strip_prefix("log ") {
+                let next_index = self
+                    .run_log(rest.trim(), lines, index)
+                    .map_err(|error| line_error(line_no, error))?;
+                index = next_index;
+                continue;
+            }
+            if matches!(line, "elif" | "else" | "catch" | "end") || line.starts_with("elif ") {
                 return Err(format!("line {line_no}: unexpected conditional marker"));
             }
             self.run_line(line, line_no)
@@ -343,6 +465,9 @@ impl Interpreter {
             let line = lines[index].1.trim();
             if starts_block(line) {
                 depth += 1;
+            }
+            if line == "}" && depth > 0 {
+                depth -= 1;
             }
             if line == "end" {
                 if depth == 0 {
@@ -487,6 +612,89 @@ impl Interpreter {
         Ok(next_index)
     }
 
+    fn run_try(
+        &mut self,
+        line: &str,
+        lines: &[(usize, String)],
+        start: usize,
+    ) -> Result<usize, String> {
+        let error_var = parse_try_header(line)?;
+        let (try_body, catch_body, next_index) = collect_try_block(lines, start)?;
+        match self.run_lines(&try_body) {
+            Ok(()) => Ok(next_index),
+            Err(error) if is_control_signal(&error) => Err(error),
+            Err(error) => {
+                if let Some(name) = error_var {
+                    self.vars.insert(name, Value::Scalar(error));
+                }
+                self.run_lines(&catch_body)?;
+                Ok(next_index)
+            }
+        }
+    }
+
+    fn run_log(
+        &mut self,
+        identifier_expr: &str,
+        lines: &[(usize, String)],
+        start: usize,
+    ) -> Result<usize, String> {
+        if identifier_expr.is_empty() {
+            return Err("log identifier required".to_string());
+        }
+        let identifier = self.eval_expr(identifier_expr)?;
+        let (body, next_index) = collect_block(lines, start, "log")?;
+        self.log_action(&format!("log: {identifier}"));
+        let path = self.log_path(&identifier)?;
+        let ctx = LogContext { path };
+        self.write_log(&ctx, &format!("--- {identifier} ---"))?;
+        self.write_log(&ctx, "ENTER")?;
+        self.logs.push(ctx.clone());
+        let result = self.run_lines(&body);
+        self.logs.pop();
+        match &result {
+            Ok(()) => self.write_log(&ctx, "EXIT ok")?,
+            Err(error) if is_control_signal(error) => self.write_log(
+                &ctx,
+                &format!("EXIT control {}", control_signal_name(error)),
+            )?,
+            Err(error) => self.write_log(&ctx, &format!("ERROR {error}"))?,
+        }
+        result?;
+        Ok(next_index)
+    }
+
+    fn log_path(&self, identifier: &str) -> Result<PathBuf, String> {
+        let dir = self.current_dir.join("logs");
+        fs::create_dir_all(&dir).map_err(|error| {
+            format!(
+                "could not create log directory '{}': {error}",
+                dir.display()
+            )
+        })?;
+        Ok(dir.join(format!(
+            "{}-{}.log",
+            sanitize_log_identifier(identifier),
+            current_utc_date()
+        )))
+    }
+
+    fn log_action(&self, message: &str) {
+        for ctx in &self.logs {
+            let _ = self.write_log(ctx, message);
+        }
+    }
+
+    fn write_log(&self, ctx: &LogContext, message: &str) -> Result<(), String> {
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&ctx.path)
+            .map_err(|error| format!("could not write log '{}': {error}", ctx.path.display()))?;
+        writeln!(file, "{} {message}", current_utc_timestamp())
+            .map_err(|error| format!("could not write log '{}': {error}", ctx.path.display()))
+    }
+
     fn eval_repeat_count(&self, expr: &str) -> Result<i64, String> {
         if expr.contains('.') {
             return Err("repeat count must be an integer".to_string());
@@ -544,13 +752,67 @@ impl Interpreter {
             return self.include_file(rest.trim(), line_no);
         }
         if let Some(rest) = line.strip_prefix("append ") {
-            return self.push_list_item(rest.trim(), true);
+            let rest = rest.trim();
+            if rest.trim_start().starts_with('"') || !rest.contains(',') {
+                if let Ok((path_text, _)) = split_path_expr_tail(rest, "append") {
+                    if matches!(self.eval_expr_value(path_text), Ok(Value::List(_))) {
+                        return self.push_list_item(rest, true);
+                    }
+                }
+                self.log_action(&format!("append: {}", rest));
+                return self.append_file_command(rest);
+            }
+            return self.push_list_item(rest, true);
         }
         if let Some(rest) = line.strip_prefix("prepend ") {
             return self.push_list_item(rest.trim(), false);
         }
+        if let Some(rest) = line.strip_prefix("create ") {
+            self.log_action(&format!("create: {}", rest.trim()));
+            return self.create_path(rest.trim());
+        }
+        if let Some(rest) = line.strip_prefix("copy ") {
+            self.log_action(&format!("copy: {}", rest.trim()));
+            return self.copy_path(rest.trim());
+        }
+        if let Some(rest) = line.strip_prefix("move ") {
+            self.log_action(&format!("move: {}", rest.trim()));
+            return self.move_path(rest.trim());
+        }
+        if let Some(rest) = line.strip_prefix("rename ") {
+            self.log_action(&format!("rename: {}", rest.trim()));
+            return self.rename_path(rest.trim());
+        }
+        if let Some(rest) = line.strip_prefix("read ") {
+            self.log_action(&format!("read: {}", rest.trim()));
+            return self.read_file_command(rest.trim());
+        }
+        if let Some(rest) = line.strip_prefix("isFile ") {
+            return self.capture_path_kind(rest.trim(), true);
+        }
+        if let Some(rest) = line.strip_prefix("isDir ") {
+            return self.capture_path_kind(rest.trim(), false);
+        }
+        if let Some(rest) = line.strip_prefix("tempFile") {
+            return self.create_temp_path(rest.trim(), true);
+        }
+        if let Some(rest) = line.strip_prefix("tempDir") {
+            return self.create_temp_path(rest.trim(), false);
+        }
+        if let Some(rest) = line.strip_prefix("size ") {
+            return self.capture_file_size(rest.trim());
+        }
+        if let Some(rest) = line.strip_prefix("write ") {
+            self.log_action(&format!("write: {}", rest.trim()));
+            return self.write_file_command(rest.trim());
+        }
         if let Some(rest) = line.strip_prefix("remove ") {
-            return self.remove_list_item(rest.trim());
+            let rest = rest.trim();
+            if rest.trim_start().starts_with('"') || !looks_like_list_mutation_target(rest) {
+                self.log_action(&format!("remove: {}", rest));
+                return self.remove_path(rest);
+            }
+            return self.remove_list_item(rest);
         }
         if line == "break" {
             return Err(break_signal());
@@ -576,6 +838,7 @@ impl Interpreter {
         }
         if let Some(rest) = line.strip_prefix("shellout") {
             let value = self.eval_expr(rest.trim())?;
+            self.log_action(&format!("shellout: {value}"));
             println!("{value}");
             return Ok(());
         }
@@ -610,11 +873,61 @@ impl Interpreter {
             self.vars.insert(name, Value::Scalar(input));
             return Ok(());
         }
+        if let Some(rest) = line.strip_prefix("choose ") {
+            let (question_text, options_text, destination) = parse_choose_capture(rest.trim())?;
+            let question = self.eval_string(question_text)?;
+            let Value::List(options) = self.eval_expr_value(options_text)? else {
+                return Err("choose options must be a list".to_string());
+            };
+            if options.is_empty() {
+                return Err("choose options must not be empty".to_string());
+            }
+            println!("{question}");
+            for (index, option) in options.iter().enumerate() {
+                println!("{}) {option}", index + 1);
+            }
+            loop {
+                print!("Choose: ");
+                io::stdout()
+                    .flush()
+                    .map_err(|error| format!("failed to flush stdout: {error}"))?;
+                let input = read_stdin_line()?;
+                if let Ok(index) = input.parse::<usize>() {
+                    if (1..=options.len()).contains(&index) {
+                        self.vars
+                            .insert(destination, Value::Scalar(options[index - 1].clone()));
+                        return Ok(());
+                    }
+                }
+                if let Some(option) = options.iter().find(|option| *option == &input) {
+                    self.vars.insert(destination, Value::Scalar(option.clone()));
+                    return Ok(());
+                }
+            }
+        }
+        if let Some(rest) = line.strip_prefix("exists ") {
+            return self.capture_predicate(rest.trim(), |this, args| this.eval_exists(args));
+        }
+        if let Some(rest) = line.strip_prefix("contains ") {
+            return self.capture_predicate(rest.trim(), |this, args| this.eval_contains(args));
+        }
+        if let Some((name, rest)) = split_command_name(line) {
+            if is_standard_helper(name) {
+                return self.run_helper(name, rest.trim());
+            }
+        }
+        if let Some(rest) = line.strip_prefix("files ") {
+            return self.collect_files(rest.trim());
+        }
+        if line == "files" {
+            return Err("files syntax is files \"pattern\" -> $items".to_string());
+        }
         if let Some(rest) = line.strip_prefix("command") {
             let (command_text, tail) = split_string_literal_tail(rest.trim())?;
             let command = self.eval_string(command_text)?;
             let tail = tail.trim();
             if tail.is_empty() {
+                self.log_action(&format!("command: {command}"));
                 let status = shell_command(&command)
                     .status()
                     .map_err(|error| format!("failed to run command: {error}"))?;
@@ -631,6 +944,7 @@ impl Interpreter {
             if kind != IdentKind::Variable || !extra.trim().is_empty() {
                 return Err("command capture destination must be a variable".to_string());
             }
+            self.log_action(&format!("command: {command}"));
             let output = shell_command(&command)
                 .stdout(Stdio::piped())
                 .output()
@@ -662,6 +976,274 @@ impl Interpreter {
         Err(format!("unknown command or invalid syntax: {line}"))
     }
 
+    fn resolve_user_path(&self, raw: &str) -> PathBuf {
+        self.current_dir.join(raw)
+    }
+
+    fn eval_path_expr(&self, text: &str, error: &str) -> Result<String, String> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err(error.to_string());
+        }
+        if text.starts_with('$') {
+            return match self.eval_expr_value(text).map_err(|_| error.to_string())? {
+                Value::Scalar(value) => Ok(value),
+                Value::List(_) => Err(error.to_string()),
+            };
+        }
+        self.eval_expr(text).map_err(|_| error.to_string())
+    }
+
+    fn create_path(&self, text: &str) -> Result<(), String> {
+        let raw = self.eval_path_expr(text, "create requires a string path")?;
+        let path = self.resolve_user_path(&raw);
+        if raw.ends_with('/') {
+            fs::create_dir_all(&path).map_err(|error| {
+                format!("could not create directory '{}': {error}", path.display())
+            })?;
+            return Ok(());
+        }
+        if path.exists() {
+            return Ok(());
+        }
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                format!(
+                    "could not create parent directory '{}': {error}",
+                    parent.display()
+                )
+            })?;
+        }
+        fs::File::create(&path)
+            .map_err(|error| format!("could not create file '{}': {error}", path.display()))?;
+        Ok(())
+    }
+
+    fn copy_path(&self, text: &str) -> Result<(), String> {
+        let (from, to) = parse_two_string_paths(text, "copy")?;
+        let from = self.resolve_user_path(&from);
+        let to = self.resolve_user_path(&to);
+        if to.exists() {
+            return Err(format!("copy destination already exists: {}", to.display()));
+        }
+        if let Some(parent) = to.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                format!(
+                    "could not create parent directory '{}': {error}",
+                    parent.display()
+                )
+            })?;
+        }
+        copy_recursive(&from, &to)
+    }
+
+    fn move_path(&self, text: &str) -> Result<(), String> {
+        let (from, to) = parse_two_string_paths(text, "move")?;
+        let from = self.resolve_user_path(&from);
+        let to = self.resolve_user_path(&to);
+        if to.exists() {
+            return Err(format!("move destination already exists: {}", to.display()));
+        }
+        if let Some(parent) = to.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                format!(
+                    "could not create parent directory '{}': {error}",
+                    parent.display()
+                )
+            })?;
+        }
+        fs::rename(&from, &to)
+            .or_else(|_| {
+                copy_recursive(&from, &to)?;
+                if from.is_dir() {
+                    fs::remove_dir_all(&from)
+                } else {
+                    fs::remove_file(&from)
+                }
+                .map_err(|error| {
+                    format!(
+                        "could not remove moved source '{}': {error}",
+                        from.display()
+                    )
+                })
+            })
+            .map_err(|error| {
+                format!(
+                    "could not move '{}' to '{}': {error}",
+                    from.display(),
+                    to.display()
+                )
+            })
+    }
+
+    fn rename_path(&self, text: &str) -> Result<(), String> {
+        let (from_raw, name) = parse_two_string_paths(text, "rename")?;
+        if name.contains('/')
+            || name.contains('\\')
+            || name == "."
+            || name == ".."
+            || name.is_empty()
+        {
+            return Err("rename new-name must be a plain name, not a path".to_string());
+        }
+        let from = self.resolve_user_path(&from_raw);
+        let to = from.parent().unwrap_or_else(|| Path::new("")).join(name);
+        if to.exists() {
+            return Err(format!(
+                "rename destination already exists: {}",
+                to.display()
+            ));
+        }
+        fs::rename(&from, &to).map_err(|error| {
+            format!(
+                "could not rename '{}' to '{}': {error}",
+                from.display(),
+                to.display()
+            )
+        })
+    }
+
+    fn remove_path(&self, text: &str) -> Result<(), String> {
+        let raw = self.eval_path_expr(text, "remove requires a string path")?;
+        let path = self.resolve_user_path(&raw);
+        if !path.exists() {
+            return Ok(());
+        }
+        if path.is_dir() {
+            if !raw.ends_with('/') {
+                return Err(
+                    "remove directory paths must end with '/' to delete recursively".to_string(),
+                );
+            }
+            fs::remove_dir_all(&path).map_err(|error| {
+                format!("could not remove directory '{}': {error}", path.display())
+            })?;
+        } else {
+            fs::remove_file(&path)
+                .map_err(|error| format!("could not remove file '{}': {error}", path.display()))?;
+        }
+        Ok(())
+    }
+
+    fn read_file_command(&mut self, text: &str) -> Result<(), String> {
+        let (file_text, destination) = parse_read_capture(text)?;
+        let raw = self.eval_path_expr(file_text, "read requires a string file path")?;
+        let path = self.resolve_user_path(&raw);
+        if path.is_dir() {
+            return Err(format!("read path is a directory: {}", path.display()));
+        }
+        let content = fs::read_to_string(&path)
+            .map_err(|error| format!("could not read file '{}': {error}", path.display()))?;
+        self.vars.insert(destination, Value::Scalar(content));
+        Ok(())
+    }
+
+    fn append_file_command(&self, text: &str) -> Result<(), String> {
+        let (file_text, value_text) = split_path_expr_tail(text, "append")?;
+        if value_text.trim().is_empty() {
+            return Err("append syntax is append \"file\" $text".to_string());
+        }
+        let raw = self.eval_path_expr(file_text, "append requires a string file path")?;
+        let path = self.resolve_user_path(&raw);
+        if path.is_dir() {
+            return Err(format!("append path is a directory: {}", path.display()));
+        }
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                format!(
+                    "could not create parent directory '{}': {error}",
+                    parent.display()
+                )
+            })?;
+        }
+        let value = self.eval_expr(value_text.trim())?;
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .map_err(|error| format!("could not append file '{}': {error}", path.display()))?;
+        writeln!(file, "{value}")
+            .map_err(|error| format!("could not append file '{}': {error}", path.display()))
+    }
+
+    fn capture_path_kind(&mut self, text: &str, file: bool) -> Result<(), String> {
+        let (path_text, destination) =
+            parse_path_capture(text, if file { "isFile" } else { "isDir" })?;
+        let raw = self.eval_expr(path_text.trim())?;
+        let path = self.resolve_user_path(&raw);
+        let ok = if file { path.is_file() } else { path.is_dir() };
+        self.vars.insert(destination, Value::Scalar(ok.to_string()));
+        Ok(())
+    }
+
+    fn create_temp_path(&mut self, text: &str, file: bool) -> Result<(), String> {
+        let Some(destination) = text.strip_prefix("->") else {
+            return Err(format!(
+                "{} syntax is {} -> $path",
+                if file { "tempFile" } else { "tempDir" },
+                if file { "tempFile" } else { "tempDir" }
+            ));
+        };
+        let (kind, name, extra) = parse_identifier(destination.trim())
+            .map_err(|_| "temp destination must be a variable".to_string())?;
+        if kind != IdentKind::Variable || !extra.trim().is_empty() {
+            return Err("temp destination must be a variable".to_string());
+        }
+        let path = unique_temp_path(if file { "file" } else { "dir" });
+        if file {
+            fs::File::create(&path).map_err(|error| {
+                format!("could not create temp file '{}': {error}", path.display())
+            })?;
+        } else {
+            fs::create_dir(&path).map_err(|error| {
+                format!(
+                    "could not create temp directory '{}': {error}",
+                    path.display()
+                )
+            })?;
+        }
+        self.vars
+            .insert(name, Value::Scalar(path.display().to_string()));
+        Ok(())
+    }
+
+    fn capture_file_size(&mut self, text: &str) -> Result<(), String> {
+        let (file_text, destination) = parse_path_capture(text, "size")?;
+        let raw = self.eval_expr(file_text.trim())?;
+        let path = self.resolve_user_path(&raw);
+        let metadata = fs::metadata(&path)
+            .map_err(|error| format!("could not read file size '{}': {error}", path.display()))?;
+        if !metadata.is_file() {
+            return Err(format!("size path is not a file: {}", path.display()));
+        }
+        self.vars
+            .insert(destination, Value::Scalar(metadata.len().to_string()));
+        Ok(())
+    }
+
+    fn write_file_command(&self, text: &str) -> Result<(), String> {
+        let (file_text, value_text) = split_path_expr_tail(text, "write")?;
+        if value_text.trim().is_empty() {
+            return Err("write syntax is write \"file\" $text".to_string());
+        }
+        let raw = self.eval_path_expr(file_text, "write requires a string file path")?;
+        let path = self.resolve_user_path(&raw);
+        if path.is_dir() {
+            return Err(format!("write path is a directory: {}", path.display()));
+        }
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| {
+                format!(
+                    "could not create parent directory '{}': {error}",
+                    parent.display()
+                )
+            })?;
+        }
+        let value = self.eval_expr(value_text.trim())?;
+        fs::write(&path, value)
+            .map_err(|error| format!("could not write file '{}': {error}", path.display()))
+    }
+
     fn define_function(&mut self, function: Function, line_no: usize) -> Result<(), String> {
         if self.functions.contains_key(&function.name) {
             return Err(format!(
@@ -686,6 +1268,7 @@ impl Interpreter {
         }
         let source = fs::read_to_string(&path)
             .map_err(|error| format!("could not read import '{}': {error}", path.display()))?;
+        let source = normalize_multiline_strings(&source)?;
         let lines = strip_comments(&source)?;
         self.stack.push(path.clone());
         let previous_dir = std::mem::replace(
@@ -708,6 +1291,7 @@ impl Interpreter {
         }
         let source = fs::read_to_string(&path)
             .map_err(|error| format!("could not read include '{}': {error}", path.display()))?;
+        let source = normalize_multiline_strings(&source)?;
         let lines = strip_comments(&source)?;
         self.stack.push(path.clone());
         let previous_dir = std::mem::replace(
@@ -774,19 +1358,12 @@ impl Interpreter {
             }
             None => (line.trim(), None),
         };
-        let (name, rest) = call_text
-            .split_once(char::is_whitespace)
-            .unwrap_or((call_text, ""));
+        let (name, arg_texts) = parse_call_syntax(call_text)?;
         let function = self
             .functions
             .get(name)
             .cloned()
             .ok_or_else(|| format!("unknown command or function: {name}"))?;
-        let arg_texts = if rest.trim().is_empty() {
-            Vec::new()
-        } else {
-            split_commas(rest.trim())?
-        };
         let required = function
             .params
             .iter()
@@ -1030,13 +1607,210 @@ impl Interpreter {
         Ok(index)
     }
 
+    fn capture_predicate<F>(&mut self, text: &str, eval: F) -> Result<(), String>
+    where
+        F: FnOnce(&Self, &str) -> Result<bool, String>,
+    {
+        let Some((args, destination)) = split_capture_arrow(text) else {
+            return Err("predicate capture syntax is exists/contains ... -> $var".to_string());
+        };
+        let (kind, name, extra) = parse_identifier(destination.trim())
+            .map_err(|_| "predicate capture destination must be a variable".to_string())?;
+        if kind != IdentKind::Variable || !extra.trim().is_empty() {
+            return Err("predicate capture destination must be a variable".to_string());
+        }
+        let value = eval(self, args.trim())?;
+        self.vars.insert(name, Value::Scalar(value.to_string()));
+        Ok(())
+    }
+
+    fn eval_exists(&self, args: &str) -> Result<bool, String> {
+        let raw =
+            parse_string_literal(args).map_err(|_| "exists requires a string path".to_string())?;
+        Ok(self.current_dir.join(raw).exists())
+    }
+
+    fn eval_contains(&self, args: &str) -> Result<bool, String> {
+        let (value_text, search_text) = split_predicate_two_args(args)
+            .ok_or_else(|| "contains requires a value and search value".to_string())?;
+        let search = self.eval_value(search_text)?;
+        match self.eval_expr_value(value_text)? {
+            Value::Scalar(value) => Ok(value.contains(&search)),
+            Value::List(values) => Ok(values.iter().any(|value| value == &search)),
+        }
+    }
+
+    fn run_helper(&mut self, name: &str, text: &str) -> Result<(), String> {
+        let (args_text, destination) = parse_helper_capture(name, text)?;
+        let args = split_space_args(args_text)?;
+        let value = match name {
+            "trim" => Value::Scalar(
+                expect_arg_count(name, &args, 1)
+                    .and_then(|_| self.eval_value(args[0]))?
+                    .trim()
+                    .to_string(),
+            ),
+            "lower" => Value::Scalar(
+                expect_arg_count(name, &args, 1)
+                    .and_then(|_| self.eval_value(args[0]))?
+                    .to_lowercase(),
+            ),
+            "upper" => Value::Scalar(
+                expect_arg_count(name, &args, 1)
+                    .and_then(|_| self.eval_value(args[0]))?
+                    .to_uppercase(),
+            ),
+            "replace" => {
+                expect_arg_count(name, &args, 3)?;
+                let text = self.eval_value(args[0])?;
+                let old = self.eval_value(args[1])?;
+                let new = self.eval_value(args[2])?;
+                Value::Scalar(text.replace(&old, &new))
+            }
+            "split" => {
+                expect_arg_count(name, &args, 2)?;
+                let text = self.eval_value(args[0])?;
+                let sep = self.eval_value(args[1])?;
+                if sep.is_empty() {
+                    return Err("split separator cannot be empty".to_string());
+                }
+                let items = if text.is_empty() {
+                    Vec::new()
+                } else {
+                    text.split(&sep).map(ToString::to_string).collect()
+                };
+                Value::List(items)
+            }
+            "startsWith" | "endsWith" => {
+                expect_arg_count(name, &args, 2)?;
+                let text = self.eval_value(args[0])?;
+                let needle = self.eval_value(args[1])?;
+                let ok = if name == "startsWith" {
+                    text.starts_with(&needle)
+                } else {
+                    text.ends_with(&needle)
+                };
+                Value::Scalar(ok.to_string())
+            }
+            "len" => {
+                expect_arg_count(name, &args, 1)?;
+                let len = match self.eval_expr_value(args[0])? {
+                    Value::Scalar(v) => v.chars().count(),
+                    Value::List(v) => v.len(),
+                };
+                Value::Scalar(len.to_string())
+            }
+            "join" => {
+                expect_arg_count(name, &args, 2)?;
+                let Value::List(items) = self.eval_expr_value(args[0])? else {
+                    return Err("join requires a list".to_string());
+                };
+                Value::Scalar(items.join(&self.eval_value(args[1])?))
+            }
+            "sort" | "reverse" | "unique" => {
+                expect_arg_count(name, &args, 1)?;
+                let Value::List(mut items) = self.eval_expr_value(args[0])? else {
+                    return Err(format!("{name} requires a list"));
+                };
+                match name {
+                    "sort" => items.sort(),
+                    "reverse" => items.reverse(),
+                    "unique" => {
+                        let mut seen = HashSet::new();
+                        items.retain(|item| seen.insert(item.clone()));
+                    }
+                    _ => {}
+                }
+                Value::List(items)
+            }
+            "toNumber" => {
+                expect_arg_count(name, &args, 1)?;
+                let raw = self.eval_value(args[0])?;
+                let n: f64 = raw
+                    .parse()
+                    .map_err(|_| "toNumber requires numeric input".to_string())?;
+                Value::Scalar(format_number(n))
+            }
+            "toString" => {
+                expect_arg_count(name, &args, 1)?;
+                Value::Scalar(self.eval_expr(args[0])?)
+            }
+            "isEmpty" => {
+                expect_arg_count(name, &args, 1)?;
+                Value::Scalar(
+                    match self.eval_expr_value(args[0])? {
+                        Value::Scalar(v) => v.is_empty(),
+                        Value::List(v) => v.is_empty(),
+                    }
+                    .to_string(),
+                )
+            }
+            "isNumber" | "isText" | "isList" => {
+                expect_arg_count(name, &args, 1)?;
+                let value = self.eval_expr_value(args[0])?;
+                let ok = match (name, value) {
+                    ("isList", Value::List(_)) => true,
+                    ("isNumber", Value::Scalar(v)) => v.parse::<f64>().is_ok(),
+                    ("isText", Value::Scalar(v)) => {
+                        v.parse::<f64>().is_err() && v != "true" && v != "false"
+                    }
+                    _ => false,
+                };
+                Value::Scalar(ok.to_string())
+            }
+            "basename" | "dirname" | "extension" | "withoutExtension" => {
+                expect_arg_count(name, &args, 1)?;
+                let raw = self.eval_value(args[0])?;
+                Value::Scalar(path_helper(name, &raw))
+            }
+            "now" => {
+                expect_arg_count(name, &args, 0)?;
+                Value::Scalar(current_utc_timestamp())
+            }
+            "today" => {
+                expect_arg_count(name, &args, 0)?;
+                Value::Scalar(current_utc_date())
+            }
+            "random" => {
+                expect_arg_count(name, &args, 0)?;
+                Value::Scalar(random_u64().to_string())
+            }
+            "randomInt" => {
+                expect_arg_count(name, &args, 2)?;
+                let min = parse_integer_arg(
+                    &self.eval_value(args[0])?,
+                    "randomInt min must be an integer",
+                )?;
+                let max = parse_integer_arg(
+                    &self.eval_value(args[1])?,
+                    "randomInt max must be an integer",
+                )?;
+                if min > max {
+                    return Err("randomInt min cannot be greater than max".to_string());
+                }
+                let span = (max - min + 1) as u64;
+                Value::Scalar((min + (random_u64() % span) as i64).to_string())
+            }
+            _ => unreachable!(),
+        };
+        self.vars.insert(destination, value);
+        Ok(())
+    }
+
+    fn collect_files(&mut self, text: &str) -> Result<(), String> {
+        let (pattern_text, destination) = parse_files_capture(text)?;
+        let pattern = self.eval_string(pattern_text)?;
+        let matches = glob_files(&self.current_dir, &pattern)?;
+        self.vars.insert(destination, Value::List(matches));
+        Ok(())
+    }
+
     fn eval_condition(&self, condition: &str) -> Result<bool, String> {
+        let condition = condition.trim();
         if condition.is_empty() {
             return Err("condition required".to_string());
         }
-        if condition.contains('(') || condition.contains(')') {
-            return Err("unsupported complex condition".to_string());
-        }
+        validate_condition_parentheses(condition)?;
         self.eval_or_condition(condition)
     }
 
@@ -1063,6 +1837,28 @@ impl Interpreter {
     }
 
     fn eval_simple_condition(&self, condition: &str) -> Result<bool, String> {
+        let condition = condition.trim();
+        if let Some(inner) = strip_grouped_condition(condition)? {
+            return self.eval_condition(inner);
+        }
+        if condition.starts_with(')') {
+            return Err("unexpected ')' in condition".to_string());
+        }
+        if condition.starts_with('(') {
+            return Err("missing ')' in condition".to_string());
+        }
+        if let Some(args) = condition.strip_prefix("exists ") {
+            return self.eval_exists(args.trim());
+        }
+        if condition == "exists" {
+            return Err("exists requires a string path".to_string());
+        }
+        if let Some(args) = condition.strip_prefix("contains ") {
+            return self.eval_contains(args.trim());
+        }
+        if condition == "contains" {
+            return Err("contains requires a value and search value".to_string());
+        }
         if let Some((left, operator, right)) = split_condition_operator(condition) {
             let left = self.eval_expr(left.trim())?;
             let right = self.eval_expr(right.trim())?;
@@ -1107,7 +1903,10 @@ impl Interpreter {
             let (kind, name, rest) = parse_identifier(expr)?;
             let rest = rest.trim();
             if rest.is_empty() {
-                return self.lookup(kind, &name);
+                return match self.lookup_value(kind, &name)? {
+                    Value::Scalar(value) => Ok(value.clone()),
+                    Value::List(values) => Ok(format_list(values)),
+                };
             }
             if rest.starts_with('[') {
                 return self.eval_index(kind, &name, rest);
@@ -1418,6 +2217,8 @@ enum BlockKind {
     If,
     Loop,
     Function,
+    Try { saw_catch: bool },
+    Log,
 }
 
 impl Checker {
@@ -1444,6 +2245,16 @@ impl Checker {
                 BlockKind::If => "if",
                 BlockKind::Loop => "loop",
                 BlockKind::Function => "function",
+                BlockKind::Try { saw_catch } => {
+                    if !saw_catch {
+                        self.error(
+                            lines.last().map(|(n, _)| *n).unwrap_or(1),
+                            "missing catch for try".to_string(),
+                        );
+                    }
+                    "try"
+                }
+                BlockKind::Log => "log",
             };
             self.error(
                 lines.last().map(|(n, _)| *n).unwrap_or(1),
@@ -1462,9 +2273,7 @@ impl Checker {
             return Ok(());
         }
         if let Some(rest) = line.strip_prefix("if ") {
-            if rest.trim().is_empty() {
-                return Err("condition required".to_string());
-            }
+            validate_condition_form(rest.trim())?;
             self.blocks.push(BlockKind::If);
             return Ok(());
         }
@@ -1475,9 +2284,7 @@ impl Checker {
             if !matches!(self.blocks.last(), Some(BlockKind::If)) {
                 return Err("unexpected conditional marker".to_string());
             }
-            if rest.trim().is_empty() {
-                return Err("condition required".to_string());
-            }
+            validate_condition_form(rest.trim())?;
             return Ok(());
         }
         if line == "else" {
@@ -1487,9 +2294,7 @@ impl Checker {
             return Ok(());
         }
         if let Some(rest) = line.strip_prefix("while ") {
-            if rest.trim().is_empty() {
-                return Err("condition required".to_string());
-            }
+            validate_condition_form(rest.trim())?;
             self.blocks.push(BlockKind::Loop);
             return Ok(());
         }
@@ -1512,9 +2317,53 @@ impl Checker {
         if line == "repeat" {
             return Err("repeat count required".to_string());
         }
+        if line == "try" || line.starts_with("try ") {
+            parse_try_header(line)?;
+            self.blocks.push(BlockKind::Try { saw_catch: false });
+            return Ok(());
+        }
+        if line == "log" {
+            return Err("log identifier required".to_string());
+        }
+        if let Some(rest) = line.strip_prefix("log ") {
+            validate_log_header(rest.trim())?;
+            self.blocks.push(BlockKind::Log);
+            return Ok(());
+        }
+        if line == "catch" {
+            match self.blocks.last_mut() {
+                Some(BlockKind::Try { saw_catch }) if !*saw_catch => {
+                    *saw_catch = true;
+                    return Ok(());
+                }
+                Some(BlockKind::Try { .. }) => return Err("duplicate catch".to_string()),
+                _ => return Err("catch outside try".to_string()),
+            }
+        }
+        if line == "}" {
+            match self.blocks.pop() {
+                Some(BlockKind::Function) => {}
+                Some(kind) => {
+                    self.blocks.push(kind);
+                    return Err("unexpected '}' outside function".to_string());
+                }
+                None => return Err("unexpected '}' outside function".to_string()),
+            }
+            return Ok(());
+        }
         if line == "end" {
-            if self.blocks.pop().is_none() {
-                return Err("unexpected conditional marker".to_string());
+            match self.blocks.pop() {
+                Some(BlockKind::Function) => {
+                    self.blocks.push(BlockKind::Function);
+                    return Err(
+                        "old function syntax was removed; close functions with }".to_string()
+                    );
+                }
+                Some(BlockKind::Try { saw_catch: false }) => {
+                    return Err("missing catch for try".to_string());
+                }
+                Some(_) => {}
+                None => return Err("unexpected conditional marker".to_string()),
             }
             return Ok(());
         }
@@ -1547,25 +2396,20 @@ impl Checker {
     }
 }
 
-fn parse_function_signature(rest: &str) -> Result<(), String> {
-    let (name, params_text) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
-    if !is_identifier_name(name) {
-        return Err("function name must start with an ASCII letter".to_string());
-    }
-    if !params_text.trim().is_empty() {
-        for item in split_commas(params_text.trim())? {
-            let left = item
-                .split_once('=')
-                .map(|(left, _)| left)
-                .unwrap_or(item)
-                .trim();
-            let (kind, _, extra) = parse_identifier(left)?;
-            if kind != IdentKind::Variable || !extra.trim().is_empty() {
-                return Err("function parameters must be variables".to_string());
-            }
-        }
+fn validate_temp_capture(text: &str, command: &str) -> Result<(), String> {
+    let Some(destination) = text.strip_prefix("->") else {
+        return Err(format!("{command} syntax is {command} -> $path"));
+    };
+    let (kind, _, extra) = parse_identifier(destination.trim())
+        .map_err(|_| "temp destination must be a variable".to_string())?;
+    if kind != IdentKind::Variable || !extra.trim().is_empty() {
+        return Err("temp destination must be a variable".to_string());
     }
     Ok(())
+}
+
+fn parse_function_signature(rest: &str) -> Result<(), String> {
+    parse_function_header(rest).map(|_| ())
 }
 
 fn validate_statement_form(line: &str) -> Result<(), String> {
@@ -1590,6 +2434,125 @@ fn validate_statement_form(line: &str) -> Result<(), String> {
         }
         return Ok(());
     }
+    if let Some(rest) = line.strip_prefix("choose ") {
+        let (_, options_text, _) = parse_choose_capture(rest.trim())?;
+        if options_text.trim() == "[]" {
+            return Err("choose options must not be empty".to_string());
+        }
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("exists ") {
+        let Some((args, destination)) = split_capture_arrow(rest.trim()) else {
+            return Err("predicate capture syntax is exists/contains ... -> $var".to_string());
+        };
+        parse_string_literal(args.trim())
+            .map_err(|_| "exists requires a string path".to_string())?;
+        let (kind, _, extra) = parse_identifier(destination.trim())
+            .map_err(|_| "predicate capture destination must be a variable".to_string())?;
+        if kind != IdentKind::Variable || !extra.trim().is_empty() {
+            return Err("predicate capture destination must be a variable".to_string());
+        }
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("contains ") {
+        let Some((args, destination)) = split_capture_arrow(rest.trim()) else {
+            return Err("predicate capture syntax is exists/contains ... -> $var".to_string());
+        };
+        split_predicate_two_args(args.trim())
+            .ok_or_else(|| "contains requires a value and search value".to_string())?;
+        let (kind, _, extra) = parse_identifier(destination.trim())
+            .map_err(|_| "predicate capture destination must be a variable".to_string())?;
+        if kind != IdentKind::Variable || !extra.trim().is_empty() {
+            return Err("predicate capture destination must be a variable".to_string());
+        }
+        return Ok(());
+    }
+    if let Some((name, rest)) = split_command_name(line) {
+        if is_standard_helper(name) {
+            validate_helper_form(name, rest.trim())?;
+            return Ok(());
+        }
+    }
+    if let Some(rest) = line.strip_prefix("files ") {
+        parse_files_capture(rest.trim())?;
+        return Ok(());
+    }
+    if line == "files" {
+        return Err("files syntax is files \"pattern\" -> $items".to_string());
+    }
+    if let Some(rest) = line.strip_prefix("create ") {
+        validate_path_expr_form(rest.trim(), "create requires a string path")?;
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("copy ") {
+        parse_two_string_paths(rest.trim(), "copy")?;
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("move ") {
+        parse_two_string_paths(rest.trim(), "move")?;
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("rename ") {
+        let (_, name) = parse_two_string_paths(rest.trim(), "rename")?;
+        if name.contains('/')
+            || name.contains('\\')
+            || name == "."
+            || name == ".."
+            || name.is_empty()
+        {
+            return Err("rename new-name must be a plain name, not a path".to_string());
+        }
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("read ") {
+        parse_read_capture(rest.trim())?;
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("isFile ") {
+        parse_path_capture(rest.trim(), "isFile")?;
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("isDir ") {
+        parse_path_capture(rest.trim(), "isDir")?;
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("tempFile") {
+        validate_temp_capture(rest.trim(), "tempFile")?;
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("tempDir") {
+        validate_temp_capture(rest.trim(), "tempDir")?;
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("size ") {
+        parse_path_capture(rest.trim(), "size")?;
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("append ") {
+        let rest = rest.trim();
+        if rest.trim_start().starts_with('"') || !rest.contains(',') {
+            let (_, value) = split_path_expr_tail(rest, "append")?;
+            if value.trim().is_empty() {
+                return Err("append syntax is append \"file\" $text".to_string());
+            }
+            return Ok(());
+        }
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("write ") {
+        let (_, value) = split_path_expr_tail(rest.trim(), "write")?;
+        if value.trim().is_empty() {
+            return Err("write syntax is write \"file\" $text".to_string());
+        }
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("remove ") {
+        let rest = rest.trim();
+        if rest.trim_start().starts_with('"') || !looks_like_list_mutation_target(rest) {
+            validate_path_expr_form(rest, "remove requires a string path")?;
+            return Ok(());
+        }
+    }
     if let Some(rest) = line.strip_prefix("command") {
         let (_, tail) = split_string_literal_tail(rest.trim())?;
         let tail = tail.trim();
@@ -1607,24 +2570,22 @@ fn validate_statement_form(line: &str) -> Result<(), String> {
         return Ok(());
     }
     if let Some(rest) = line.strip_prefix("call ") {
-        let name = rest.trim().split_whitespace().next().unwrap_or("");
-        if name.is_empty() {
-            return Err("call requires a function name".to_string());
-        }
-        if !is_identifier_name(name) {
-            return Err("function name must start with an ASCII letter".to_string());
-        }
+        validate_call_syntax(rest.trim())?;
         return Ok(());
     }
     if line == "call" {
         return Err("call requires a function name".to_string());
     }
-    if line.strip_prefix("shellout").is_some()
-        || line.strip_prefix("shellin").is_some()
+    if let Some(rest) = line.strip_prefix("shellout") {
+        if rest.trim().starts_with("(\"") {
+            return Err("expected string, number, boolean, or numeric expression".to_string());
+        }
+        return Ok(());
+    }
+    if line.strip_prefix("shellin").is_some()
         || line.starts_with("import ")
         || line.starts_with("include ")
         || line.starts_with("exit")
-        || line.starts_with("append ")
         || line.starts_with("prepend ")
         || line.starts_with("remove ")
         || line.starts_with("global")
@@ -1647,8 +2608,626 @@ struct Param {
     default: Option<String>,
 }
 
+fn validate_condition_form(condition: &str) -> Result<(), String> {
+    let condition = condition.trim();
+    if condition.is_empty() {
+        return Err("condition required".to_string());
+    }
+    validate_condition_parentheses(condition)?;
+    if let Some((left, right)) = split_condition_keyword(condition, "or") {
+        validate_condition_form(left)?;
+        return validate_condition_form(right);
+    }
+    if let Some((left, right)) = split_condition_keyword(condition, "and") {
+        validate_condition_form(left)?;
+        return validate_condition_form(right);
+    }
+    if let Some(rest) = condition.strip_prefix("not ") {
+        return validate_condition_form(rest);
+    }
+    if let Some(inner) = strip_grouped_condition(condition)? {
+        return validate_condition_form(inner);
+    }
+    if condition.starts_with(')') {
+        return Err("unexpected ')' in condition".to_string());
+    }
+    if condition.starts_with('(') {
+        return Err("missing ')' in condition".to_string());
+    }
+    if let Some(args) = condition.strip_prefix("exists ") {
+        parse_string_literal(args).map_err(|_| "exists requires a string path".to_string())?;
+    } else if condition == "exists" {
+        return Err("exists requires a string path".to_string());
+    } else if let Some(args) = condition.strip_prefix("contains ") {
+        split_predicate_two_args(args)
+            .ok_or_else(|| "contains requires a value and search value".to_string())?;
+    } else if condition == "contains" {
+        return Err("contains requires a value and search value".to_string());
+    }
+    Ok(())
+}
+
+fn split_command_name(line: &str) -> Option<(&str, &str)> {
+    line.split_once(char::is_whitespace)
+        .unwrap_or((line, ""))
+        .into()
+}
+
+fn is_standard_helper(name: &str) -> bool {
+    matches!(
+        name,
+        "trim"
+            | "lower"
+            | "upper"
+            | "replace"
+            | "split"
+            | "startsWith"
+            | "endsWith"
+            | "len"
+            | "join"
+            | "sort"
+            | "reverse"
+            | "unique"
+            | "toNumber"
+            | "toString"
+            | "isEmpty"
+            | "isNumber"
+            | "isText"
+            | "isList"
+            | "basename"
+            | "dirname"
+            | "extension"
+            | "withoutExtension"
+            | "now"
+            | "today"
+            | "random"
+            | "randomInt"
+    )
+}
+
+fn parse_helper_capture<'a>(name: &str, text: &'a str) -> Result<(&'a str, String), String> {
+    let Some(index) = find_capture_arrow(text) else {
+        return Err(format!("{name} syntax requires -> $result"));
+    };
+    let args = text[..index].trim();
+    let destination = text[index + 2..].trim();
+    if destination.is_empty() {
+        return Err(format!("{name} destination must be a variable"));
+    }
+    let (kind, dest, extra) = parse_identifier(destination)
+        .map_err(|_| format!("{name} destination must be a variable"))?;
+    if kind != IdentKind::Variable || !extra.trim().is_empty() {
+        return Err(format!("{name} destination must be a variable"));
+    }
+    Ok((args, dest))
+}
+
+fn find_capture_arrow(text: &str) -> Option<usize> {
+    let mut in_string = false;
+    let mut escaped = false;
+    for (index, ch) in text.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if ch == '"' {
+            in_string = true;
+            continue;
+        }
+        if text[index..].starts_with("->") {
+            return Some(index);
+        }
+    }
+    None
+}
+
+fn validate_helper_form(name: &str, text: &str) -> Result<(), String> {
+    let (args_text, _) = parse_helper_capture(name, text)?;
+    let args = split_space_args(args_text)?;
+    let n = match name {
+        "trim" | "lower" | "upper" | "len" | "sort" | "reverse" | "unique" | "toNumber"
+        | "toString" | "isEmpty" | "isNumber" | "isText" | "isList" | "basename" | "dirname"
+        | "extension" | "withoutExtension" => 1,
+        "split" | "startsWith" | "endsWith" | "join" | "randomInt" => 2,
+        "replace" => 3,
+        "now" | "today" | "random" => 0,
+        _ => unreachable!(),
+    };
+    expect_arg_count(name, &args, n)
+}
+
+fn expect_arg_count(name: &str, args: &[&str], expected: usize) -> Result<(), String> {
+    if args.len() == expected {
+        Ok(())
+    } else {
+        Err(format!("{name} expects {expected} argument(s)"))
+    }
+}
+
+fn split_space_args(text: &str) -> Result<Vec<&str>, String> {
+    let mut args = Vec::new();
+    let mut start = None;
+    let mut bracket = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (i, ch) in text.char_indices() {
+        if start.is_none() && !ch.is_whitespace() {
+            start = Some(i);
+        }
+        if in_string {
+            if escaped {
+                escaped = false
+            } else if ch == '\\' {
+                escaped = true
+            } else if ch == '"' {
+                in_string = false
+            };
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '[' => bracket += 1,
+            ']' => bracket = bracket.saturating_sub(1),
+            c if c.is_whitespace() && bracket == 0 => {
+                if let Some(s) = start.take() {
+                    args.push(&text[s..i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    if in_string {
+        return Err("unterminated string literal".to_string());
+    }
+    if let Some(s) = start {
+        args.push(&text[s..]);
+    }
+    Ok(args)
+}
+
+fn parse_integer_arg(text: &str, error: &str) -> Result<i64, String> {
+    if text.contains('.') {
+        return Err(error.to_string());
+    }
+    text.parse::<i64>().map_err(|_| error.to_string())
+}
+
+fn path_helper(name: &str, raw: &str) -> String {
+    let p = Path::new(raw);
+    match name {
+        "basename" => p
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        "dirname" => p
+            .parent()
+            .map(|s| {
+                let v = s.to_string_lossy().to_string();
+                if v.is_empty() { ".".to_string() } else { v }
+            })
+            .unwrap_or_else(|| ".".to_string()),
+        "extension" => p
+            .extension()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        "withoutExtension" => p
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        _ => unreachable!(),
+    }
+}
+
+fn random_u64() -> u64 {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or_default();
+    let count = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    nanos ^ count.rotate_left(13) ^ (std::process::id() as u64)
+}
+
+fn parse_two_string_paths(text: &str, command: &str) -> Result<(String, String), String> {
+    let (first_text, tail) = split_string_literal_tail(text.trim())
+        .map_err(|_| format!("{command} syntax is {command} \"from\" \"to\""))?;
+    let (second_text, extra) = split_string_literal_tail(tail.trim())
+        .map_err(|_| format!("{command} syntax is {command} \"from\" \"to\""))?;
+    if !extra.trim().is_empty() {
+        return Err(format!("{command} syntax is {command} \"from\" \"to\""));
+    }
+    Ok((
+        parse_string_literal(first_text)?,
+        parse_string_literal(second_text)?,
+    ))
+}
+
+fn split_path_expr_tail<'a>(text: &'a str, command: &str) -> Result<(&'a str, &'a str), String> {
+    let text = text.trim();
+    if text.starts_with('"') {
+        return split_string_literal_tail(text);
+    }
+    let Some((path, tail)) = text.split_once(char::is_whitespace) else {
+        return Err(format!("{command} syntax is {command} \"file\" $text"));
+    };
+    validate_path_expr_form(path, &format!("{command} requires a string file path"))?;
+    Ok((path, tail))
+}
+
+fn validate_path_expr_form(text: &str, error: &str) -> Result<(), String> {
+    let text = text.trim();
+    if text.starts_with('"') {
+        parse_string_literal(text).map_err(|_| error.to_string())?;
+        return Ok(());
+    }
+    if text.starts_with('$') {
+        let (_, _, extra) = parse_identifier(text).map_err(|_| error.to_string())?;
+        if extra.trim().is_empty() {
+            return Ok(());
+        }
+        return Err(error.to_string());
+    }
+    Err(error.to_string())
+}
+
+fn looks_like_list_mutation_target(text: &str) -> bool {
+    let text = text.trim();
+    text.starts_with('$') && text.contains('[') && text.ends_with(']')
+}
+
+fn parse_read_capture(text: &str) -> Result<(&str, String), String> {
+    let Some((file, destination)) = split_capture_arrow(text) else {
+        return Err("read syntax is read \"file\" -> $text".to_string());
+    };
+    validate_path_expr_form(file, "read requires a string file path")?;
+    let (kind, name, extra) = parse_identifier(destination.trim())
+        .map_err(|_| "read destination must be a variable".to_string())?;
+    if kind != IdentKind::Variable || !extra.trim().is_empty() {
+        return Err("read destination must be a variable".to_string());
+    }
+    Ok((file, name))
+}
+
+fn parse_path_capture<'a>(text: &'a str, command: &str) -> Result<(&'a str, String), String> {
+    let Some((path, destination)) = split_capture_arrow(text) else {
+        return Err(format!("{command} syntax is {command} \"path\" -> $ok"));
+    };
+    validate_path_expr_form(path, &format!("{command} requires a string path"))?;
+    let (kind, name, extra) = parse_identifier(destination.trim())
+        .map_err(|_| format!("{command} destination must be a variable"))?;
+    if kind != IdentKind::Variable || !extra.trim().is_empty() {
+        return Err(format!("{command} destination must be a variable"));
+    }
+    Ok((path, name))
+}
+
+fn unique_temp_path(kind: &str) -> PathBuf {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let count = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    env::temp_dir().join(format!(
+        "shelly-{kind}-{}-{nonce}-{count}",
+        std::process::id()
+    ))
+}
+
+fn copy_recursive(from: &Path, to: &Path) -> Result<(), String> {
+    if from.is_dir() {
+        fs::create_dir_all(to)
+            .map_err(|error| format!("could not create directory '{}': {error}", to.display()))?;
+        for entry in fs::read_dir(from)
+            .map_err(|error| format!("could not read directory '{}': {error}", from.display()))?
+        {
+            let entry =
+                entry.map_err(|error| format!("could not read directory entry: {error}"))?;
+            copy_recursive(&entry.path(), &to.join(entry.file_name()))?;
+        }
+        Ok(())
+    } else if from.is_file() {
+        fs::copy(from, to).map(|_| ()).map_err(|error| {
+            format!(
+                "could not copy '{}' to '{}': {error}",
+                from.display(),
+                to.display()
+            )
+        })
+    } else {
+        Err(format!("source path does not exist: {}", from.display()))
+    }
+}
+
+fn parse_choose_capture(text: &str) -> Result<(&str, &str, String), String> {
+    let (question, tail) = split_string_literal_tail(text).map_err(|_| {
+        "choose syntax is choose \"Question\" [\"A\", \"B\"] -> $choice".to_string()
+    })?;
+    let Some((options_text, destination)) = split_capture_arrow(tail.trim()) else {
+        return Err("choose syntax is choose \"Question\" [\"A\", \"B\"] -> $choice".to_string());
+    };
+    if !options_text.trim_start().starts_with('[') && !options_text.trim_start().starts_with('$') {
+        return Err("choose options must be a list".to_string());
+    }
+    if options_text.trim_start().starts_with('[') {
+        Interpreter::default().eval_list(options_text.trim())?;
+    }
+    let (kind, name, extra) = parse_identifier(destination.trim())
+        .map_err(|_| "choose destination must be a variable".to_string())?;
+    if kind != IdentKind::Variable || !extra.trim().is_empty() {
+        return Err("choose destination must be a variable".to_string());
+    }
+    Ok((question, options_text, name))
+}
+
+fn parse_files_capture(text: &str) -> Result<(&str, String), String> {
+    let Some((pattern, destination)) = split_capture_arrow(text) else {
+        return Err("files syntax is files \"pattern\" -> $items".to_string());
+    };
+    parse_string_literal(pattern).map_err(|_| "files requires a string pattern".to_string())?;
+    let (kind, name, extra) = parse_identifier(destination.trim())
+        .map_err(|_| "files destination must be a variable".to_string())?;
+    if kind != IdentKind::Variable || !extra.trim().is_empty() {
+        return Err("files destination must be a variable".to_string());
+    }
+    Ok((pattern, name))
+}
+
+fn glob_files(base_dir: &std::path::Path, pattern: &str) -> Result<Vec<String>, String> {
+    if pattern.split('/').any(|segment| segment == "**") {
+        return Err("files does not support recursive ** patterns yet".to_string());
+    }
+    let segments: Vec<&str> = pattern
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .collect();
+    if segments.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut matches = Vec::new();
+    collect_glob_matches(base_dir, &segments, String::new(), &mut matches)?;
+    matches.sort();
+    Ok(matches)
+}
+
+fn collect_glob_matches(
+    dir: &std::path::Path,
+    segments: &[&str],
+    prefix: String,
+    matches: &mut Vec<String>,
+) -> Result<(), String> {
+    let Some((segment, rest)) = segments.split_first() else {
+        return Ok(());
+    };
+    if segment.contains('*') {
+        let entries = match fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(_) => return Ok(()),
+        };
+        for entry in entries {
+            let entry =
+                entry.map_err(|error| format!("could not read directory entry: {error}"))?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !glob_segment_matches(segment, &name) {
+                continue;
+            }
+            let next_prefix = join_relative(&prefix, &name);
+            if rest.is_empty() {
+                if entry.path().is_file() {
+                    matches.push(next_prefix);
+                }
+            } else if entry.path().is_dir() {
+                collect_glob_matches(&entry.path(), rest, next_prefix, matches)?;
+            }
+        }
+        return Ok(());
+    }
+
+    let path = dir.join(segment);
+    let next_prefix = join_relative(&prefix, segment);
+    if rest.is_empty() {
+        if path.is_file() {
+            matches.push(next_prefix);
+        }
+    } else if path.is_dir() {
+        collect_glob_matches(&path, rest, next_prefix, matches)?;
+    }
+    Ok(())
+}
+
+fn join_relative(prefix: &str, name: &str) -> String {
+    if prefix.is_empty() {
+        name.to_string()
+    } else {
+        format!("{prefix}/{name}")
+    }
+}
+
+fn glob_segment_matches(pattern: &str, text: &str) -> bool {
+    if !pattern.contains('*') {
+        return pattern == text;
+    }
+    if pattern == "*" {
+        return true;
+    }
+    let parts: Vec<&str> = pattern.split('*').collect();
+    if !pattern.starts_with('*') && !text.starts_with(parts[0]) {
+        return false;
+    }
+    if !pattern.ends_with('*') && !text.ends_with(parts[parts.len() - 1]) {
+        return false;
+    }
+    let mut rest = text;
+    for part in parts.iter().filter(|part| !part.is_empty()) {
+        let Some(position) = rest.find(part) else {
+            return false;
+        };
+        rest = &rest[position + part.len()..];
+    }
+    true
+}
+
+fn split_capture_arrow(text: &str) -> Option<(&str, &str)> {
+    let mut in_string = false;
+    let mut escaped = false;
+    for (index, ch) in text.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        if ch == '"' {
+            in_string = true;
+            continue;
+        }
+        if text[index..].starts_with("->") {
+            let left = text[..index].trim();
+            let right = text[index + 2..].trim();
+            if !left.is_empty() && !right.is_empty() {
+                return Some((left, right));
+            }
+        }
+    }
+    None
+}
+
+fn split_predicate_two_args(args: &str) -> Option<(&str, &str)> {
+    let mut bracket_depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (index, ch) in args.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            ch if bracket_depth == 0 && ch.is_whitespace() => {
+                let left = args[..index].trim();
+                let right = args[index..].trim();
+                if !left.is_empty() && !right.is_empty() {
+                    return Some((left, right));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn validate_condition_parentheses(condition: &str) -> Result<(), String> {
+    let mut paren_depth = 0usize;
+    let mut bracket_depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut previous_open: Option<usize> = None;
+    for (index, ch) in condition.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            '(' if bracket_depth == 0 => {
+                paren_depth += 1;
+                previous_open = Some(index);
+            }
+            ')' if bracket_depth == 0 => {
+                if paren_depth == 0 {
+                    return Err("unexpected ')' in condition".to_string());
+                }
+                if let Some(open) = previous_open {
+                    if condition[open + 1..index].trim().is_empty() {
+                        return Err("empty parenthesized condition".to_string());
+                    }
+                }
+                paren_depth -= 1;
+                previous_open = None;
+            }
+            _ => {}
+        }
+    }
+    if paren_depth > 0 {
+        return Err("missing ')' in condition".to_string());
+    }
+    Ok(())
+}
+
+fn strip_grouped_condition(condition: &str) -> Result<Option<&str>, String> {
+    let condition = condition.trim();
+    if !condition.starts_with('(') {
+        return Ok(None);
+    }
+    let mut paren_depth = 0usize;
+    let mut bracket_depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (index, ch) in condition.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            '(' if bracket_depth == 0 => paren_depth += 1,
+            ')' if bracket_depth == 0 => {
+                if paren_depth == 0 {
+                    return Err("unexpected ')' in condition".to_string());
+                }
+                paren_depth -= 1;
+                if paren_depth == 0 {
+                    if !condition[index + 1..].trim().is_empty() {
+                        return Ok(None);
+                    }
+                    let inner = condition[1..index].trim();
+                    if inner.is_empty() {
+                        return Err("empty parenthesized condition".to_string());
+                    }
+                    return Ok(Some(inner));
+                }
+            }
+            _ => {}
+        }
+    }
+    Err("missing ')' in condition".to_string())
+}
+
 fn split_condition_keyword<'a>(condition: &'a str, keyword: &str) -> Option<(&'a str, &'a str)> {
     let mut bracket_depth = 0usize;
+    let mut paren_depth = 0usize;
     let mut in_string = false;
     let mut escaped = false;
 
@@ -1668,7 +3247,9 @@ fn split_condition_keyword<'a>(condition: &'a str, keyword: &str) -> Option<(&'a
             '"' => in_string = true,
             '[' => bracket_depth += 1,
             ']' => bracket_depth = bracket_depth.saturating_sub(1),
-            _ if bracket_depth == 0 => {
+            '(' if bracket_depth == 0 => paren_depth += 1,
+            ')' if bracket_depth == 0 => paren_depth = paren_depth.saturating_sub(1),
+            _ if bracket_depth == 0 && paren_depth == 0 => {
                 let tail = &condition[index..];
                 if tail.starts_with(keyword) {
                     let before = condition[..index].chars().next_back();
@@ -1692,6 +3273,7 @@ fn split_condition_keyword<'a>(condition: &'a str, keyword: &str) -> Option<(&'a
 
 fn split_condition_operator(condition: &str) -> Option<(&str, &str, &str)> {
     let mut bracket_depth = 0usize;
+    let mut paren_depth = 0usize;
     let mut in_string = false;
     let mut escaped = false;
 
@@ -1711,7 +3293,9 @@ fn split_condition_operator(condition: &str) -> Option<(&str, &str, &str)> {
             '"' => in_string = true,
             '[' => bracket_depth += 1,
             ']' => bracket_depth = bracket_depth.saturating_sub(1),
-            _ if bracket_depth == 0 => {
+            '(' if bracket_depth == 0 => paren_depth += 1,
+            ')' if bracket_depth == 0 => paren_depth = paren_depth.saturating_sub(1),
+            _ if bracket_depth == 0 && paren_depth == 0 => {
                 let tail = &condition[index..];
                 for operator in ["==", "!=", ">=", "<=", ">", "<"] {
                     if tail.starts_with(operator) {
@@ -1764,6 +3348,87 @@ fn parse_repeat_header(rest: &str) -> Result<(&str, Option<String>), String> {
     Ok((count_expr, index_var))
 }
 
+fn validate_log_header(rest: &str) -> Result<(), String> {
+    if rest.trim().is_empty() {
+        return Err("log identifier required".to_string());
+    }
+    if rest.trim().starts_with('"') {
+        parse_string_literal(rest.trim())?;
+    }
+    Ok(())
+}
+
+fn sanitize_log_identifier(identifier: &str) -> String {
+    let sanitized: String = identifier
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                ch
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    if sanitized.is_empty() {
+        "log".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn current_utc_parts() -> (i32, u32, u32, u32, u32, u32) {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    (
+        year,
+        month,
+        day,
+        (rem / 3600) as u32,
+        ((rem % 3600) / 60) as u32,
+        (rem % 60) as u32,
+    )
+}
+
+fn current_utc_date() -> String {
+    let (y, m, d, _, _, _) = current_utc_parts();
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+fn current_utc_timestamp() -> String {
+    let (y, m, d, h, min, s) = current_utc_parts();
+    format!("{y:04}-{m:02}-{d:02}T{h:02}:{min:02}:{s:02}Z")
+}
+
+fn civil_from_days(days: i64) -> (i32, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = mp + if mp < 10 { 3 } else { -9 };
+    ((y + if m <= 2 { 1 } else { 0 }) as i32, m as u32, d as u32)
+}
+
+fn control_signal_name(error: &str) -> &'static str {
+    if parse_exit_signal(error).is_some() {
+        "exit"
+    } else if parse_return_signal(error).is_some() {
+        "return"
+    } else if is_break_signal(error) {
+        "break"
+    } else {
+        "continue"
+    }
+}
+
 fn collect_block(
     lines: &[(usize, String)],
     start: usize,
@@ -1776,6 +3441,9 @@ fn collect_block(
         let line = lines[index].1.trim();
         if starts_block(line) {
             depth += 1;
+        }
+        if line == "}" && depth > 0 {
+            depth -= 1;
         }
         if line == "end" {
             if depth == 0 {
@@ -1798,16 +3466,99 @@ fn starts_block(line: &str) -> bool {
         || line.starts_with("repeat ")
         || line.starts_with("fn ")
         || line.starts_with("export fn ")
+        || line == "try"
+        || line.starts_with("try ")
+        || line.starts_with("log ")
 }
 
-fn parse_function(
-    rest: &str,
+fn parse_try_header(line: &str) -> Result<Option<String>, String> {
+    if line == "try" {
+        return Ok(None);
+    }
+    let Some(rest) = line.strip_prefix("try ") else {
+        return Err("try syntax is try or try -> $error".to_string());
+    };
+    let Some(destination) = rest.trim().strip_prefix("->") else {
+        return Err("try syntax is try or try -> $error".to_string());
+    };
+    let (kind, name, extra) = parse_identifier(destination.trim())
+        .map_err(|_| "try error destination must be a variable".to_string())?;
+    if kind != IdentKind::Variable || !extra.trim().is_empty() {
+        return Err("try error destination must be a variable".to_string());
+    }
+    Ok(Some(name))
+}
+
+fn collect_try_block(
     lines: &[(usize, String)],
     start: usize,
-) -> Result<(Function, usize), String> {
-    let (name, params_text) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+) -> Result<(Vec<(usize, String)>, Vec<(usize, String)>, usize), String> {
+    let mut try_body = Vec::new();
+    let mut catch_body = Vec::new();
+    let mut in_catch = false;
+    let mut depth = 0;
+    let mut index = start + 1;
+    while index < lines.len() {
+        let line_no = lines[index].0;
+        let line = lines[index].1.trim();
+        if starts_block(line) {
+            depth += 1;
+        }
+        if line == "}" && depth > 0 {
+            depth -= 1;
+        }
+        if line == "end" {
+            if depth == 0 {
+                if !in_catch {
+                    return Err("missing catch for try".to_string());
+                }
+                return Ok((try_body, catch_body, index + 1));
+            }
+            depth -= 1;
+        } else if line == "catch" && depth == 0 {
+            if in_catch {
+                return Err(format!("line {line_no}: duplicate catch"));
+            }
+            in_catch = true;
+            index += 1;
+            continue;
+        }
+        if !line.is_empty() {
+            if in_catch {
+                catch_body.push(lines[index].clone());
+            } else {
+                try_body.push(lines[index].clone());
+            }
+        }
+        index += 1;
+    }
+    if in_catch {
+        Err("missing end for try".to_string())
+    } else {
+        Err("missing catch for try".to_string())
+    }
+}
+
+fn starts_function_block(line: &str) -> bool {
+    line.starts_with("fn ") || line.starts_with("export fn ")
+}
+
+fn parse_function_header(rest: &str) -> Result<(String, Vec<Param>), String> {
+    let Some(open) = rest.find('(') else {
+        return Err("old function syntax was removed; use fn name($arg) {".to_string());
+    };
+    let name = rest[..open].trim();
     if !is_identifier_name(name) {
         return Err("function name must start with an ASCII letter".to_string());
+    }
+    let after_open = &rest[open + 1..];
+    let Some(close_rel) = after_open.rfind(')') else {
+        return Err("function parameters must be enclosed in parentheses".to_string());
+    };
+    let params_text = &after_open[..close_rel];
+    let tail = after_open[close_rel + 1..].trim();
+    if tail != "{" {
+        return Err("function definitions must end with {".to_string());
     }
     let mut params = Vec::new();
     let mut saw_default = false;
@@ -1821,11 +3572,8 @@ fn parse_function(
                 return Err("required parameter cannot follow default".to_string());
             }
             let (kind, name, extra) = parse_identifier(left)?;
-            if kind != IdentKind::Variable {
+            if kind != IdentKind::Variable || !extra.trim().is_empty() {
                 return Err("function parameters must be variables".to_string());
-            }
-            if !extra.trim().is_empty() {
-                return Err("unexpected text after parameter".to_string());
             }
             let default = if let Some(value) = default {
                 saw_default = true;
@@ -1836,27 +3584,82 @@ fn parse_function(
             params.push(Param { name, default });
         }
     }
+    Ok((name.to_string(), params))
+}
+
+fn parse_call_syntax(text: &str) -> Result<(&str, Vec<&str>), String> {
+    let Some(open) = text.find('(') else {
+        return Err("old call syntax was removed; use call name(args)".to_string());
+    };
+    let name = text[..open].trim();
+    if name.is_empty() {
+        return Err("call requires a function name".to_string());
+    }
+    if !is_identifier_name(name) {
+        return Err("function name must start with an ASCII letter".to_string());
+    }
+    let after_open = &text[open + 1..];
+    let Some(close_rel) = after_open.rfind(')') else {
+        return Err("call arguments must be enclosed in parentheses".to_string());
+    };
+    let args_text = &after_open[..close_rel];
+    if !after_open[close_rel + 1..].trim().is_empty() {
+        return Err("unexpected text after call arguments".to_string());
+    }
+    let args = if args_text.trim().is_empty() {
+        Vec::new()
+    } else {
+        split_commas(args_text.trim())?
+    };
+    Ok((name, args))
+}
+
+fn validate_call_syntax(text: &str) -> Result<(), String> {
+    let (call_text, destination) = match text.split_once("->") {
+        Some((call_text, destination)) => (call_text.trim(), Some(destination.trim())),
+        None => (text.trim(), None),
+    };
+    parse_call_syntax(call_text)?;
+    if let Some(destination) = destination {
+        let (kind, _, extra) = parse_identifier(destination)
+            .map_err(|_| "function return destination must be a variable".to_string())?;
+        if kind != IdentKind::Variable || !extra.trim().is_empty() {
+            return Err("function return destination must be a variable".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn parse_function(
+    rest: &str,
+    lines: &[(usize, String)],
+    start: usize,
+) -> Result<(Function, usize), String> {
+    let (name, params) = parse_function_header(rest)?;
     let mut body = Vec::new();
+    let mut depth = 0;
     let mut index = start + 1;
     while index < lines.len() {
         let line_no = lines[index].0;
         let line = lines[index].1.trim();
-        if line == "end" {
-            return Ok((
-                Function {
-                    name: name.to_string(),
-                    params,
-                    body,
-                },
-                index + 1,
-            ));
+        if starts_function_block(line) {
+            depth += 1;
+        }
+        if line == "}" {
+            if depth == 0 {
+                return Ok((Function { name, params, body }, index + 1));
+            }
+            depth -= 1;
+        }
+        if line == "end" && depth == 0 {
+            return Err("old function syntax was removed; close functions with }".to_string());
         }
         if !line.is_empty() {
             body.push((line_no, line.to_string()));
         }
         index += 1;
     }
-    Err(format!("missing end for function {name}"))
+    Err(format!("missing }} for function {name}"))
 }
 
 struct NumericParser<'a> {

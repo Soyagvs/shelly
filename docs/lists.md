@@ -57,7 +57,7 @@ Numeric filters support `==`, `!=`, `>`, `>=`, `<`, and `<=`. String and boolean
 
 ## Iteration
 
-Use [`for`](for.md) to visit list values, constant lists, ranges, multi-selectors, and filters.
+Use [`for`](for.md) to visit list values, constant lists, ranges, multi-selectors, filters, and lists returned by [`files`](files.md).
 
 ```shelly
 for $name in $names[1..2]

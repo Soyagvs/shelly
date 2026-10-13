@@ -1,0 +1,145 @@
+# Files
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>
+
+Shelly has first-class file commands for common script automation, plus `files` for collecting matching paths.
+
+All relative paths, including `./`, resolve from the current Shelly script file directory, not from the process current working directory. `import`, `include`, `exists`, and `files` use the same script-relative model.
+
+## Path commands
+
+```shelly
+create "out/"
+create "out/report.txt"
+write "out/report.txt" "hello"
+append "out/report.txt" "next line"
+read "out/report.txt" -> $text
+size "out/report.txt" -> $bytes
+isFile "out/report.txt" -> $isFile
+isDir "out/" -> $isDir
+tempFile -> $scratchFile
+tempDir -> $scratchDir
+copy "out/report.txt" "copy/report.txt"
+move "copy/report.txt" "copy/moved.txt"
+rename "copy/moved.txt" "final.txt"
+remove "copy/final.txt"
+remove "out/"
+```
+
+## Path command rules
+
+- `create "path"` creates an empty file and parent directories. If `path` ends with `/`, it creates a directory recursively. Existing targets succeed and existing file content is preserved.
+- `copy "from" "to"` copies a file or directory recursively, creates destination parents, and fails if `to` already exists.
+- `move "from" "to"` moves a file or directory, creates destination parents, and fails if `to` already exists.
+- `rename "from" "new-name"` renames within the same directory. `new-name` must be a plain name, not a path, and the destination must not already exist.
+- `remove "path"` succeeds when the path is missing. It deletes files. It deletes directories recursively only when the input path ends with `/`; a directory path without trailing `/` fails with a safety error.
+- `read "file" -> $text` reads UTF-8 text from a file into a variable. Missing paths and directories fail.
+- `write "file" $text` writes a string expression to a file, creates parent directories, and overwrites existing file content. Directories fail.
+- `append "file" $text` creates parent directories when needed, appends the evaluated text, and adds one trailing newline for log-friendly output. It does not overwrite existing content. Directories fail. File append also accepts a variable path like `append $path $text`. List append is still `append $list, $value`; the comma form selects list mutation.
+- `isFile "path" -> $ok` stores `true` when the path exists and is a file, otherwise `false`. Missing paths do not fail.
+- `isDir "path" -> $ok` stores `true` when the path exists and is a directory, otherwise `false`. Missing paths do not fail.
+- `size "file" -> $bytes` stores the file size in bytes. Missing paths and directories fail.
+- `tempFile -> $path` creates an empty temporary file and stores its absolute path.
+- `tempDir -> $path` creates a temporary directory and stores its absolute path.
+
+## Script-relative paths
+
+```shelly
+create "./build/"
+write "./build/message.txt" "from this script directory"
+append "./build/message.txt" "another line"
+read "./build/message.txt" -> $message
+shellout $message
+```
+
+Running that script from another terminal directory still writes under the script's own directory.
+
+## Collect matching files
+
+`files` collects matching file paths into a Shelly list.
+
+```shelly
+files "*.txt" -> $items
+```
+
+## `files` rules
+
+- Syntax: `files "pattern" -> $items`.
+- The destination after `->` must be a variable.
+- Matches are resolved relative to the current script file directory.
+- The result is a list of matching paths as strings.
+- `files` only assigns the list. It does not print or iterate by itself.
+- No matches returns an empty list: `[]`.
+- Results are sorted deterministically.
+
+## Patterns
+
+This first version supports simple, single-segment `*` wildcards:
+
+```shelly
+files "*.txt" -> $textFiles
+files "dir/*.txt" -> $dirTextFiles
+files "README.md" -> $readme
+```
+
+`*` matches within one path segment. Recursive `**` patterns are not supported yet.
+
+## Print the list
+
+```shelly
+files "*.txt" -> $items
+shellout $items
+```
+
+This prints the list using Shelly's normal list formatting, for example:
+
+```text
+[a.txt, b.txt]
+```
+
+## Iterate over matches
+
+Use [`for`](for.md) to visit each path.
+
+```shelly
+files "*.txt" -> $items
+for $file in $items
+    shellout "found $file"
+end
+```
+
+Empty lists are falsey, so you can branch on whether any files matched:
+
+```shelly
+files "*.txt" -> $items
+if $items
+    shellout "found files"
+else
+    shellout "no matches"
+end
+```
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>
+
+## Helper command examples
+
+```shelly
+isFile "data/input.txt" -> $hasInput
+isDir "data" -> $hasDataDir
+
+write "logs/run.log" "started"
+append "logs/run.log" "loaded input=$hasInput"
+size "logs/run.log" -> $logBytes
+
+tempFile -> $scratchFile
+tempDir -> $scratchDir
+write $scratchFile "temporary content"
+isFile $scratchFile -> $scratchIsFile
+isDir $scratchDir -> $scratchIsDir
+```
+
+`tempFile` and `tempDir` paths are unique enough for repeated calls in one script and are returned as absolute strings. Single-path helpers such as `create`, `write`, `append`, `read`, `size`, `isFile`, and `remove` accept those variables as path expressions, while literal paths remain script-relative.
