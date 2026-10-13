@@ -1,5 +1,5 @@
 <p align="center">
-  <img width="1672" height="941" alt="Shelly preview" src="https://github.com/user-attachments/assets/48130392-11ba-41b5-b655-71e32c88f1cd" />
+  <img width="2056" height="765" alt="Cuervo geométrico y logotipo Shelly сия" src="https://github.com/user-attachments/assets/975333ea-e6c7-421b-9795-089f07211ce6" />
 </p>
 
 <p align="center">
