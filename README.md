@@ -21,12 +21,13 @@ Small scripts. Clear syntax. One readable way to compose variables, commands, li
 
 ## Latest release
 
-**v3.0.2** is the latest public-ready Shelly release.
+**v3.0.3** is the latest public-ready Shelly release.
 
 - Linux/macOS installer: `curl -fsSL https://raw.githubusercontent.com/Soyagvs/shelly/main/install.sh | sh`
 - Windows installer: `irm https://raw.githubusercontent.com/Soyagvs/shelly/main/install.ps1 | iex`
 - Release binaries are built for Linux x86_64, macOS Intel, macOS Apple Silicon, and Windows x86_64.
 - Language highlights: lists, selectors, filters, `for`, `while`, `repeat`, explicit `call`, function `return`, `break`, `continue`, logical `and` / `or` / `not`, modules, and `command` for system tools.
+- Editor support: `shelly check` validates scripts safely without executing them, enabling VS Code diagnostics.
 - License: MIT.
 
 ## Install
@@ -41,6 +42,12 @@ Create a script named `hello.shelly`:
 
 ```shelly
 shellout "Hello from Shelly"
+```
+
+Check it without executing commands:
+
+```sh
+shelly check hello.shelly
 ```
 
 Run it:

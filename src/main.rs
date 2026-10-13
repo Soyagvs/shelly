@@ -23,10 +23,30 @@ use value::{
 const WHILE_ITERATION_LIMIT: usize = 10_000;
 
 fn main() {
-    let script_path = env::args_os().nth(1).map(PathBuf::from);
-
-    let result = match script_path {
-        Some(path) => run_script(path),
+    let mut args = env::args_os().skip(1);
+    let result = match args.next() {
+        Some(command) if command == "check" => {
+            let mut format = CheckFormat::Text;
+            let next = args.next();
+            let script_path = if next.as_deref() == Some(std::ffi::OsStr::new("--format")) {
+                match args.next().and_then(|value| value.into_string().ok()) {
+                    Some(value) if value == "json" => {
+                        format = CheckFormat::Json;
+                        Ok(args.next().map(PathBuf::from))
+                    }
+                    Some(value) => Err(format!("unsupported check format: {value}")),
+                    None => Err("missing format after --format".to_string()),
+                }
+            } else {
+                Ok(next.map(PathBuf::from))
+            };
+            match script_path {
+                Ok(Some(path)) => check_script(path, format),
+                Ok(None) => Err("Usage: shelly check [--format json] <script.shelly>".to_string()),
+                Err(error) => Err(error),
+            }
+        }
+        Some(path) => run_script(PathBuf::from(path)),
         None => {
             println!("Shelly is ready. Pass a .shelly script path to run it.");
             println!("Usage: shelly <script.shelly>");
@@ -38,7 +58,9 @@ fn main() {
         if let Some(code) = parse_exit_signal(&error) {
             std::process::exit(code);
         }
-        eprintln!("{error}");
+        if error != "__shelly_check_failed" {
+            eprintln!("{error}");
+        }
         std::process::exit(1);
     }
 }
@@ -91,6 +113,93 @@ fn line_error(line_no: usize, error: String) -> String {
         error
     } else {
         format!("line {line_no}: {error}")
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CheckFormat {
+    Text,
+    Json,
+}
+
+#[derive(Clone)]
+struct Diagnostic {
+    file: String,
+    line: usize,
+    column: usize,
+    severity: &'static str,
+    message: String,
+}
+
+fn check_script(path: PathBuf, format: CheckFormat) -> Result<(), String> {
+    let path = path
+        .canonicalize()
+        .map_err(|error| format!("could not read script '{}': {error}", path.display()))?;
+    let source = fs::read_to_string(&path)
+        .map_err(|error| format!("could not read script '{}': {error}", path.display()))?;
+    let diagnostics = check_source(&source, &path.display().to_string());
+    if format == CheckFormat::Json {
+        println!("{}", format_diagnostics_json(&diagnostics));
+    } else {
+        for diagnostic in &diagnostics {
+            eprintln!("line {}: {}", diagnostic.line, diagnostic.message);
+        }
+    }
+    if diagnostics.is_empty() {
+        Ok(())
+    } else {
+        Err("__shelly_check_failed".to_string())
+    }
+}
+
+fn format_diagnostics_json(diagnostics: &[Diagnostic]) -> String {
+    let mut out = String::from("[");
+    for (index, diagnostic) in diagnostics.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        out.push_str(&format!(
+            "{{\"file\":\"{}\",\"line\":{},\"column\":{},\"severity\":\"{}\",\"message\":\"{}\"}}",
+            json_escape(&diagnostic.file),
+            diagnostic.line,
+            diagnostic.column,
+            diagnostic.severity,
+            json_escape(&diagnostic.message)
+        ));
+    }
+    out.push(']');
+    out
+}
+
+fn json_escape(value: &str) -> String {
+    let mut escaped = String::new();
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            ch => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
+fn check_source(source: &str, file: &str) -> Vec<Diagnostic> {
+    match strip_comments(source) {
+        Ok(lines) => {
+            let mut checker = Checker::new(file.to_string());
+            checker.check_lines(&lines);
+            checker.diagnostics
+        }
+        Err(error) => vec![Diagnostic {
+            file: file.to_string(),
+            line: 1,
+            column: 1,
+            severity: "error",
+            message: error,
+        }],
     }
 }
 
@@ -1296,6 +1405,233 @@ impl Interpreter {
             )),
         }
     }
+}
+
+struct Checker {
+    file: String,
+    diagnostics: Vec<Diagnostic>,
+    blocks: Vec<BlockKind>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BlockKind {
+    If,
+    Loop,
+    Function,
+}
+
+impl Checker {
+    fn new(file: String) -> Self {
+        Self {
+            file,
+            diagnostics: Vec::new(),
+            blocks: Vec::new(),
+        }
+    }
+
+    fn check_lines(&mut self, lines: &[(usize, String)]) {
+        for (line_no, raw) in lines {
+            let line = raw.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if let Err(message) = self.check_line(line) {
+                self.error(*line_no, message);
+            }
+        }
+        if let Some(kind) = self.blocks.last() {
+            let name = match kind {
+                BlockKind::If => "if",
+                BlockKind::Loop => "loop",
+                BlockKind::Function => "function",
+            };
+            self.error(
+                lines.last().map(|(n, _)| *n).unwrap_or(1),
+                format!("missing end for {name}"),
+            );
+        }
+    }
+
+    fn check_line(&mut self, line: &str) -> Result<(), String> {
+        if let Some(rest) = line
+            .strip_prefix("export fn ")
+            .or_else(|| line.strip_prefix("fn "))
+        {
+            parse_function_signature(rest.trim())?;
+            self.blocks.push(BlockKind::Function);
+            return Ok(());
+        }
+        if let Some(rest) = line.strip_prefix("if ") {
+            if rest.trim().is_empty() {
+                return Err("condition required".to_string());
+            }
+            self.blocks.push(BlockKind::If);
+            return Ok(());
+        }
+        if line == "if" {
+            return Err("condition required".to_string());
+        }
+        if let Some(rest) = line.strip_prefix("elif ") {
+            if !matches!(self.blocks.last(), Some(BlockKind::If)) {
+                return Err("unexpected conditional marker".to_string());
+            }
+            if rest.trim().is_empty() {
+                return Err("condition required".to_string());
+            }
+            return Ok(());
+        }
+        if line == "else" {
+            if !matches!(self.blocks.last(), Some(BlockKind::If)) {
+                return Err("unexpected conditional marker".to_string());
+            }
+            return Ok(());
+        }
+        if let Some(rest) = line.strip_prefix("while ") {
+            if rest.trim().is_empty() {
+                return Err("condition required".to_string());
+            }
+            self.blocks.push(BlockKind::Loop);
+            return Ok(());
+        }
+        if line == "while" {
+            return Err("condition required".to_string());
+        }
+        if let Some(rest) = line.strip_prefix("for ") {
+            parse_for_header(rest.trim())?;
+            self.blocks.push(BlockKind::Loop);
+            return Ok(());
+        }
+        if line == "for" {
+            return Err("for syntax is for $item in $list".to_string());
+        }
+        if let Some(rest) = line.strip_prefix("repeat ") {
+            parse_repeat_header(rest.trim())?;
+            self.blocks.push(BlockKind::Loop);
+            return Ok(());
+        }
+        if line == "repeat" {
+            return Err("repeat count required".to_string());
+        }
+        if line == "end" {
+            if self.blocks.pop().is_none() {
+                return Err("unexpected conditional marker".to_string());
+            }
+            return Ok(());
+        }
+        if line == "break" || line == "continue" {
+            if !self.blocks.iter().any(|kind| *kind == BlockKind::Loop) {
+                return Err(format!("{line} outside loop"));
+            }
+            return Ok(());
+        }
+        if line == "return" || line.starts_with("return ") {
+            if !self.blocks.iter().any(|kind| *kind == BlockKind::Function) {
+                return Err("return outside function".to_string());
+            }
+            if line == "return" {
+                return Err("return value required".to_string());
+            }
+            return Ok(());
+        }
+        validate_statement_form(line)
+    }
+
+    fn error(&mut self, line: usize, message: String) {
+        self.diagnostics.push(Diagnostic {
+            file: self.file.clone(),
+            line,
+            column: 1,
+            severity: "error",
+            message,
+        });
+    }
+}
+
+fn parse_function_signature(rest: &str) -> Result<(), String> {
+    let (name, params_text) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+    if !is_identifier_name(name) {
+        return Err("function name must start with an ASCII letter".to_string());
+    }
+    if !params_text.trim().is_empty() {
+        for item in split_commas(params_text.trim())? {
+            let left = item
+                .split_once('=')
+                .map(|(left, _)| left)
+                .unwrap_or(item)
+                .trim();
+            let (kind, _, extra) = parse_identifier(left)?;
+            if kind != IdentKind::Variable || !extra.trim().is_empty() {
+                return Err("function parameters must be variables".to_string());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_statement_form(line: &str) -> Result<(), String> {
+    if line.starts_with('$') {
+        return Interpreter::default().assignment(line, 0).map(|_| ());
+    }
+    if let Some(rest) = line.strip_prefix("ask") {
+        let rest = rest.trim();
+        if rest.contains(',') && !rest.contains("->") {
+            return Err(
+                "old ask comma syntax was removed; use ask \"Question?\" -> $answer".to_string(),
+            );
+        }
+        let Some((prompt_text, destination)) = rest.split_once("->") else {
+            return Err("ask syntax is ask \"Question?\" -> $answer".to_string());
+        };
+        parse_string_literal(prompt_text.trim())?;
+        let (kind, _, extra) = parse_identifier(destination.trim())
+            .map_err(|_| "ask destination must be a variable".to_string())?;
+        if kind != IdentKind::Variable || !extra.trim().is_empty() {
+            return Err("ask destination must be a variable".to_string());
+        }
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("command") {
+        let (_, tail) = split_string_literal_tail(rest.trim())?;
+        let tail = tail.trim();
+        if tail.is_empty() {
+            return Ok(());
+        }
+        let Some(destination) = tail.strip_prefix("->") else {
+            return Err("command capture syntax is command \"...\" -> $var".to_string());
+        };
+        let (kind, _, extra) = parse_identifier(destination.trim())
+            .map_err(|_| "command capture destination must be a variable".to_string())?;
+        if kind != IdentKind::Variable || !extra.trim().is_empty() {
+            return Err("command capture destination must be a variable".to_string());
+        }
+        return Ok(());
+    }
+    if let Some(rest) = line.strip_prefix("call ") {
+        let name = rest.trim().split_whitespace().next().unwrap_or("");
+        if name.is_empty() {
+            return Err("call requires a function name".to_string());
+        }
+        if !is_identifier_name(name) {
+            return Err("function name must start with an ASCII letter".to_string());
+        }
+        return Ok(());
+    }
+    if line == "call" {
+        return Err("call requires a function name".to_string());
+    }
+    if line.strip_prefix("shellout").is_some()
+        || line.strip_prefix("shellin").is_some()
+        || line.starts_with("import ")
+        || line.starts_with("include ")
+        || line.starts_with("exit")
+        || line.starts_with("append ")
+        || line.starts_with("prepend ")
+        || line.starts_with("remove ")
+        || line.starts_with("global")
+    {
+        return Ok(());
+    }
+    Err(format!("unknown command or invalid syntax: {line}"))
 }
 
 #[derive(Clone)]

@@ -17,6 +17,90 @@ fn prints_placeholder_when_no_script_is_provided() {
 }
 
 #[test]
+fn check_valid_script_succeeds_without_script_output() {
+    let output = check_script(
+        r#"
+$name = "world"
+shellout "hello $name"
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "");
+}
+
+#[test]
+fn check_does_not_execute_command_shellout_ask_or_shellin() {
+    let output = check_script(
+        r#"
+command "printf SHOULD_NOT_PRINT"
+shellout "SHOULD_NOT_PRINT"
+ask "Question? " -> $answer
+shellin $input
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "");
+}
+
+#[test]
+fn check_reports_missing_end() {
+    let output = check_script("if true\n    shellout \"no end\"\n");
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("line 2"));
+    assert!(stderr(&output).contains("missing end"));
+}
+
+#[test]
+fn check_reports_break_outside_loop() {
+    let output = check_script("break\n");
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("line 1"));
+    assert!(stderr(&output).contains("break outside loop"));
+}
+
+#[test]
+fn check_reports_return_outside_function() {
+    let output = check_script("return \"nope\"\n");
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("line 1"));
+    assert!(stderr(&output).contains("return outside function"));
+}
+
+#[test]
+fn check_reports_call_with_no_name() {
+    let output = check_script("call\n");
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("line 1"));
+    assert!(stderr(&output).contains("call requires a function name"));
+}
+
+#[test]
+fn check_json_format_emits_diagnostics_array() {
+    let script = write_script("break\n");
+    let output = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["check", "--format", "json"])
+        .arg(script)
+        .output()
+        .expect("run shelly check");
+
+    assert!(!output.status.success());
+    assert_eq!(stderr(&output), "");
+    let stdout = stdout(&output);
+    assert!(stdout.starts_with('['));
+    assert!(stdout.contains("\"file\""));
+    assert!(stdout.contains("\"line\":1"));
+    assert!(stdout.contains("\"column\":1"));
+    assert!(stdout.contains("\"severity\":\"error\""));
+    assert!(stdout.contains("break outside loop"));
+}
+
+#[test]
 fn shellout_literal_and_interpolation() {
     let output = run_script(
         r#"
@@ -1772,6 +1856,15 @@ fn run_script(source: &str) -> std::process::Output {
         .arg(script)
         .output()
         .expect("run shelly binary")
+}
+
+fn check_script(source: &str) -> std::process::Output {
+    let script = write_script(source);
+    Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["check"])
+        .arg(script)
+        .output()
+        .expect("run shelly check")
 }
 
 fn write_script(source: &str) -> std::path::PathBuf {

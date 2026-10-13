@@ -42,7 +42,27 @@ shellout "hello $name from $$APP"
 | For loops | [for.md](for.md) |
 | Modules | [modules.md](modules.md) |
 
-## Run
+## Check and run
+
+Validate syntax without executing the script:
+
+```sh
+shelly check path/to/script.shelly
+```
+
+Editor integrations can request JSON diagnostics:
+
+```sh
+shelly check --format json path/to/script.shelly
+```
+
+Run a script:
+
+```sh
+shelly path/to/script.shelly
+```
+
+From source:
 
 ```sh
 cargo run -- path/to/script.shelly
