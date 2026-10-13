@@ -63,7 +63,7 @@ Or customize the glyph/color:
 
 ```lua
 require("shelly-icons").setup_web_devicons({
-  icon = "",
+  icon = "󱗆",
   color = "#000000",
   cterm_color = "16",
   name = "Shelly",
