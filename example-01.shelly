@@ -49,6 +49,20 @@ $queue[first] = "Iris"
 remove $queue[first]
 shellout "Mutated queue: $queue[..]"
 
+# For loops visit each value in a list, constant list, selector, or filter. #
+for $name in $names
+    shellout "For loop name: $name"
+end
+for $number in $numbers[>5]
+    shellout "Filtered for loop number: $number"
+end
+if $numbers[>10]
+    shellout "Numbers above ten exist"
+else
+    shellout "No numbers above ten"
+end
+shellout "For loop ended on $name"
+
 # `ask` prints a prompt and stores one input line in a variable. #
 ask "Do you want to continue? " -> $answer
 
@@ -117,3 +131,4 @@ else
 end
 
 shellout "Status: $status"
+

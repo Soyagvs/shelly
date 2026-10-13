@@ -1,6 +1,10 @@
 # Exit
 
-`exit` terminates the whole Shelly process immediately.
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>
+
+`exit` stops the whole Shelly process immediately.
 
 ```shelly
 exit
@@ -8,46 +12,38 @@ exit 0
 exit 1
 ```
 
-## Status codes
+## Rules
 
 - `exit` is the same as `exit 0`.
 - `exit 0` means success.
 - `exit 1` means general failure.
 - Valid codes are integers from `0` to `255`.
+- Codes may be literals, numeric expressions, variables, or constants.
+- `exit` stops the whole script, not only the current block.
 
-Codes may be integer literals, numeric expressions, variables, or constants:
+## Expressions
 
 ```shelly
 $code = 0
 exit $code
+```
 
+```shelly
 $$BASE = 1
 exit $$BASE + 1
 ```
 
-## Scope
+## Inside blocks
 
-`exit` exits the whole script, not just the current block, loop, or function.
+```shelly
+repeat 3
+    shellout "before exit"
+    exit 0
+end
 
-It works at top level and inside:
+shellout "never runs"
+```
 
-- `if` / `elif` / `else`
-- `repeat`
-- `while`
-- functions
-- included files
-- imported/exported functions when they run
-
-## Errors
-
-These are errors and do not pretend to exit successfully:
-
-- strings
-- booleans
-- lists
-- decimal values
-- negative values
-- values greater than `255`
-- malformed trailing text
-
-Diagnostics are line-numbered.
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>

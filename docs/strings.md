@@ -1,41 +1,45 @@
 # Strings and interpolation
 
-Strings use double quotes.
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>
+
+Strings use double quotes and can include variables, constants, and list selectors.
 
 ```shelly
 $name = "Ada"
 $$APP = "Shelly"
+
 shellout "hello $name from $$APP"
 ```
 
+## Rules
+
+- Strings use double quotes.
+- Single quotes are ordinary text inside a string.
+- Interpolation works for variables, constants, and list selectors.
+- `#` inside a string is text, not a comment.
+- Use escapes for special characters.
+
 ## Escapes
 
-Supported escapes include:
+| Escape | Meaning |
+| --- | --- |
+| `\n` | newline |
+| `\t` | tab |
+| `\"` | double quote |
+| `\\` | backslash |
 
-- `\n` newline
-- `\t` tab
-- `\"` double quote
-- `\\` backslash
-
-Single quotes are ordinary text inside double-quoted strings.
-
-## Interpolation
-
-Strings can interpolate variables, constants, and list selectors:
+## Interpolation examples
 
 ```shelly
-$name = "Ada"
 $names = ["Ana", "Luis", "Mora"]
-$$APP = "Shelly"
 
-shellout "hello $name"
-shellout "app: $$APP"
-shellout "second: $names[2]"
+shellout "first: $names[1]"
 shellout "selected: $names[1,3]"
-```
-
-A `#` inside a string is literal text, not a comment marker.
-
-```shelly
 shellout "# not a comment #"
 ```
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>

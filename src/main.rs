@@ -148,6 +148,16 @@ impl Interpreter {
             if line == "while" {
                 return Err(format!("line {line_no}: condition required"));
             }
+            if let Some(rest) = line.strip_prefix("for ") {
+                let next_index = self
+                    .run_for(rest.trim(), lines, index)
+                    .map_err(|error| line_error(line_no, error))?;
+                index = next_index;
+                continue;
+            }
+            if line == "for" {
+                return Err(format!("line {line_no}: for syntax is for $item in $list"));
+            }
             if let Some(rest) = line.strip_prefix("repeat ") {
                 let next_index = self
                     .run_repeat(rest.trim(), lines, index)
@@ -284,6 +294,27 @@ impl Interpreter {
             iterations += 1;
             self.run_lines(&body)?;
         }
+        Ok(next_index)
+    }
+
+    fn run_for(
+        &mut self,
+        rest: &str,
+        lines: &[(usize, String)],
+        start: usize,
+    ) -> Result<usize, String> {
+        let (item_name, iterable) = parse_for_header(rest)?;
+        let (body, next_index) = collect_block(lines, start, "for")?;
+        let values = match self.eval_expr_value(&iterable)? {
+            Value::List(values) => values,
+            Value::Scalar(_) => return Err("for iterable must be a list".to_string()),
+        };
+
+        for value in values {
+            self.vars.insert(item_name.clone(), Value::Scalar(value));
+            self.run_lines(&body)?;
+        }
+
         Ok(next_index)
     }
 
@@ -795,22 +826,42 @@ impl Interpreter {
         {
             return Err("unsupported complex condition".to_string());
         }
-        for operator in ["==", "!=", ">=", "<=", ">", "<"] {
-            if let Some((left, right)) = condition.split_once(operator) {
-                let left = self.eval_expr(left.trim())?;
-                let right = self.eval_expr(right.trim())?;
-                return match operator {
-                    "==" => Ok(left == right),
-                    "!=" => Ok(left != right),
-                    ">" => Ok(compare_values(&left, &right).is_gt()),
-                    ">=" => Ok(!compare_values(&left, &right).is_lt()),
-                    "<" => Ok(compare_values(&left, &right).is_lt()),
-                    "<=" => Ok(!compare_values(&left, &right).is_gt()),
-                    _ => unreachable!(),
-                };
-            }
+        if let Some((left, operator, right)) = split_condition_operator(condition) {
+            let left = self.eval_expr(left.trim())?;
+            let right = self.eval_expr(right.trim())?;
+            return match operator {
+                "==" => Ok(left == right),
+                "!=" => Ok(left != right),
+                ">" => Ok(compare_values(&left, &right).is_gt()),
+                ">=" => Ok(!compare_values(&left, &right).is_lt()),
+                "<" => Ok(compare_values(&left, &right).is_lt()),
+                "<=" => Ok(!compare_values(&left, &right).is_gt()),
+                _ => unreachable!(),
+            };
         }
-        Ok(is_truthy(&self.eval_expr(condition)?))
+        match self.eval_expr_value(condition)? {
+            Value::Scalar(value) => Ok(is_truthy(&value)),
+            Value::List(values) => Ok(!values.is_empty()),
+        }
+    }
+
+    fn eval_expr_value(&self, expr: &str) -> Result<Value, String> {
+        let expr = expr.trim();
+        if expr.starts_with('$') {
+            let (kind, name, rest) = parse_identifier(expr)?;
+            let rest = rest.trim();
+            if rest.is_empty() {
+                return Ok(self.lookup_value(kind, &name)?.clone());
+            }
+            if rest.starts_with('[') {
+                return self.eval_index_value(kind, &name, rest);
+            }
+            if looks_like_numeric_expr(expr) {
+                return Ok(Value::Scalar(self.eval_numeric_expr(expr)?));
+            }
+            return Err("unexpected text after identifier".to_string());
+        }
+        self.eval_value_kind(expr)
     }
 
     fn eval_expr(&self, expr: &str) -> Result<String, String> {
@@ -884,6 +935,13 @@ impl Interpreter {
     }
 
     fn eval_index(&self, kind: IdentKind, name: &str, rest: &str) -> Result<String, String> {
+        match self.eval_index_value(kind, name, rest)? {
+            Value::Scalar(value) => Ok(value),
+            Value::List(values) => Ok(format_list(&values)),
+        }
+    }
+
+    fn eval_index_value(&self, kind: IdentKind, name: &str, rest: &str) -> Result<Value, String> {
         if !rest.ends_with(']') || rest.matches('[').count() != 1 || rest.matches(']').count() != 1
         {
             return Err("malformed list index syntax".to_string());
@@ -893,7 +951,7 @@ impl Interpreter {
             return Err("malformed list index syntax".to_string());
         }
         match self.lookup_value(kind, name)? {
-            Value::List(values) => self.eval_list_selector(kind, name, values, selector),
+            Value::List(values) => self.eval_list_selector_value(kind, name, values, selector),
             Value::Scalar(_) => Err(format!(
                 "cannot index non-list value {}",
                 display_identifier(kind, name)
@@ -901,15 +959,15 @@ impl Interpreter {
         }
     }
 
-    fn eval_list_selector(
+    fn eval_list_selector_value(
         &self,
         kind: IdentKind,
         name: &str,
         values: &[String],
         selector: &str,
-    ) -> Result<String, String> {
+    ) -> Result<Value, String> {
         if let Some((op, rhs)) = parse_filter(selector) {
-            return self.eval_list_filter(values, op, rhs);
+            return self.eval_list_filter(values, op, rhs).map(Value::List);
         }
         if selector.contains(',') {
             let mut selected = Vec::new();
@@ -917,7 +975,7 @@ impl Interpreter {
                 let index = self.resolve_list_position(kind, name, values.len(), part)?;
                 selected.push(values[index - 1].clone());
             }
-            return Ok(format_list(&selected));
+            return Ok(Value::List(selected));
         }
         if let Some((start, end)) = selector.split_once("..") {
             let start = if start.trim().is_empty() {
@@ -935,10 +993,10 @@ impl Interpreter {
             }
             self.ensure_list_position_in_range(kind, name, values.len(), start)?;
             self.ensure_list_position_in_range(kind, name, values.len(), end)?;
-            return Ok(format_list(&values[start - 1..end]));
+            return Ok(Value::List(values[start - 1..end].to_vec()));
         }
         let index = self.resolve_list_position(kind, name, values.len(), selector)?;
-        Ok(values[index - 1].clone())
+        Ok(Value::Scalar(values[index - 1].clone()))
     }
 
     fn resolve_list_position(
@@ -994,7 +1052,12 @@ impl Interpreter {
         Ok(())
     }
 
-    fn eval_list_filter(&self, values: &[String], op: &str, rhs: &str) -> Result<String, String> {
+    fn eval_list_filter(
+        &self,
+        values: &[String],
+        op: &str,
+        rhs: &str,
+    ) -> Result<Vec<String>, String> {
         let target = self.eval_value(rhs)?;
         if matches!(op, ">" | ">=" | "<" | "<=") {
             if rhs.trim().starts_with('"') {
@@ -1019,7 +1082,7 @@ impl Interpreter {
                     selected.push(item.clone());
                 }
             }
-            return Ok(format_list(&selected));
+            return Ok(selected);
         }
         let selected: Vec<String> = values
             .iter()
@@ -1030,7 +1093,7 @@ impl Interpreter {
             })
             .cloned()
             .collect();
-        Ok(format_list(&selected))
+        Ok(selected)
     }
 
     fn eval_string(&self, text: &str) -> Result<String, String> {
@@ -1120,6 +1183,59 @@ struct Param {
     default: Option<String>,
 }
 
+fn split_condition_operator(condition: &str) -> Option<(&str, &str, &str)> {
+    let mut bracket_depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (index, ch) in condition.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        match ch {
+            '"' => in_string = true,
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            _ if bracket_depth == 0 => {
+                let tail = &condition[index..];
+                for operator in ["==", "!=", ">=", "<=", ">", "<"] {
+                    if tail.starts_with(operator) {
+                        let right_start = index + operator.len();
+                        return Some((&condition[..index], operator, &condition[right_start..]));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+fn parse_for_header(rest: &str) -> Result<(String, String), String> {
+    let Some((destination, iterable)) = rest.split_once(" in ") else {
+        return Err("for syntax is for $item in $list".to_string());
+    };
+    let (kind, item_name, extra) = parse_identifier(destination.trim())
+        .map_err(|_| "for item destination must be a variable".to_string())?;
+    if kind != IdentKind::Variable || !extra.trim().is_empty() {
+        return Err("for item destination must be a variable".to_string());
+    }
+    let iterable = iterable.trim();
+    if iterable.is_empty() || !iterable.starts_with('$') {
+        return Err("for syntax is for $item in $list".to_string());
+    }
+    Ok((item_name, iterable.to_string()))
+}
+
 fn parse_repeat_header(rest: &str) -> Result<(&str, Option<String>), String> {
     let (count_expr, destination) = match rest.split_once("->") {
         Some((count_expr, destination)) => (count_expr.trim(), Some(destination.trim())),
@@ -1171,6 +1287,7 @@ fn collect_block(
 fn starts_block(line: &str) -> bool {
     line.starts_with("if ")
         || line.starts_with("while ")
+        || line.starts_with("for ")
         || line.starts_with("repeat ")
         || line.starts_with("fn ")
         || line.starts_with("export fn ")

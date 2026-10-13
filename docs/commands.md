@@ -1,75 +1,54 @@
 # Commands and input
 
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>
+
 Shelly has built-in commands for output, input, prompts, and system shell execution.
 
 ```shelly
 shellout "hello"
-shellout $name
-shellin $answer
 ask "Name? " -> $name
-command "printf streamed"
-command "printf captured" -> $value
+command "pwd" -> $cwd
 ```
 
-## `shellout`
+## Rules
 
-Prints the evaluated value and adds a newline.
+- `shellout` prints a value and adds a newline.
+- `shellin` reads one stdin line into a variable.
+- `ask` prints a prompt, reads one line, and stores it with `->`.
+- `command` runs a system command.
+- `command "..."` streams output directly.
+- `command "..." -> $var` captures stdout into a variable.
+- `command` is the bridge to OS tools such as `mv`, `cp`, `git`, or `curl`.
+
+## Output
 
 ```shelly
-shellout "hello"
+$name = "Ada"
+
 shellout $name
 shellout "hello $name"
 ```
 
-## `shellin`
-
-Reads one line from stdin and stores it without the line ending.
+## Input
 
 ```shelly
-shellin $answer
+ask "Favorite color? " -> $color
+shellin $line
 ```
 
-The destination must be a variable.
-
-## `ask`
-
-Prints a prompt, flushes stdout, reads one line, trims the line ending, and stores it in a variable.
-
-```shelly
-ask "Name? " -> $name
-```
-
-Rules:
-
-- The prompt before `->` must be a string.
-- The destination after `->` must be a variable.
-- Constants and other values are rejected as destinations.
-- The old comma form is rejected with migration guidance.
-- `ask` is not print-only; use `shellout` when you only need to print.
-
-## `command`
-
-Streams a system shell command through `sh -c`.
+## System commands
 
 ```shelly
 command "printf hello"
-```
-
-A non-zero status fails the Shelly script.
-
-## Command capture
-
-Capture stdout with arrow binding:
-
-```shelly
 command "pwd" -> $cwd
-shellout "Current directory: $cwd"
+
+shellout "current directory: $cwd"
 ```
 
-Rules:
+Shelly does not need built-ins for every file operation. Use the operating system command that fits your environment.
 
-- Captured stdout has trailing newlines trimmed.
-- Captured stdout is not printed automatically.
-- The destination must be a variable, not a constant.
-- The old standalone `capture` syntax is removed.
-- Shell commands use operating-system shell quoting rules inside the command string.
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>

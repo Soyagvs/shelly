@@ -1003,6 +1003,168 @@ end
 }
 
 #[test]
+fn for_list_iterates_values_in_order() {
+    let output = run_script(
+        r#"
+$names = ["Ana", "Luis", "Mora"]
+for $name in $names
+    shellout "Hello $name"
+end
+shellout "last=$name"
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "Hello Ana\nHello Luis\nHello Mora\nlast=Mora\n"
+    );
+}
+
+#[test]
+fn for_list_skips_empty_lists_and_allows_nested_blocks() {
+    let output = run_script(
+        r#"
+$empty = []
+for $item in $empty
+    shellout "never"
+end
+$groups = ["A", "B"]
+for $group in $groups
+    repeat 2 -> $turn
+        shellout "$group:$turn"
+    end
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "A:1\nA:2\nB:1\nB:2\n");
+}
+
+#[test]
+fn for_list_iterates_constant_lists_selectors_ranges_and_filters() {
+    let output = run_script(
+        r#"
+$$NAMES = ["Ana", "Luis", "Mora"]
+for $name in $$NAMES
+    shellout "const=$name"
+end
+$numbers = [1, 3, 5, 8]
+for $number in $numbers[2..3]
+    shellout "range=$number"
+end
+for $number in $numbers[>3]
+    shellout "filter=$number"
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "const=Ana\nconst=Luis\nconst=Mora\nrange=3\nrange=5\nfilter=5\nfilter=8\n"
+    );
+}
+
+#[test]
+fn list_filters_are_truthy_when_non_empty_and_falsey_when_empty_in_blocks() {
+    let output = run_script(
+        r#"
+$numbers = [1, 3, 5]
+if $numbers[>3]
+    shellout "if non-empty"
+end
+if $numbers[>10]
+    shellout "bad empty if"
+else
+    shellout "if empty skipped"
+end
+$limit = 2
+while $numbers[>$limit]
+    shellout "while non-empty $limit"
+    $limit = $limit + 10
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "if non-empty\nif empty skipped\nwhile non-empty 2\n"
+    );
+}
+
+#[test]
+fn nested_control_blocks_work_in_combination() {
+    let output = run_script(
+        r#"
+$groups = ["A", "B"]
+$numbers = [1, 2]
+for $group in $groups
+    for $number in $numbers
+        if $number == 1
+            shellout "$group:$number:first"
+        else
+            $again = true
+            while $again
+                shellout "$group:$number:again"
+                $again = false
+            end
+        end
+    end
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "A:1:first\nA:2:again\nB:1:first\nB:2:again\n"
+    );
+}
+
+#[test]
+fn for_list_errors_cover_malformed_headers_non_lists_and_missing_end() {
+    for (source, expected) in [
+        (
+            "for\n    shellout \"bad\"\nend\n",
+            "for syntax is for $item in $list",
+        ),
+        (
+            "for item in $names\n    shellout \"bad\"\nend\n",
+            "for item destination must be a variable",
+        ),
+        (
+            "for $item $names\n    shellout \"bad\"\nend\n",
+            "for syntax is for $item in $list",
+        ),
+        (
+            "$name = \"Ana\"\nfor $item in $name\n    shellout $item\nend\n",
+            "for iterable must be a list",
+        ),
+        (
+            "for $item in $missing\n    shellout $item\nend\n",
+            "undefined variable $missing",
+        ),
+        (
+            "$names = [\"Ana\"]\nfor $item in $names\n    shellout $item\n",
+            "missing end for for",
+        ),
+    ] {
+        let output = run_script(source);
+
+        assert!(!output.status.success(), "source succeeded: {source}");
+        assert!(stderr(&output).contains("line"));
+        assert!(
+            stderr(&output).contains(expected),
+            "stderr did not contain {expected:?}: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
 fn while_errors_cover_missing_end_malformed_condition_and_safety_limit() {
     for (source, expected) in [
         (

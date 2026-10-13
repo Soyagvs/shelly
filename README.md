@@ -75,6 +75,7 @@ Start here: [`docs/language.md`](docs/language.md).
 | Conditionals | [`docs/conditionals.md`](docs/conditionals.md) |
 | Repeat loops | [`docs/repeat.md`](docs/repeat.md) |
 | While loops | [`docs/while.md`](docs/while.md) |
+| For loops | [`docs/for.md`](docs/for.md) |
 | Modules | [`docs/modules.md`](docs/modules.md) |
 
 ## Editor support

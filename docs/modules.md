@@ -1,10 +1,27 @@
-# Modules: import, include, and export
+# Modules
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>
 
 Shelly can split scripts across files with `import`, `include`, and `export`.
 
-## Export
+```shelly
+import "examples/module.shelly"
+include "examples/setup.shelly"
+```
 
-Only constants and functions can be exported.
+## Rules
+
+- `export` exposes constants and functions.
+- Normal variables are not exportable yet.
+- `import` loads only exported constants and functions.
+- Private top-level code in an imported file does not run.
+- `include` executes the whole target file in the current scope.
+- Import/include cycles are errors.
+- Duplicate imports are ignored after the first successful import.
+
+## Export
 
 ```shelly
 export $$GREETING = "Hola"
@@ -15,32 +32,25 @@ export fn greet $name
 end
 ```
 
-Normal variables are not exportable yet. `export $name = "x"` is rejected.
-
 ## Import
-
-`import` loads only exported constants and functions from another file.
 
 ```shelly
 import "examples/module.shelly"
+
 greet "Ada"
 shellout $$GREETING
 ```
 
-Private top-level code in the imported file does not run.
-
 ## Include
-
-`include` executes the whole target file in the current scope, like copying it at that point.
 
 ```shelly
 include "examples/setup.shelly"
+
 shellout $color
 ```
 
-## Paths and cycles
+Use `import` for reusable modules. Use `include` when you intentionally want the whole file to run.
 
-- Import/include paths are relative to the file that declares them.
-- Missing files are line-numbered errors.
-- Import/include cycles are detected and reported.
-- Duplicate imports are safe.
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>

@@ -1,5 +1,9 @@
 # Functions
 
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>
+
 Functions define reusable blocks with `fn` and `end`.
 
 ```shelly
@@ -11,45 +15,42 @@ greet "Ada"
 greet "Ada", "Hello"
 ```
 
-## Definitions and calls
+## Rules
 
 - Function definitions start with `fn` and close with `end`.
 - Functions are called by name.
-- Definitions use comma-separated parameters.
-- Calls use comma-separated arguments.
-- Arguments may be literal strings, numbers, booleans, variables, or constants.
-- Parameters use `$` variable syntax and normal identifier rules.
+- Parameters use `$` variable syntax.
+- Definitions and calls use comma-separated values.
+- Default parameters must come after required parameters.
+- Function scope is local by default.
+- Use `global` to read or write selected outer values.
+- Functions do not return values yet.
 
-## Default parameters
-
-```shelly
-fn greet $name, $prefix = "Hola"
-    shellout "$prefix $name"
-end
-```
-
-Defaulted parameters must come after required parameters. A required parameter after a default is an error.
-
-## Scope and `global`
-
-Function scope is local by default. Assignments inside a function do not mutate outer variables.
+## Local scope
 
 ```shelly
 $outside = "outer"
-$$APP = "Shelly"
 
-fn show $name
-    global $outside, $$APP
-    shellout "$name from $$APP with $outside"
+fn demo
+    $outside = "inner"
+    shellout $outside
 end
 
-show "Ada"
+demo
+shellout $outside
 ```
 
-Rules:
+## Global access
 
-- Outer variables and constants require `global` declarations before use inside a function.
-- `global` supports comma-separated identifiers: `global $name, $age` and `global $$NAME, $$AGE`.
-- Initial `global` behavior is read-only for outer values: globals can be read inside a function, but assignments remain local.
-- Constants remain immutable.
-- Functions do not return values yet.
+```shelly
+$$APP = "Shelly"
+
+fn greet $name
+    global $$APP
+    shellout "hello $name from $$APP"
+end
+```
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>

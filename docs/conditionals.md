@@ -1,6 +1,10 @@
 # Conditionals
 
-Use `if`, optional `elif`, optional `else`, and `end`.
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>
+
+Use `if`, optional `elif`, optional `else`, and `end` to choose which block runs.
 
 ```shelly
 $enabled = true
@@ -15,38 +19,27 @@ else
 end
 ```
 
-## Syntax
+## Rules
 
 - `if condition` starts a conditional block.
-- `elif condition` adds optional middle branches.
+- `elif condition` adds an optional middle branch.
 - `else` adds one optional fallback branch.
 - `end` closes the block.
-- Shelly uses no parentheses, no `then`, and no braces.
+- Conditions use truthiness or simple comparisons.
+- Blocks do not create a new scope.
+- Nested `if`, `repeat`, `while`, and `for` blocks are supported.
+- Logical operators `and`, `or`, and `not` are not implemented yet.
+- Parenthesized condition expressions are not implemented yet.
 
-## Conditions
-
-Direct truthy values are allowed:
+## Comparisons
 
 ```shelly
-if $enabled
-    shellout "enabled"
-end
-
-if "text"
-    shellout "text is truthy"
+if $count >= 3
+    shellout "enough"
 end
 ```
 
-Comparisons support:
-
-- `==`
-- `!=`
-- `>`
-- `>=`
-- `<`
-- `<=`
-
-Condition values use normal value forms: strings, numbers, booleans, numeric expressions, variables, constants, and string interpolation.
+Supported operators: `==`, `!=`, `>`, `>=`, `<`, and `<=`.
 
 ## Truthiness
 
@@ -54,10 +47,20 @@ Condition values use normal value forms: strings, numbers, booleans, numeric exp
 - `false` is false.
 - `""` is false.
 - `0` is false.
+- Non-empty lists are true.
+- Empty lists are false, including empty selector/filter results.
 - Everything else is true.
 
-## Scope and limitations
+```shelly
+$numbers = [1, 3, 5]
 
-- Conditional blocks do not create a new scope.
-- Assignments inside the selected branch affect the current scope.
-- Complex expressions are not implemented yet: `and`, `or`, `not`, and parenthesized conditions are rejected.
+if $numbers[>10]
+    shellout "has big numbers"
+else
+    shellout "no big numbers"
+end
+```
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>

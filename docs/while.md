@@ -1,36 +1,54 @@
 # While loops
 
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>
+
 `while` repeats a block while a condition is true.
 
 ```shelly
 $count = 0
+
 while $count < 3
     shellout "Count $count"
     $count = $count + 1
 end
+
 shellout "Done at $count"
 ```
 
-## Conditions
+## Rules
 
-`while` uses the same condition rules as [`if`](conditionals.md):
+- `while condition` starts the loop and `end` closes it.
+- Conditions use the same rules as [conditionals](conditionals.md).
+- If the condition is false before the first iteration, the body is skipped.
+- Assignments inside the loop persist after the loop.
+- A safety limit stops accidental infinite loops after 10,000 iterations.
+- Nested `if`, `repeat`, `while`, and `for` blocks are supported.
 
-- truthiness
-- comparisons with `==`, `!=`, `>`, `>=`, `<`, and `<=`
-- normal value forms including variables, constants, strings, booleans, and numeric expressions where condition handling supports them
+## Truthy loop
 
 ```shelly
 $enabled = true
+
 while $enabled
     shellout "once"
     $enabled = false
 end
 ```
 
-## Rules
+## List filter condition
 
-- If the condition is false before the first iteration, the body is skipped.
-- While blocks do not create a new scope.
-- Assignments inside the loop affect the current scope and persist after the loop.
-- To guard against accidental infinite loops, a while loop errors after 10,000 iterations.
-- Nested `if`, `repeat`, and `while` blocks are supported.
+```shelly
+$numbers = [1, 3, 5]
+$limit = 2
+
+while $numbers[>$limit]
+    shellout "has values above $limit"
+    $limit = $limit + 10
+end
+```
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>

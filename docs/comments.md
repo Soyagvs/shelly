@@ -1,32 +1,40 @@
 # Comments
 
-Shelly comments must start and end with `#` markers outside strings.
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>
 
-## Line comments
+Comments are notes for readers. Shelly ignores them when they use matching `#` markers outside strings.
 
 ```shelly
-# explain the next command #
+# Say hello #
 shellout "hello"
 ```
 
-A one-line comment opens and closes on the same line.
+## Rules
+
+- Comments open with `#` and close with `#`.
+- A one-line comment opens and closes on the same line.
+- A block comment may span many lines.
+- An unclosed comment is an error.
+- `#` inside a string is normal text.
 
 ## Block comments
 
 ```shelly
 #
 This whole block is ignored.
-Use it for notes that span lines.
+Use it for longer notes.
 #
 shellout "after the comment"
 ```
 
-## Rules
-
-- A comment that reaches end of file without a closing `#` is an error.
-- The error includes the opening line number.
-- `#` inside strings is literal text, not a comment marker.
+## Strings are safe
 
 ```shelly
-shellout "# not a comment #"
+shellout "# this prints as text #"
 ```
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>

@@ -1,44 +1,37 @@
 # Lists
 
-Shelly has one collection type: `list`.
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>
+
+Lists are Shelly's single collection type.
 
 ```shelly
-$empty = []
 $names = ["Ana", "Luis", "Mora"]
 $numbers = [1, 2 + 3, 6]
 $mixed = ["Ana", 3, true]
-$name = "Ada"
-$$AGE = 37
-$refs = [$name, $$AGE, false]
 ```
 
-## List values
+## Rules
 
-List elements may be:
+- Empty list: `[]`.
+- Lists can contain strings, numbers, booleans, variables, and constants.
+- Nested lists are not supported yet.
+- Indexing starts at `1`.
+- `first` and `last` are supported selectors.
+- Selectors can return one scalar or a new list.
+- Mutations only work on variable lists.
 
-- strings
-- numbers and numeric expressions
-- booleans
-- variables
-- constants
-
-Nested lists are not supported yet.
-
-## Indexing and selectors
-
-List indexing is 1-based.
+## Indexing
 
 ```shelly
 shellout $names[1]
 shellout $names[first]
 shellout $names[last]
-shellout $names[$i + 1]
-shellout "Second: $names[2]"
+shellout "second: $names[2]"
 ```
 
-Scalar selectors return one value.
-
-Multi-selectors return a new list:
+## Selectors
 
 ```shelly
 shellout $names[1,3]
@@ -53,43 +46,37 @@ Ranges are inclusive.
 
 ## Filters
 
-Filters return a new list.
-
 ```shelly
 shellout $numbers[>5]
 shellout $numbers[<=5]
 shellout $names[=="Ana"]
 shellout $names[!="Ana"]
-shellout $mixed[!=3]
 ```
 
-Rules:
+Numeric filters support `==`, `!=`, `>`, `>=`, `<`, and `<=`. String and boolean filters support `==` and `!=`.
 
-- Numeric filters support `==`, `!=`, `>`, `>=`, `<`, and `<=`.
-- String and boolean filters support `==` and `!=`.
-- Mixed lists support exact `==` and `!=` matching.
-- Ordered filters require numeric comparison values and numeric list items.
-- Ordered string filters such as `$names[>"Ana"]` are not supported yet.
+## Iteration
+
+Use [`for`](for.md) to visit list values, constant lists, ranges, multi-selectors, and filters.
+
+```shelly
+for $name in $names[1..2]
+    shellout $name
+end
+```
 
 ## Mutations
 
 ```shelly
-$names = ["Ana", "Luis"]
-append $names, "Mora"
-prepend $names, "Iris"
-$names[2] = "Ada"
-remove $names[last]
-remove $names[first]
-shellout $names[..]
+$queue = []
+append $queue, "Luis"
+prepend $queue, "Ana"
+$queue[2] = "Mora"
+remove $queue[first]
+
+shellout $queue[..]
 ```
 
-Rules:
-
-- Mutation targets must be variable lists.
-- Constants, undefined values, non-lists, and temporary selector/filter results are rejected.
-- Mutation indexes are 1-based and must select exactly one item.
-- `first`, `last`, and numeric indexes are allowed for mutation.
-- Multi-indexes, ranges/full-copy selectors, and filters are not mutation targets yet.
-- Out-of-range mutation indexes are errors.
-- `first`/`last` mutations on an empty list are errors.
-- Mutation values use the same scalar element forms as list literals.
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>

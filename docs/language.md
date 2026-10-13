@@ -6,19 +6,22 @@
 
 Shelly scripts use the `.shelly` extension. One instruction per line. No semicolons.
 
-## Mental model
-
 ```shelly
-$name = "Ada"          # mutable variable #
-$$APP = "Shelly"       # immutable constant #
-ask "Name? " -> $name  # result binding #
+$name = "Ada"
+$$APP = "Shelly"
+
+shellout "hello $name from $$APP"
 ```
 
-- `$name` stores a mutable value.
+## Core rules
+
+- `$name` stores a mutable variable.
 - `$$NAME` stores an immutable constant.
-- `->` means “bind the result into this variable”.
-- Commas are for normal argument lists.
+- `->` binds an operation result into a variable.
+- Commas separate normal argument lists.
 - Blocks close with `end`.
+- List indexes start at `1`.
+- `command` runs system commands.
 
 ## Reference
 
@@ -36,6 +39,7 @@ ask "Name? " -> $name  # result binding #
 | Conditionals | [conditionals.md](conditionals.md) |
 | Repeat loops | [repeat.md](repeat.md) |
 | While loops | [while.md](while.md) |
+| For loops | [for.md](for.md) |
 | Modules | [modules.md](modules.md) |
 
 ## Run
@@ -46,10 +50,6 @@ cargo run -- path/to/script.shelly
 
 Complete showcase: [`../example-01.shelly`](../example-01.shelly).
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
-
 ## Not implemented yet
 
 - Function return values.
@@ -59,3 +59,7 @@ Complete showcase: [`../example-01.shelly`](../example-01.shelly).
 - Ordered string filters.
 - Multi-index, range, or filter mutation targets.
 - Exporting normal variables.
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
+</p>
