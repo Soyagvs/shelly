@@ -1,12 +1,23 @@
+<p align="center">
+  <img width="2056" height="765" alt="Cuervo geométrico y logotipo Shelly сия" src="https://github.com/user-attachments/assets/975333ea-e6c7-421b-9795-089f07211ce6" />
+</p>
+
+<p align="center">
+  <img alt="Releases" src="https://img.shields.io/github/v/release/Soyagvs/shelly?include_prereleases&style=for-the-badge&label=release&color=7c3aed" />
+  <img alt="Downloads" src="https://img.shields.io/github/downloads/Soyagvs/shelly/total?style=for-the-badge&label=downloads&color=7c3aed" />
+  <img alt="Stars" src="https://img.shields.io/github/stars/Soyagvs/shelly?style=for-the-badge&label=stars&color=7c3aed" />
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-7c3aed?style=for-the-badge" />
+</p>
+
+<p align="center">
+  <img src="https://capsule-render.vercel.app/api?type=rect&height=3&color=7c3aed" width="100%" alt="purple divider" />
+</p>
+
 # Shelly
 
 **Shelly is a modern scripting language for readable automation with `.shelly` scripts.**
 
 It is built for small, clear scripts that automate files, commands, structured data, menus, logs, helpers, modules, and safe checks.
-
-[![Release](https://img.shields.io/github/v/release/Soyagvs/shelly?include_prereleases&label=release&color=000000)](https://github.com/Soyagvs/shelly/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/Soyagvs/shelly/total?label=downloads&color=000000)](https://github.com/Soyagvs/shelly/releases)
-[![License](https://img.shields.io/badge/license-MIT-000000)](LICENSE)
 
 ## Latest release
 
