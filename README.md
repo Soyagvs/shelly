@@ -36,9 +36,9 @@ Variables, conditionals, loops, and functions in a clear, explicit syntax.
 </td>
 <td width="50%" valign="top">
 
-**◇ Validate before running**
+**◇ Optional validation**
 
-Use <code>shelly check</code> to validate a script without executing its commands.
+Use <code>shelly check</code> when you want to validate a script without executing its commands; running a script directly does not require this step.
 
 </td>
 </tr>
@@ -96,10 +96,13 @@ from multiple lines
 ```
 ````
 
-Validate it without running commands, then execute it:
+Run it directly, or validate it first without executing commands:
 
 ```sh
+# Optional validation
 shelly check hello.shelly
+
+# Run the script
 shelly hello.shelly
 ```
 
@@ -142,9 +145,10 @@ exit 0
 
 ```mermaid
 flowchart LR
-    A["📄 script.shelly"] --> B["🔎 shelly check"]
+    A["📄 script.shelly"] --> D["▶ shelly script.shelly"]
+    A -. Optional .-> B["🔎 shelly check"]
     B --> C{"Valid?"}
-    C -->|Yes| D["▶ shelly script.shelly"]
+    C -->|Yes| D
     C -->|No| E["Fix script"]
     E --> B
     D --> F["Commands · Files · Data"]
