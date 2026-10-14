@@ -36,9 +36,9 @@ end
 
 ```shelly
 $extra = 1
-$$BASE = 2
+$BASE = 2
 
-repeat $$BASE + $extra
+repeat $BASE + $extra
     shellout "again"
 end
 ```

@@ -29,9 +29,9 @@ end
 ## Constants
 
 ```shelly
-$$NAMES = ["Ana", "Luis"]
+$NAMES = ["Ana", "Luis"]
 
-for $name in $$NAMES
+for $name in $NAMES
     shellout $name
 end
 ```

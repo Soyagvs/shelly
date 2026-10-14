@@ -57,11 +57,11 @@ shellout $message
 ## Global access
 
 ```shelly
-$$APP = "Shelly"
+$APP = "Shelly"
 
 fn greet($name) {
-    global $$APP
-    shellout "hello $name from $$APP"
+    global $APP
+    shellout "hello $name from $APP"
 }
 
 call greet("Ada")

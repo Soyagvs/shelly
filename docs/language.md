@@ -8,9 +8,9 @@ Shelly scripts use the `.shelly` extension. One instruction per line. No semicol
 
 ````shelly
 $name = "Ada"
-$$APP = "Shelly"
+$APP = "Shelly"
 
-shellout "hello $name from $$APP"
+shellout "hello $name from $APP"
 
 shellout ```
 multiline
@@ -20,8 +20,8 @@ text block
 
 ## Core rules
 
-- `$name` stores a mutable variable.
-- `$$NAME` stores an immutable constant.
+- Lowercase `$name` stores a mutable variable.
+- Uppercase `$NAME` stores an immutable constant; mixed-case names are rejected.
 - `->` binds an operation result into a variable.
 - Commas separate normal argument lists.
 - Blocks close with `end`.
@@ -87,7 +87,7 @@ Inside that script, read those arguments with:
 
 ```shelly
 arg 1 -> $name
-hasArg "--dry-run" -> $dryRun
+hasArg "--dry-run" -> $dryrun
 args -> $all
 ```
 

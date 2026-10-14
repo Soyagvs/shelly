@@ -4,20 +4,20 @@
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
 
-Variables store mutable values and use one dollar sign.
+Variables store mutable values and use one dollar sign with lowercase-only names.
 
 ```shelly
 $name = "world"
 $count = 42
 $enabled = true
 
-shellout "hello $NAME"
+shellout "hello $name"
 ```
 
 ## Rules
 
 - Variables start with `$`.
-- Names are case-insensitive: `$name` and `$NAME` are the same variable.
+- Variable names are lowercase-only: `$name` is valid, while uppercase or mixed-case names are rejected.
 - Names must start with an ASCII letter.
 - After the first letter, names may contain ASCII letters, numbers, and `_`.
 - A bare variable declaration creates an empty value.

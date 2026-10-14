@@ -29,8 +29,8 @@ exit $code
 ```
 
 ```shelly
-$$BASE = 1
-exit $$BASE + 1
+$BASE = 1
+exit $BASE + 1
 ```
 
 ## Inside blocks

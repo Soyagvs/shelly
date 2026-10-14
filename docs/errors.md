@@ -26,14 +26,14 @@ Use `try` around commands or statements where failure is expected and recoverabl
 ## Nested try
 
 ```shelly
-try -> $outerError
-    try -> $innerError
+try -> $outererror
+    try -> $innererror
         command "false"
     catch
-        shellout "inner failed: $innerError"
+        shellout "inner failed: $innererror"
     end
 catch
-    shellout "outer failed: $outerError"
+    shellout "outer failed: $outererror"
 end
 ```
 

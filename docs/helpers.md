@@ -77,8 +77,8 @@ today -> $date
 ## Commands
 
 ```shelly
-commandExists "git" -> $hasGit
-which "git" -> $gitPath
+commandExists "git" -> $hasgit
+which "git" -> $gitpath
 ```
 
 Use `commandExists` before running optional tools. Use `which` when the script needs to show or reuse the resolved executable path. Missing commands return `false` from `commandExists` and an empty string from `which`.

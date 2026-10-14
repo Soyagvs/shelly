@@ -53,13 +53,13 @@ end
 `case` values and `when` values can be strings, numbers, booleans, constants, variables, or numeric expressions. Blocks do not create a new scope, and nested blocks work inside branches.
 
 ```shelly
-$$LIMIT = 3
+$LIMIT = 3
 $count = 3
 
 case $count
     when 1
         shellout "one"
-    when $$LIMIT
+    when $LIMIT
         if true
             shellout "at limit"
         end

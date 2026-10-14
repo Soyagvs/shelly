@@ -30,6 +30,32 @@ shellout "hello $name"
 }
 
 #[test]
+fn single_dollar_constants_and_lowercase_variables_define_the_new_syntax() {
+    let valid = check_script(
+        r#"
+$APP = "Shelly"
+$app = "world"
+shellout "$APP $app"
+"#,
+    );
+    assert!(valid.status.success(), "stderr: {}", stderr(&valid));
+
+    for source in [
+        "$App = \"mixed\"\n",
+        "$appName = \"mixed\"\n",
+        "$$NAME = \"legacy\"\n",
+        "$$\n",
+        "$$1\n",
+    ] {
+        let output = check_script(source);
+        assert!(
+            !output.status.success(),
+            "accepted invalid syntax: {source:?}"
+        );
+    }
+}
+
+#[test]
 fn check_does_not_execute_command_shellout_ask_or_shellin() {
     let output = check_script(
         r#"
@@ -276,7 +302,7 @@ fn dictionaries_report_chained_missing_keys_non_dictionary_and_constant_mutation
     assert!(stderr(&wrong_target).contains("non-dictionary"));
 
     let constant = run_script(
-        "$$USER = { pais: { argentina: { city: \"BA\" } } }\n$$USER.pais.argentina.city = \"Cordoba\"\n",
+        "$USER = { pais: { argentina: { city: \"BA\" } } }\n$USER.pais.argentina.city = \"Cordoba\"\n",
     );
     assert!(!constant.status.success());
     assert!(stderr(&constant).contains("variable dictionary"));
@@ -464,8 +490,8 @@ fn old_capture_syntax_is_rejected() {
 #[test]
 fn command_arrow_rejects_constant_destination() {
     for output in [
-        run_script(r#"command "pwd" -> $$CWD"#),
-        check_script(r#"command "pwd" -> $out, $$ERR, $code"#),
+        run_script(r#"command "pwd" -> $CWD"#),
+        check_script(r#"command "pwd" -> $out, $ERR, $code"#),
     ] {
         assert!(!output.status.success());
         assert!(stderr(&output).contains("line 1"));
@@ -607,7 +633,7 @@ fn check_validates_choose_invalid_syntax() {
             "choose options must not be empty",
         ),
         (
-            r#"choose "Pick one" ["A"] -> $$CHOICE"#,
+            r#"choose "Pick one" ["A"] -> $CHOICE"#,
             "choose destination must be a variable",
         ),
     ] {
@@ -639,7 +665,7 @@ fn ask_rejects_invalid_argument_forms() {
             "ask destination must be a variable",
         ),
         (
-            "ask \"Question?\" -> $$ANSWER\n",
+            "ask \"Question?\" -> $ANSWER\n",
             "ask destination must be a variable",
         ),
         (
@@ -773,18 +799,26 @@ fn invalid_syntax_returns_non_zero_with_line_number() {
 }
 
 #[test]
-fn variables_are_case_insensitive_and_may_be_empty() {
+fn variables_are_lowercase_only_and_may_be_empty() {
     let output = run_script(
         r#"
-$Name = "Ada"
+$name = "Ada"
 shellout $name
 $empty
-shellout "empty:$EMPTY"
+shellout "empty:$empty"
 "#,
     );
 
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "Ada\nempty:\n");
+
+    for source in ["$Name = \"mixed\"\n", "$EMPTY\n"] {
+        let rejected = check_script(source);
+        assert!(
+            !rejected.status.success(),
+            "accepted invalid variable: {source:?}"
+        );
+    }
 }
 
 #[test]
@@ -792,8 +826,8 @@ fn identifiers_must_start_with_ascii_letter() {
     for source in [
         "$9bad = \"nope\"\n",
         "$_bad = \"nope\"\n",
-        "$$9BAD = \"nope\"\n",
-        "$$_BAD = \"nope\"\n",
+        "$9BAD = \"nope\"\n",
+        "$_BAD = \"nope\"\n",
         "$bad name = \"nope\"\n",
     ] {
         let output = run_script(source);
@@ -810,24 +844,30 @@ fn values_support_numbers_booleans_and_constant_interpolation() {
         r#"
 $count = 42
 $enabled = true
-$$NAME = "Shelly"
-$$LIMIT = 10
-shellout "$$NAME count=$count enabled=$enabled limit=$$LIMIT"
+$NAME = "Shelly"
+$LIMIT = 10
+shellout "$NAME count=$count enabled=$enabled limit=$LIMIT"
 "#,
     );
 
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "Shelly count=42 enabled=true limit=10\n");
+
+    let legacy = run_script("shellout \"legacy $$NAME\"\n");
+    assert!(!legacy.status.success(), "source succeeded");
+    assert!(stderr(&legacy).contains("legacy '$$' identifier prefix is not supported; use '$'"));
 }
 
 #[test]
 fn constants_require_uppercase_initial_values_and_cannot_be_reassigned() {
-    for source in [
-        "$$name = \"nope\"\n",
-        "$$NAME\n",
-        "$$NAME =\n",
-        "$$NAME = \"first\"\n$$NAME = \"second\"\n",
-    ] {
+    let variable = run_script("$name = \"value\"\n");
+    assert!(variable.status.success(), "stderr: {}", stderr(&variable));
+
+    let mixed_case = run_script("$Name = \"value\"\n");
+    assert!(!mixed_case.status.success(), "source succeeded");
+    assert!(stderr(&mixed_case).contains("all uppercase or all lowercase"));
+
+    for source in ["$NAME =\n", "$NAME = \"first\"\n$NAME = \"second\"\n"] {
         let output = run_script(source);
 
         assert!(!output.status.success(), "source succeeded: {source}");
@@ -840,12 +880,12 @@ fn functions_call_with_parameters_defaults_local_scope_and_global_reads() {
     let output = run_script(
         r#"
 $outer = "outside"
-$$APP = "Shelly"
+$APP = "Shelly"
 
 fn person($name, $age, $prefix = "Hola") {
-    global $outer, $$APP
+    global $outer, $APP
     $outer = "inside"
-    shellout "$prefix $name age=$age outer=$outer app=$$APP"
+    shellout "$prefix $name age=$age outer=$outer app=$APP"
 }
 call person("Agustin", 27)
 shellout $outer
@@ -864,12 +904,12 @@ fn function_call_arguments_accept_variable_and_constant_references() {
     let output = run_script(
         r#"
 $name = "Ada"
-$$APP = "Shelly"
+$APP = "Shelly"
 
 fn greet($name, $app, $age, $enabled) {
     shellout "$name from $app age=$age enabled=$enabled"
 }
-call greet($name, $$APP, 27, true)
+call greet($name, $APP, 27, true)
 "#,
     );
 
@@ -885,8 +925,8 @@ fn function_call_reference_arguments_fail_when_undefined() {
             "undefined variable $missing",
         ),
         (
-            "fn greet($app) {\n}\ncall greet($$MISSING)\n",
-            "undefined constant $$MISSING",
+            "fn greet($app) {\n}\ncall greet($MISSING)\n",
+            "undefined constant $MISSING",
         ),
     ] {
         let output = run_script(source);
@@ -1057,7 +1097,7 @@ fn case_blocks_match_numbers_booleans_constants_variables_and_nested_blocks() {
         r#"
 $count = 2
 $enabled = true
-$$MODE = "prod"
+$MODE = "prod"
 case $count
     when 1
         shellout "one"
@@ -1070,7 +1110,7 @@ case $enabled
     when true
         shellout "enabled"
 end
-case $$MODE
+case $MODE
     when "prod"
         if $enabled
             shellout "prod-if"
@@ -1134,10 +1174,10 @@ fn case_errors_cover_malformed_forms() {
 #[test]
 fn import_loads_exported_constant() {
     let dir = test_dir();
-    fs::write(dir.join("module.shelly"), "export $$GREETING = \"Hola\"\n").expect("write module");
+    fs::write(dir.join("module.shelly"), "export $GREETING = \"Hola\"\n").expect("write module");
     fs::write(
         dir.join("main.shelly"),
-        "import \"module.shelly\"\nshellout $$GREETING\n",
+        "import \"module.shelly\"\nshellout $GREETING\n",
     )
     .expect("write main");
 
@@ -1171,13 +1211,13 @@ fn import_loads_exported_function() {
 fn import_keeps_private_symbols_unavailable() {
     for (use_private, expected) in [
         ("shellout $secret\n", "undefined variable $secret"),
-        ("shellout $$SECRET\n", "undefined constant $$SECRET"),
+        ("shellout $SECRET\n", "undefined constant $SECRET"),
         ("hidden\n", "unknown command"),
     ] {
         let dir = test_dir();
         fs::write(
             dir.join("module.shelly"),
-            "$secret = \"private var\"\n$$SECRET = \"private const\"\nfn hidden() {\n    shellout \"private fn\"\n}\n",
+            "$secret = \"private var\"\n$SECRET = \"private const\"\nfn hidden() {\n    shellout \"private fn\"\n}\n",
         )
         .expect("write module");
         fs::write(
@@ -1205,12 +1245,12 @@ fn import_does_not_run_non_exported_top_level_side_effects() {
     let dir = test_dir();
     fs::write(
         dir.join("module.shelly"),
-        "shellout \"SHOULD NOT RUN\"\nexport $$VALUE = \"ok\"\n",
+        "shellout \"SHOULD NOT RUN\"\nexport $VALUE = \"ok\"\n",
     )
     .expect("write module");
     fs::write(
         dir.join("main.shelly"),
-        "import \"module.shelly\"\nshellout $$VALUE\n",
+        "import \"module.shelly\"\nshellout $VALUE\n",
     )
     .expect("write main");
 
@@ -1261,10 +1301,10 @@ fn import_include_errors_cover_export_variables_missing_files_cycles_and_duplica
     assert!(stderr(&output).contains("line 1"));
 
     let dir = test_dir();
-    fs::write(dir.join("module.shelly"), "export $$VALUE = \"once\"\n").expect("write module");
+    fs::write(dir.join("module.shelly"), "export $VALUE = \"once\"\n").expect("write module");
     fs::write(
         dir.join("main.shelly"),
-        "import \"module.shelly\"\nimport \"module.shelly\"\nshellout $$VALUE\n",
+        "import \"module.shelly\"\nimport \"module.shelly\"\nshellout $VALUE\n",
     )
     .expect("write main");
     let output = run_script_path(dir.join("main.shelly"));
@@ -1280,8 +1320,8 @@ $a = 1 + 2 * 3
 $b = (1 + 2) * 3
 $c = 10.5 + 2.25
 $d = -3 * 2
-$$BASE = 10
-$total = $$BASE * $c
+$BASE = 10
+$total = $BASE * $c
 $clean = 6 / 2
 shellout $a
 shellout $b
@@ -1311,7 +1351,7 @@ fn numeric_expression_rejects_non_numeric_operands_undefined_references_and_malf
         ("$name = \"Ada\"\n$bad = $name + 1\n", "numeric operand"),
         ("$enabled = true\n$bad = $enabled + 1\n", "numeric operand"),
         ("$bad = $missing + 1\n", "undefined variable $missing"),
-        ("$bad = $$MISSING + 1\n", "undefined constant $$MISSING"),
+        ("$bad = $MISSING + 1\n", "undefined constant $MISSING"),
         ("$bad = 1 +\n", "expected numeric operand"),
         ("$bad = (1 + 2\n", "missing ')'"),
     ] {
@@ -1371,8 +1411,8 @@ fn repeat_count_accepts_numeric_expressions_variables_and_constants() {
     let output = run_script(
         r#"
 $extra = 1
-$$BASE = 1
-repeat $$BASE + $extra + 1 -> $i
+$BASE = 1
+repeat $BASE + $extra + 1 -> $i
     shellout "Index $i"
 end
 "#,
@@ -1545,8 +1585,8 @@ fn while_condition_uses_variables_constants_and_numeric_expressions() {
     let output = run_script(
         r#"
 $count = 0
-$$LIMIT = 5
-while $count + 1 <= $$LIMIT - 1
+$LIMIT = 5
+while $count + 1 <= $LIMIT - 1
     $count = $count + 2
     shellout "count=$count"
 end
@@ -1630,8 +1670,8 @@ end
 fn for_list_iterates_constant_lists_selectors_ranges_and_filters() {
     let output = run_script(
         r#"
-$$NAMES = ["Ana", "Luis", "Mora"]
-for $name in $$NAMES
+$NAMES = ["Ana", "Luis", "Mora"]
+for $name in $NAMES
     shellout "const=$name"
 end
 $numbers = [1, 3, 5, 8]
@@ -1795,7 +1835,7 @@ fn check_accepts_files_and_rejects_invalid_files_syntax() {
         ("files *.txt -> $items\n", "files requires a string pattern"),
         ("files \"*.txt\"\n", "files syntax is files"),
         (
-            "files \"*.txt\" -> $$ITEMS\n",
+            "files \"*.txt\" -> $ITEMS\n",
             "files destination must be a variable",
         ),
         (
@@ -1977,7 +2017,7 @@ write "e.txt" $text
         ("move \"a\" $to\n", "move syntax"),
         ("rename \"a\" \"dir/name\"\n", "plain name"),
         (
-            "read \"a\" -> $$TEXT\n",
+            "read \"a\" -> $TEXT\n",
             "read destination must be a variable",
         ),
         ("write \"a\"\n", "write syntax"),
@@ -2083,7 +2123,7 @@ remove $path
         ("isFile \"a\"\n", "isFile syntax"),
         ("isDir a -> $ok\n", "isDir requires a string path"),
         (
-            "isFile \"a\" -> $$OK\n",
+            "isFile \"a\" -> $OK\n",
             "isFile destination must be a variable",
         ),
         ("tempFile\n", "tempFile syntax"),
@@ -2104,11 +2144,11 @@ remove $path
 #[test]
 fn import_and_include_support_explicit_current_directory_paths() {
     let dir = test_dir();
-    fs::write(dir.join("module.shelly"), "export $$VALUE = \"imported\"\n").expect("write module");
+    fs::write(dir.join("module.shelly"), "export $VALUE = \"imported\"\n").expect("write module");
     fs::write(dir.join("shared.shelly"), "$shared = \"included\"\n").expect("write shared");
     fs::write(
         dir.join("script.shelly"),
-        "import \"./module.shelly\"\ninclude \"./shared.shelly\"\nshellout \"$$VALUE/$shared\"\n",
+        "import \"./module.shelly\"\ninclude \"./shared.shelly\"\nshellout \"$VALUE/$shared\"\n",
     )
     .expect("write script");
 
@@ -2202,7 +2242,7 @@ fn repeat_errors_cover_invalid_counts_destinations_and_structure() {
             "repeat index destination must be a variable",
         ),
         (
-            "repeat 3 -> $$I\n    shellout \"no\"\nend\n",
+            "repeat 3 -> $I\n    shellout \"no\"\nend\n",
             "repeat index destination must be a variable",
         ),
         (
@@ -2261,8 +2301,8 @@ fn exit_code_accepts_numeric_expressions_variables_and_constants() {
     let output = run_script(
         r#"
 $extra = 1
-$$BASE = 2
-exit $$BASE + $extra
+$BASE = 2
+exit $BASE + $extra
 "#,
     );
 
@@ -2384,8 +2424,8 @@ fn lists_accept_variable_and_constant_elements_and_interpolation_indexing() {
     let output = run_script(
         r#"
 $name = "Ada"
-$$AGE = 37
-$refs = [$name, $$AGE, false]
+$AGE = 37
+$refs = [$name, $AGE, false]
 $names = ["Ana", "Luis", "Mora"]
 $idx = 1 + 1
 shellout "Second: $names[2]"
@@ -2581,13 +2621,13 @@ fn list_mutations_accept_scalar_values() {
     let output = run_script(
         r#"
 $value = "Zoe"
-$$AGE = 37
+$AGE = 37
 $items = []
 append $items, "Ana"
 append $items, 2 + 3
 append $items, true
 append $items, $value
-prepend $items, $$AGE
+prepend $items, $AGE
 $items[last] = false
 $items[2] = $value
 $items[first] = 1 + 1
@@ -2603,7 +2643,7 @@ shellout $items[..]
 fn list_mutation_errors_are_clear() {
     for (source, expected) in [
         (
-            "$$NAMES = [\"Ana\"]\nappend $$NAMES, \"Luis\"\n",
+            "$NAMES = [\"Ana\"]\nappend $NAMES, \"Luis\"\n",
             "mutation target must be a variable list",
         ),
         ("append $missing, \"Luis\"\n", "undefined variable $missing"),
@@ -2881,10 +2921,10 @@ end
 if not exists "missing.txt"
     shellout "missing-ok"
 end
-exists "present.txt" -> $hasPresent
-exists "missing.txt" -> $hasMissing
-exists "has->arrow.txt" -> $hasArrow
-shellout "$hasPresent/$hasMissing/$hasArrow"
+exists "present.txt" -> $haspresent
+exists "missing.txt" -> $hasmissing
+exists "has->arrow.txt" -> $hasarrow
+shellout "$haspresent/$hasmissing/$hasarrow"
 "#,
     )
     .expect("write script");
@@ -2907,9 +2947,9 @@ end
 if not contains $names "Mia" or false
     shellout "not-mia"
 end
-contains $names "Luis" -> $hasLuis
-contains $name "gus" -> $hasGus
-shellout "$hasLuis/$hasGus"
+contains $names "Luis" -> $hasluis
+contains $name "gus" -> $hasgus
+shellout "$hasluis/$hasgus"
 "#,
     );
 
@@ -2925,8 +2965,8 @@ $names = ["Luis"]
 if exists "README.md" and contains $names "Luis"
     shellout "ok"
 end
-exists "README.md" -> $hasReadme
-contains $names "Luis" -> $hasLuis
+exists "README.md" -> $hasreadme
+contains $names "Luis" -> $hasluis
 "#,
     );
     assert!(valid.status.success(), "stderr: {}", stderr(&valid));
@@ -2934,8 +2974,8 @@ contains $names "Luis" -> $hasLuis
     for source in [
         "if exists\n    shellout \"bad\"\nend\n",
         "if contains $names\n    shellout \"bad\"\nend\n",
-        "exists README.md -> $hasReadme\n",
-        "contains $names -> $hasLuis\n",
+        "exists README.md -> $hasreadme\n",
+        "contains $names -> $hasluis\n",
     ] {
         let output = check_script(source);
         assert!(!output.status.success(), "source should fail: {source}");
@@ -3040,7 +3080,7 @@ fn check_validates_try_catch_structure() {
             "try error destination must be a variable",
         ),
         (
-            "try -> $$ERROR\ncatch\nend\n",
+            "try -> $ERROR\ncatch\nend\n",
             "try error destination must be a variable",
         ),
     ] {
@@ -3140,10 +3180,10 @@ fn script_arguments_support_positionals_flags_and_iteration() {
         r#"
 arg 1 -> $name
 arg 3 -> $missing
-hasArg "--dry-run" -> $dryRun
+hasArg "--dry-run" -> $dryrun
 hasArg "--force" -> $force
 args -> $all
-shellout "name=$name missing=<$missing> dry=$dryRun force=$force"
+shellout "name=$name missing=<$missing> dry=$dryrun force=$force"
 for $item in $all
     shellout "arg:$item"
 end
@@ -3180,7 +3220,7 @@ fn check_accepts_script_argument_syntax_and_rejects_bad_forms() {
     let valid = check_script(
         r#"
 arg 1 -> $name
-hasArg "--dry-run" -> $dryRun
+hasArg "--dry-run" -> $dryrun
 args -> $all
 "#,
     );
@@ -3194,7 +3234,7 @@ args -> $all
             "arg index must be a positive integer",
         ),
         ("arg 1\n", "arg syntax is arg N -> $var"),
-        ("arg 1 -> $$NAME\n", "arg destination must be a variable"),
+        ("arg 1 -> $NAME\n", "arg destination must be a variable"),
         ("arg 1 -> name\n", "arg destination must be a variable"),
         (
             "arg 1 -> $name extra\n",
@@ -3202,11 +3242,11 @@ args -> $all
         ),
         ("hasArg -> $found\n", "hasArg value required"),
         (
-            "hasArg \"x\" -> $$FOUND\n",
+            "hasArg \"x\" -> $FOUND\n",
             "hasArg destination must be a variable",
         ),
         ("args\n", "args syntax is args -> $var"),
-        ("args -> $$ALL\n", "args destination must be a variable"),
+        ("args -> $ALL\n", "args destination must be a variable"),
     ] {
         let output = check_script(source);
         assert!(!output.status.success(), "source should fail: {source}");
@@ -3527,7 +3567,7 @@ randomInt 1 2 -> $n
         ("commandExists -> $ok\n", "commandExists expects 1 argument"),
         ("randomInt 9 1 -> $n\n", "min cannot be greater than max"),
         (
-            "upper \"x\" -> $$OUT\n",
+            "upper \"x\" -> $OUT\n",
             "upper destination must be a variable",
         ),
     ] {

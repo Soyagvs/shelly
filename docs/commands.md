@@ -12,7 +12,7 @@ ask "Name? " -> $name
 choose "Color?" ["red", "blue"] -> $color
 command "pwd" -> $cwd
 arg 1 -> $name
-hasArg "--dry-run" -> $dryRun
+hasArg "--dry-run" -> $dryrun
 args -> $all
 ```
 
@@ -68,7 +68,7 @@ Arguments are the values after the script path in `shelly script.shelly ...`; th
 arg 1 -> $name
 arg 2 -> $mode
 arg 99 -> $missing
-hasArg "--dry-run" -> $dryRun
+hasArg "--dry-run" -> $dryrun
 args -> $all
 
 for $item in $all
@@ -83,8 +83,8 @@ end
 Predicate capture stores a boolean result in a variable.
 
 ```shelly
-exists "README.md" -> $hasReadme
-contains $name "gus" -> $hasGus
+exists "README.md" -> $hasreadme
+contains $name "gus" -> $hasgus
 ```
 
 See [predicates.md](predicates.md) for full `exists`, `contains`, and logical composition details.

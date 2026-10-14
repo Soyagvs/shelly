@@ -8,9 +8,9 @@ Strings use double quotes for one-line text. Use triple backticks for multiline 
 
 ```shelly
 $name = "Ada"
-$$APP = "Shelly"
+$APP = "Shelly"
 
-shellout "hello $name from $$APP"
+shellout "hello $name from $APP"
 ```
 
 ````shelly

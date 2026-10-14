@@ -32,10 +32,10 @@ rename-downloads.shelly
 ```
 
 ```shelly
-$$TARGET = "downloads"
+$TARGET = "downloads"
 
-if exists $$TARGET
-    shellout "ready: $$TARGET"
+if exists $TARGET
+    shellout "ready: $TARGET"
 end
 ```
 
@@ -57,12 +57,12 @@ project/
 import "consts/paths.shelly"
 import "functions/report.shelly"
 
-call printReport($$REPORT_DIR)
+call printReport($REPORT_DIR)
 ```
 
 ```shelly
 # consts/paths.shelly
-export $$REPORT_DIR = "reports"
+export $REPORT_DIR = "reports"
 ```
 
 ```shelly
@@ -98,7 +98,7 @@ import "consts/app.shelly"
 import "functions/build.shelly"
 include "setup/environment.shelly"
 
-call build($$APP_NAME)
+call build($APP_NAME)
 ```
 
 ```shelly
@@ -111,7 +111,7 @@ shellout "mode: $mode"
 # scripts/clean.shelly
 import "../consts/app.shelly"
 
-shellout "cleaning $$APP_NAME"
+shellout "cleaning $APP_NAME"
 ```
 
 ## Advanced projects

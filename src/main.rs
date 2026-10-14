@@ -1638,7 +1638,7 @@ impl Interpreter {
                         .consts
                         .get(&name)
                         .cloned()
-                        .ok_or_else(|| format!("undefined global constant $${name}"))?;
+                        .ok_or_else(|| format!("undefined global constant ${name}"))?;
                     self.consts.insert(name, value);
                 }
             }
@@ -1677,7 +1677,7 @@ impl Interpreter {
             return Err("expected value after '='".to_string());
         }
         if kind == IdentKind::Constant && self.consts.contains_key(&name) {
-            return Err(format!("constant $${name} cannot be reassigned"));
+            return Err(format!("constant ${name} cannot be reassigned"));
         }
         if rest.starts_with("capture") {
             return Err("capture syntax was removed; use command \"...\" -> $var".to_string());
@@ -2539,6 +2539,9 @@ impl Interpreter {
     }
 
     fn interpolate(&self, input: &str) -> Result<String, String> {
+        if input.contains("$$") {
+            return Err("legacy '$$' identifier prefix is not supported; use '$'".to_string());
+        }
         let bytes = input.as_bytes();
         let mut output = String::new();
         let mut index = 0;
@@ -2605,7 +2608,7 @@ impl Interpreter {
             IdentKind::Constant => self
                 .consts
                 .get(name)
-                .ok_or_else(|| format!("undefined constant $${name}")),
+                .ok_or_else(|| format!("undefined constant ${name}")),
         }
     }
 

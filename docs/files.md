@@ -17,10 +17,10 @@ write "out/report.txt" "hello"
 append "out/report.txt" "next line"
 read "out/report.txt" -> $text
 size "out/report.txt" -> $bytes
-isFile "out/report.txt" -> $isFile
-isDir "out/" -> $isDir
-tempFile -> $scratchFile
-tempDir -> $scratchDir
+isFile "out/report.txt" -> $isfile
+isDir "out/" -> $isdir
+tempFile -> $scratchfile
+tempDir -> $scratchdir
 copy "out/report.txt" "copy/report.txt"
 move "copy/report.txt" "copy/moved.txt"
 rename "copy/moved.txt" "final.txt"
@@ -79,8 +79,8 @@ files "*.txt" -> $items
 This first version supports simple, single-segment `*` wildcards:
 
 ```shelly
-files "*.txt" -> $textFiles
-files "dir/*.txt" -> $dirTextFiles
+files "*.txt" -> $textfiles
+files "dir/*.txt" -> $dirtextfiles
 files "README.md" -> $readme
 ```
 
@@ -128,18 +128,18 @@ end
 ## Helper command examples
 
 ```shelly
-isFile "data/input.txt" -> $hasInput
-isDir "data" -> $hasDataDir
+isFile "data/input.txt" -> $hasinput
+isDir "data" -> $hasdatadir
 
 write "logs/run.log" "started"
-append "logs/run.log" "loaded input=$hasInput"
-size "logs/run.log" -> $logBytes
+append "logs/run.log" "loaded input=$hasinput"
+size "logs/run.log" -> $logbytes
 
-tempFile -> $scratchFile
-tempDir -> $scratchDir
-write $scratchFile "temporary content"
-isFile $scratchFile -> $scratchIsFile
-isDir $scratchDir -> $scratchIsDir
+tempFile -> $scratchfile
+tempDir -> $scratchdir
+write $scratchfile "temporary content"
+isFile $scratchfile -> $scratchisfile
+isDir $scratchdir -> $scratchisdir
 ```
 
 `tempFile` and `tempDir` paths are unique enough for repeated calls in one script and are returned as absolute strings. Single-path helpers such as `create`, `write`, `append`, `read`, `size`, `isFile`, and `remove` accept those variables as path expressions, while literal paths remain script-relative.

@@ -16,7 +16,7 @@ pub(crate) enum IdentKind {
 pub(crate) fn display_identifier(kind: IdentKind, name: &str) -> String {
     match kind {
         IdentKind::Variable => format!("${name}"),
-        IdentKind::Constant => format!("$${name}"),
+        IdentKind::Constant => format!("${name}"),
     }
 }
 

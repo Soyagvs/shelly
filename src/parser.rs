@@ -41,11 +41,10 @@ pub(crate) fn parse_identifier(input: &str) -> Result<(IdentKind, String, &str),
     if bytes.first() != Some(&b'$') {
         return Err("expected identifier".to_string());
     }
-    let (kind, prefix_len) = if bytes.get(1) == Some(&b'$') {
-        (IdentKind::Constant, 2)
-    } else {
-        (IdentKind::Variable, 1)
-    };
+    if bytes.get(1) == Some(&b'$') {
+        return Err("legacy '$$' identifier prefix is not supported; use '$'".to_string());
+    }
+    let prefix_len = 1;
     let Some(first) = bytes.get(prefix_len).copied() else {
         return Err("expected identifier after '$'".to_string());
     };
@@ -61,16 +60,17 @@ pub(crate) fn parse_identifier(input: &str) -> Result<(IdentKind, String, &str),
         }
     }
     let raw_name = &input[prefix_len..end];
-    let name = match kind {
-        IdentKind::Variable => raw_name.to_ascii_lowercase(),
-        IdentKind::Constant => {
-            if raw_name != raw_name.to_ascii_uppercase() {
-                return Err("constant identifier must be uppercase".to_string());
-            }
-            raw_name.to_string()
-        }
+    let has_uppercase = raw_name.bytes().any(|byte| byte.is_ascii_uppercase());
+    let has_lowercase = raw_name.bytes().any(|byte| byte.is_ascii_lowercase());
+    if has_uppercase && has_lowercase {
+        return Err("identifier must be all uppercase or all lowercase".to_string());
+    }
+    let kind = if has_uppercase {
+        IdentKind::Constant
+    } else {
+        IdentKind::Variable
     };
-    Ok((kind, name, &input[end..]))
+    Ok((kind, raw_name.to_string(), &input[end..]))
 }
 
 pub(crate) fn parse_var_ref(input: &str) -> Result<String, String> {

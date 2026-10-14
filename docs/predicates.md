@@ -60,10 +60,10 @@ end
 Predicate capture stores a boolean value in a variable.
 
 ```shelly
-exists "README.md" -> $hasReadme
-contains $message "shell" -> $mentionsShell
+exists "README.md" -> $hasreadme
+contains $message "shell" -> $mentionsshell
 
-if $hasReadme and $mentionsShell
+if $hasreadme and $mentionsshell
     shellout "ready"
 end
 ```

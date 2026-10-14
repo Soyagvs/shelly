@@ -28,8 +28,8 @@ shellout $b
 ## Constants
 
 ```shelly
-$$BASE = 10
-$total = $$BASE * 2
+$BASE = 10
+$total = $BASE * 2
 
 shellout $total
 ```

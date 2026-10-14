@@ -74,10 +74,10 @@ shelly hello.shelly
 
 ```shelly
 $name = "Agustin"
-$$APP = "Shelly"
+$APP = "Shelly"
 $names = ["Ana", "Luis", "Mora"]
 
-shellout "Hello $name from $$APP"
+shellout "Hello $name from $APP"
 shellout "First name: $names[first]"
 
 choose "Continue?" ["yes", "no"] -> $answer
@@ -137,14 +137,14 @@ shelly script.shelly Ada --dry-run
 
 ```shelly
 arg 1 -> $name
-hasArg "--dry-run" -> $dryRun
+hasArg "--dry-run" -> $dryrun
 args -> $all
 ```
 
 ## Mental model
 
-- `$name` is mutable.
-- `$$NAME` is immutable.
+- Lowercase `$name` is a mutable variable.
+- Uppercase `$NAME` is an immutable constant.
 - `->` binds a result into a variable.
 - Commas separate normal arguments.
 - Blocks close with `end`.

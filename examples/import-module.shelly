@@ -2,4 +2,4 @@
 import "module.shelly"
 
 call greet("Ada")
-shellout "Imported constant: $$GREETING"
+shellout "Imported constant: $GREETING"
