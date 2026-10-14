@@ -71,6 +71,8 @@ Lists, dictionaries, nested values, JSON helpers, and modules.
 curl -fsSL https://raw.githubusercontent.com/Soyagvs/shelly/main/install.sh | sh
 ```
 
+When needed, the installer adds its directory to your `PATH` in the supported shell profile (`~/.bashrc` or `~/.zshrc`). Open a new terminal, or source the profile named by the installer. For Fish or another unsupported/unknown shell, the installer does not edit profiles automatically; it prints the exact fallback command for the selected `INSTALL_DIR` (use `fish_add_path` in Fish or an `export PATH` command in a POSIX-compatible shell).
+
 </details>
 
 <details>

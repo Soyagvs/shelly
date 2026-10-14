@@ -111,13 +111,51 @@ chmod +x "$INSTALL_DIR/shelly"
 log "Shelly installed to $INSTALL_DIR/shelly"
 install_linux_file_icon
 
-case ":$PATH:" in
-  *":$INSTALL_DIR:"*)
-    log "Run: shelly hello.shelly"
-    ;;
-  *)
-    log "Add this to your shell profile if 'shelly' is not found:"
+configure_path() {
+  case ":${PATH:-}:" in
+    *":$INSTALL_DIR:"*)
+      log "Shelly is already on PATH. Run: shelly hello.shelly"
+      return 0
+      ;;
+  esac
+
+  shell_name="${SHELL##*/}"
+  case "$shell_name" in
+    bash)
+      profile="$HOME/.bashrc"
+      ;;
+    zsh)
+      profile="$HOME/.zshrc"
+      ;;
+    fish)
+      log "Could not configure PATH automatically for Fish. Add Shelly with:"
+      log "  fish_add_path \"$INSTALL_DIR\""
+      log "Then open a new terminal or run that command, and run: shelly hello.shelly"
+      return 0
+      ;;
+    *)
+      log "Could not determine a supported shell profile. Add Shelly to PATH manually:"
+      log "  export PATH=\"$INSTALL_DIR:\$PATH\""
+      log "Then open a new terminal and run: shelly hello.shelly"
+      return 0
+      ;;
+  esac
+
+  if grep -Fq '# >>> shelly PATH >>>' "$profile" 2>/dev/null; then
+    log "Shelly PATH setup already exists in $profile. Open a new terminal or run: . \"$profile\""
+    log "Then run: shelly hello.shelly"
+    return 0
+  fi
+
+  if printf '\n# >>> shelly PATH >>>\nexport PATH="%s:$PATH"\n# <<< shelly PATH <<<\n' "$INSTALL_DIR" >> "$profile" 2>/dev/null; then
+    log "Added Shelly to PATH in $profile. Open a new terminal or run: . \"$profile\""
+    log "Then run: shelly hello.shelly"
+  else
+    log "Could not create or update $profile; Shelly was installed successfully."
+    log "Add Shelly to PATH manually, then open a new terminal:"
     log "  export PATH=\"$INSTALL_DIR:\$PATH\""
     log "Then run: shelly hello.shelly"
-    ;;
-esac
+  fi
+}
+
+configure_path
