@@ -9,6 +9,10 @@ Shelly standard helpers transform values and store the result with `-> $variable
 - `split "" "," -> $items` returns an empty list `[]`.
 - `len` works on strings and lists.
 - `join`, `sort`, `reverse`, and `unique` require lists and fail clearly for scalars.
+- `pathJoin` requires at least two path parts.
+- `basename PATH EXT` strips the optional extension only when it matches the file name suffix.
+- `timestamp` is an alias for `now`.
+- `commandExists` checks whether a command can be found on `PATH`; `which` returns its path or an empty string.
 - `random` returns an unsigned integer string. `randomInt min max` is inclusive.
 
 ## Text
@@ -52,7 +56,9 @@ isList ["a"] -> $ok
 Path helpers operate on strings only; they do not check whether a file exists.
 
 ```shelly
+pathJoin "dist" "app.zip" -> $path
 basename "dir/archive.tar.gz" -> $name
+basename "dir/archive.tar.gz" ".tar.gz" -> $name
 dirname "dir/archive.tar.gz" -> $dir
 extension "dir/archive.tar.gz" -> $ext
 withoutExtension "dir/archive.tar.gz" -> $name
@@ -62,10 +68,20 @@ withoutExtension "dir/archive.tar.gz" -> $name
 
 ```shelly
 now -> $timestamp
+timestamp -> $timestamp
 today -> $date
 ```
 
-`now` returns a UTC timestamp like `2025-01-31T12:34:56Z`. `today` returns a UTC date like `2025-01-31`.
+`now` and `timestamp` return a UTC timestamp like `2025-01-31T12:34:56Z`. `today` returns a UTC date like `2025-01-31`.
+
+## Commands
+
+```shelly
+commandExists "git" -> $hasGit
+which "git" -> $gitPath
+```
+
+Use `commandExists` before running optional tools. Use `which` when the script needs to show or reuse the resolved executable path. Missing commands return `false` from `commandExists` and an empty string from `which`.
 
 ## Random
 

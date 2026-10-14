@@ -661,11 +661,7 @@ fn ask_rejects_invalid_argument_forms() {
 
 #[test]
 fn docs_and_examples_use_ask_arrow_syntax() {
-    for path in [
-        "README.md",
-        "docs/language.md",
-        "examples/ask-if.shelly",
-    ] {
+    for path in ["README.md", "docs/language.md", "examples/ask-if.shelly"] {
         let content = fs::read_to_string(path).expect("read documented example");
         assert!(
             !content.contains("ask \"Continue? \", $answer")
@@ -3447,12 +3443,18 @@ isEmpty [] -> $empty_list
 isNumber $number -> $is_number
 isText "hello" -> $is_text
 isList $items -> $is_list
+pathJoin "dir" "nested" "archive.tar.gz" -> $joined_path
 basename "dir/archive.tar.gz" -> $base
+basename "dir/archive.tar.gz" ".tar.gz" -> $base_without_ext
 dirname "dir/archive.tar.gz" -> $dir
 extension "dir/archive.tar.gz" -> $ext
 withoutExtension "dir/archive.tar.gz" -> $stem
 now -> $timestamp
+timestamp -> $timestamp_alias
 today -> $date
+commandExists "sh" -> $has_sh
+commandExists "definitely-not-a-shelly-command" -> $has_missing
+which "sh" -> $sh_path
 random -> $random_value
 randomInt 5 5 -> $random_int
 shellout $trimmed
@@ -3465,9 +3467,16 @@ shellout $sorted
 shellout $reversed
 shellout $unique
 shellout "$number/$items_text/$empty_text/$empty_list/$is_number/$is_text/$is_list"
-shellout "$base/$dir/$ext/$stem/$random_int"
+shellout "$joined_path/$base/$base_without_ext/$dir/$ext/$stem/$random_int"
+shellout "$has_sh/$has_missing"
 if $timestamp != ""
     shellout "timestamp-ok"
+end
+if $timestamp_alias != ""
+    shellout "timestamp-alias-ok"
+end
+if $sh_path != ""
+    shellout "which-ok"
 end
 if $date != ""
     shellout "date-ok"
@@ -3481,7 +3490,7 @@ end
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert_eq!(
         stdout(&output),
-        "Hello,hello,World\nhello,hello,world\nHELLO,HELLO,WORLD\nhi,hi,world\n[hi, hi, world]\ntrue/true/17/3/hi|hi|world\n[hi, hi, world]\n[world, hi, hi]\n[b, a]\n7.5/[hi, hi, world]/true/true/true/true/true\narchive.tar.gz/dir/gz/archive.tar/5\ntimestamp-ok\ndate-ok\nrandom-ok\n"
+        "Hello,hello,World\nhello,hello,world\nHELLO,HELLO,WORLD\nhi,hi,world\n[hi, hi, world]\ntrue/true/17/3/hi|hi|world\n[hi, hi, world]\n[world, hi, hi]\n[b, a]\n7.5/[hi, hi, world]/true/true/true/true/true\ndir/nested/archive.tar.gz/archive.tar.gz/archive/dir/gz/archive.tar/5\ntrue/false\ntimestamp-ok\ntimestamp-alias-ok\nwhich-ok\ndate-ok\nrandom-ok\n"
     );
 }
 
@@ -3492,6 +3501,11 @@ fn standard_helpers_check_valid_syntax_and_reject_representative_errors() {
 trim " x " -> $x
 split "" "," -> $items
 join $items "," -> $text
+pathJoin "a" "b" -> $path
+basename "a/b.txt" ".txt" -> $name
+timestamp -> $timestamp
+commandExists "sh" -> $has_sh
+which "sh" -> $sh
 now -> $now
 randomInt 1 2 -> $n
 "#,
@@ -3502,6 +3516,15 @@ randomInt 1 2 -> $n
         ("trim \"x\"\n", "trim syntax requires"),
         ("join \"x\" \",\" -> $out\n", "join requires a list"),
         ("toNumber \"no\" -> $n\n", "toNumber requires numeric input"),
+        (
+            "pathJoin \"only\" -> $path\n",
+            "pathJoin expects at least 2 argument",
+        ),
+        (
+            "basename \"a\" \"b\" \"c\" -> $name\n",
+            "basename expects 1 or 2 argument",
+        ),
+        ("commandExists -> $ok\n", "commandExists expects 1 argument"),
         ("randomInt 9 1 -> $n\n", "min cannot be greater than max"),
         (
             "upper \"x\" -> $$OUT\n",

@@ -2045,18 +2045,52 @@ impl Interpreter {
                 expect_arg_count(name, &args, 1)?;
                 Value::Scalar(value_to_json(&self.eval_expr_value(args[0])?).to_string())
             }
-            "basename" | "dirname" | "extension" | "withoutExtension" => {
+            "pathJoin" => {
+                expect_min_arg_count(name, &args, 2)?;
+                let parts = args
+                    .iter()
+                    .map(|arg| self.eval_value(arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Value::Scalar(path_join(&parts))
+            }
+            "basename" => {
+                if args.len() != 1 && args.len() != 2 {
+                    return Err("basename expects 1 or 2 argument(s)".to_string());
+                }
+                let raw = self.eval_value(args[0])?;
+                let extension = if args.len() == 2 {
+                    Some(self.eval_value(args[1])?)
+                } else {
+                    None
+                };
+                Value::Scalar(basename_helper(&raw, extension.as_deref()))
+            }
+            "dirname" | "extension" | "withoutExtension" => {
                 expect_arg_count(name, &args, 1)?;
                 let raw = self.eval_value(args[0])?;
                 Value::Scalar(path_helper(name, &raw))
             }
-            "now" => {
+            "now" | "timestamp" => {
                 expect_arg_count(name, &args, 0)?;
                 Value::Scalar(current_utc_timestamp())
             }
             "today" => {
                 expect_arg_count(name, &args, 0)?;
                 Value::Scalar(current_utc_date())
+            }
+            "commandExists" => {
+                expect_arg_count(name, &args, 1)?;
+                let command = self.eval_value(args[0])?;
+                Value::Scalar(find_command(&command).is_some().to_string())
+            }
+            "which" => {
+                expect_arg_count(name, &args, 1)?;
+                let command = self.eval_value(args[0])?;
+                Value::Scalar(
+                    find_command(&command)
+                        .map(|path| path.to_string_lossy().to_string())
+                        .unwrap_or_default(),
+                )
             }
             "random" => {
                 expect_arg_count(name, &args, 0)?;
@@ -3414,12 +3448,16 @@ fn is_standard_helper(name: &str) -> bool {
             | "values"
             | "jsonParse"
             | "jsonStringify"
+            | "pathJoin"
             | "basename"
             | "dirname"
             | "extension"
             | "withoutExtension"
             | "now"
+            | "timestamp"
             | "today"
+            | "commandExists"
+            | "which"
             | "random"
             | "randomInt"
     )
@@ -3473,11 +3511,21 @@ fn validate_helper_form(name: &str, text: &str) -> Result<(), String> {
     let n = match name {
         "trim" | "lower" | "upper" | "len" | "sort" | "reverse" | "unique" | "toNumber"
         | "toString" | "isEmpty" | "isNumber" | "isText" | "isList" | "isDict" | "keys"
-        | "values" | "jsonParse" | "jsonStringify" | "basename" | "dirname" | "extension"
-        | "withoutExtension" => 1,
+        | "values" | "jsonParse" | "jsonStringify" | "dirname" | "extension"
+        | "withoutExtension" | "commandExists" | "which" => 1,
         "split" | "startsWith" | "endsWith" | "join" | "randomInt" => 2,
         "replace" => 3,
-        "now" | "today" | "random" => 0,
+        "now" | "timestamp" | "today" | "random" => 0,
+        "pathJoin" => {
+            expect_min_arg_count(name, &args, 2)?;
+            return Ok(());
+        }
+        "basename" => {
+            if args.len() == 1 || args.len() == 2 {
+                return Ok(());
+            }
+            return Err("basename expects 1 or 2 argument(s)".to_string());
+        }
         _ => unreachable!(),
     };
     expect_arg_count(name, &args, n)
@@ -3535,6 +3583,14 @@ fn expect_arg_count(name: &str, args: &[&str], expected: usize) -> Result<(), St
         Ok(())
     } else {
         Err(format!("{name} expects {expected} argument(s)"))
+    }
+}
+
+fn expect_min_arg_count(name: &str, args: &[&str], min: usize) -> Result<(), String> {
+    if args.len() >= min {
+        Ok(())
+    } else {
+        Err(format!("{name} expects at least {min} argument(s)"))
     }
 }
 
@@ -3653,13 +3709,31 @@ fn parse_integer_arg(text: &str, error: &str) -> Result<i64, String> {
     text.parse::<i64>().map_err(|_| error.to_string())
 }
 
+fn path_join(parts: &[String]) -> String {
+    let mut path = PathBuf::new();
+    for part in parts {
+        path.push(part);
+    }
+    path.to_string_lossy().to_string()
+}
+
+fn basename_helper(raw: &str, extension: Option<&str>) -> String {
+    let name = Path::new(raw)
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let Some(extension) = extension else {
+        return name;
+    };
+    let extension = extension.strip_prefix('.').unwrap_or(extension);
+    let suffix = format!(".{extension}");
+    name.strip_suffix(&suffix).unwrap_or(&name).to_string()
+}
+
 fn path_helper(name: &str, raw: &str) -> String {
     let p = Path::new(raw);
     match name {
-        "basename" => p
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default(),
         "dirname" => p
             .parent()
             .map(|s| {
@@ -3677,6 +3751,65 @@ fn path_helper(name: &str, raw: &str) -> String {
             .unwrap_or_default(),
         _ => unreachable!(),
     }
+}
+
+fn find_command(command: &str) -> Option<PathBuf> {
+    if command.trim().is_empty() {
+        return None;
+    }
+
+    let command_path = Path::new(command);
+    if command_path.components().count() > 1 {
+        return executable_path(command_path);
+    }
+
+    for directory in env::split_paths(&env::var_os("PATH")?) {
+        for candidate in command_candidates(&directory, command) {
+            if let Some(path) = executable_path(&candidate) {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
+fn command_candidates(directory: &Path, command: &str) -> Vec<PathBuf> {
+    #[cfg(windows)]
+    {
+        let command_path = Path::new(command);
+        if command_path.extension().is_some() {
+            return vec![directory.join(command)];
+        }
+        let pathext = env::var_os("PATHEXT")
+            .map(|value| value.to_string_lossy().to_string())
+            .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".to_string());
+        pathext
+            .split(';')
+            .filter(|ext| !ext.is_empty())
+            .map(|ext| directory.join(format!("{command}{ext}")))
+            .collect()
+    }
+    #[cfg(not(windows))]
+    {
+        vec![directory.join(command)]
+    }
+}
+
+fn executable_path(path: &Path) -> Option<PathBuf> {
+    let metadata = fs::metadata(path).ok()?;
+    if !metadata.is_file() {
+        return None;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o111 == 0 {
+            return None;
+        }
+    }
+
+    Some(path.to_path_buf())
 }
 
 fn random_u64() -> u64 {
