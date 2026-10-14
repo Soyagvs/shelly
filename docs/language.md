@@ -61,6 +61,7 @@ text block
 | While loops | [while.md](while.md) |
 | For loops | [for.md](for.md) |
 | Modules | [modules.md](modules.md) |
+| Project structure | [project-structure.md](project-structure.md) |
 
 ## Check and run
 
@@ -95,8 +96,6 @@ From source:
 ```sh
 cargo run -- path/to/script.shelly
 ```
-
-Complete showcase: [`../example-01.shelly`](../example-01.shelly).
 
 ## Not implemented yet
 

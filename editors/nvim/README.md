@@ -20,7 +20,7 @@ This package converts `../../shelly.svg` into `../../fonts/ShellyIcons.ttf` and 
 From the repository root, open Neovim with this runtime path:
 
 ```sh
-nvim --cmd 'set runtimepath^=./editors/nvim' example-01.shelly
+nvim --cmd 'set runtimepath^=./editors/nvim' examples/conditionals.shelly
 ```
 
 Inside Neovim, check:

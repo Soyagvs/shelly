@@ -1,44 +1,32 @@
-<p align="center">
-  <img width="2056" height="765" alt="Cuervo geométrico y logotipo Shelly сия" src="https://github.com/user-attachments/assets/975333ea-e6c7-421b-9795-089f07211ce6" />
-</p>
-
-<p align="center">
-  <img alt="Releases" src="https://img.shields.io/github/v/release/Soyagvs/shelly?include_prereleases&style=for-the-badge&label=release&color=7c3aed" />
-  <img alt="Downloads" src="https://img.shields.io/github/downloads/Soyagvs/shelly/total?style=for-the-badge&label=downloads&color=7c3aed" />
-  <img alt="Stars" src="https://img.shields.io/github/stars/Soyagvs/shelly?style=for-the-badge&label=stars&color=7c3aed" />
-  <img alt="License" src="https://img.shields.io/badge/license-MIT-7c3aed?style=for-the-badge" />
-</p>
-
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=3&color=7c3aed" width="100%" alt="purple divider" />
-</p>
-
 # Shelly
 
-Shelly is a modern scripting language for readable automation with `.shelly` scripts.
+**Shelly is a modern scripting language for readable automation with `.shelly` scripts.**
 
-Small scripts. Clear syntax. One modern way to automate files, commands, structured data, menus, logs, helpers, modules, and safe checks.
+It is built for small, clear scripts that automate files, commands, structured data, menus, logs, helpers, modules, and safe checks.
+
+[![Release](https://img.shields.io/github/v/release/Soyagvs/shelly?include_prereleases&label=release&color=000000)](https://github.com/Soyagvs/shelly/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/Soyagvs/shelly/total?label=downloads&color=000000)](https://github.com/Soyagvs/shelly/releases)
+[![License](https://img.shields.io/badge/license-MIT-000000)](LICENSE)
 
 ## Latest release
 
 **v3.1.1** is the latest public-ready Shelly release.
 
-- Linux/macOS installer: `curl -fsSL https://raw.githubusercontent.com/Soyagvs/shelly/main/install.sh | sh`
-- Windows installer: `irm https://raw.githubusercontent.com/Soyagvs/shelly/main/install.ps1 | iex`
-- Release binaries are built for Linux x86_64, macOS Intel, macOS Apple Silicon, and Windows x86_64.
-- Language highlights: script arguments, nested lists, dictionaries, JSON helpers, `case`, file commands/helpers, standard helpers, `for`, `while`, `repeat`, explicit `call`, function `return`, `break`, `continue`, logical `and` / `or` / `not` with grouped conditions, `exists` / `contains` predicates, modules, and `command` with stdout/stderr/status capture.
-- Editor support: `shelly check` validates scripts safely without executing them, enabling VS Code diagnostics.
-- License: MIT.
-
-## Install
-
-Linux and macOS:
+Installers:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Soyagvs/shelly/main/install.sh | sh
 ```
 
-Create a script named `hello.shelly`:
+```powershell
+irm https://raw.githubusercontent.com/Soyagvs/shelly/main/install.ps1 | iex
+```
+
+Release binaries are available for Linux x86_64, macOS Intel, macOS Apple Silicon, and Windows x86_64.
+
+## Quick start
+
+Create `hello.shelly`:
 
 ````shelly
 shellout "Hello from Shelly"
@@ -49,7 +37,7 @@ from multiple lines
 ```
 ````
 
-Check it without executing commands:
+Check it safely without executing commands:
 
 ```sh
 shelly check hello.shelly
@@ -61,30 +49,15 @@ Run it:
 shelly hello.shelly
 ```
 
-Windows PowerShell:
+## Why Shelly
 
-```powershell
-irm https://raw.githubusercontent.com/Soyagvs/shelly/main/install.ps1 | iex
-```
-
-Then run:
-
-```powershell
-shelly hello.shelly
-```
-
-Manual downloads are also available on GitHub Releases:
-
-- Linux: `shelly-linux-x86_64.tar.gz`
-- macOS with Intel chip: `shelly-macos-x86_64.tar.gz`
-- macOS with Apple silicon: `shelly-macos-arm64.tar.gz`
-- Windows: `shelly-windows-x86_64.zip`
-
-## Run from source
-
-```sh
-cargo run -- path/to/script.shelly
-```
+| Need | Shelly gives you |
+| --- | --- |
+| Readable automation | One clear syntax for scripts, files, commands, and data. |
+| Safe validation | `shelly check` validates scripts without executing them. |
+| Structured scripting | Lists, dictionaries, nested values, and JSON helpers. |
+| Practical workflows | File helpers, menus, logs, command status capture, and modules. |
+| Editor support | VS Code diagnostics and Neovim syntax/icons. |
 
 ## Taste
 
@@ -119,13 +92,62 @@ shellout "last command code: $code stderr: $err"
 exit 0
 ```
 
-Full showcase: [`example-01.shelly`](example-01.shelly).
+## Language highlights
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+- Variables, constants, strings, lists, dictionaries, nested values, and JSON helpers.
+- `if`, `elif`, `else`, `case`, `repeat`, `while`, and iterable `for` loops.
+- Explicit function calls with `call`, function `return`, `break`, and `continue`.
+- Logical `and` / `or` / `not`, grouped conditions, `exists`, and `contains`.
+- File commands/helpers, standard helpers, logs, menus, script arguments, and modules.
+- Command stdout/stderr/status capture with `command "..." -> $out, $err, $code`.
 
-## Docs
+## Install manually
+
+Download a release asset from <https://github.com/Soyagvs/shelly/releases/latest>:
+
+| Platform | Asset |
+| --- | --- |
+| Linux | `shelly-linux-x86_64.tar.gz` |
+| macOS Intel | `shelly-macos-x86_64.tar.gz` |
+| macOS Apple Silicon | `shelly-macos-arm64.tar.gz` |
+| Windows | `shelly-windows-x86_64.zip` |
+
+## Run from source
+
+```sh
+cargo run -- path/to/script.shelly
+```
+
+## Script arguments
+
+```sh
+shelly script.shelly Ada --dry-run
+```
+
+```shelly
+arg 1 -> $name
+hasArg "--dry-run" -> $dryRun
+args -> $all
+```
+
+## Mental model
+
+- `$name` is mutable.
+- `$$NAME` is immutable.
+- `->` binds a result into a variable.
+- Commas separate normal arguments.
+- Blocks close with `end`.
+- Indexing starts at `1`.
+- `exit 0` succeeds; `exit 1` fails.
+
+## Editor support
+
+- VS Code: [`Soyagvs/shelly-vscode`](https://github.com/Soyagvs/shelly-vscode)
+- Neovim: [`editors/nvim`](editors/nvim)
+- File icons: [`docs/file-icons.md`](docs/file-icons.md)
+- Artwork source: [`shelly.svg`](shelly.svg)
+
+## Documentation
 
 Start here: [`docs/language.md`](docs/language.md).
 
@@ -155,42 +177,15 @@ Start here: [`docs/language.md`](docs/language.md).
 | While loops | [`docs/while.md`](docs/while.md) |
 | For loops | [`docs/for.md`](docs/for.md) |
 | Modules | [`docs/modules.md`](docs/modules.md) |
+| Project structure | [`docs/project-structure.md`](docs/project-structure.md) |
 
-## Editor support
-
-- Neovim: [`editors/nvim`](editors/nvim)
-- VS Code: [`Soyagvs/shelly-vscode`](https://github.com/Soyagvs/shelly-vscode)
-- Shelly artwork: [`shelly.svg`](shelly.svg)
-
-## Mental model
-
-- `$name` is mutable.
-- `$$NAME` is immutable.
-- `->` binds a result into a variable.
-- Commas separate normal arguments.
-- Blocks close with `end`.
-- Indexing starts at `1`.
-- `exit 0` succeeds; `exit 1` fails.
-
-## Checks
+## Development checks
 
 ```sh
 cargo fmt --check
 cargo test
-printf 'yes\nblue\n' | cargo run --quiet -- example-01.shelly
 ```
 
+## License
 
-### Script arguments
-
-Pass arguments after the script path and read them in Shelly:
-
-```sh
-shelly script.shelly Ada --dry-run
-```
-
-```shelly
-arg 1 -> $name
-hasArg "--dry-run" -> $dryRun
-args -> $all
-```
+MIT. See [`LICENSE`](LICENSE).

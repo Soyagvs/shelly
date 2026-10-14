@@ -664,7 +664,6 @@ fn docs_and_examples_use_ask_arrow_syntax() {
     for path in [
         "README.md",
         "docs/language.md",
-        "example-01.shelly",
         "examples/ask-if.shelly",
     ] {
         let content = fs::read_to_string(path).expect("read documented example");
