@@ -27,6 +27,7 @@ Mixed-case identifiers and the legacy `$$NAME` syntax are invalid.
 
 ## Evidence
 
+- Work-unit commit: `82c7f57 feat: simplify constant syntax`.
 - RED observed: migrated syntax tests failed before the parser migration.
 - `cargo fmt -- --check` passed.
 - `cargo test --test cli_smoke` passed: 155 tests.
