@@ -10,7 +10,7 @@ It is built for small, clear scripts that automate files, commands, structured d
 
 ## Latest release
 
-**v3.1.1** is the latest public-ready Shelly release.
+**v3.2.0** is the latest public-ready Shelly release.
 
 Installers:
 
