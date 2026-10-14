@@ -22,6 +22,7 @@ When the selected install directory is absent from `PATH`, `install.sh` detects 
 
 ## Evidence
 
+- Work-unit commit: `78ea41b feat: automate Unix installer path setup`.
 - RED observed: the isolated Bash profile setup assertion failed before implementation.
 - `bash tests/install_sh_test.sh` passed with temporary HOME/profile isolation.
 - `sh -n install.sh` passed.
