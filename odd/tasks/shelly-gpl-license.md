@@ -19,6 +19,7 @@ Replace the MIT license with the unmodified GNU GPL v3 text. Declare `GPL-3.0-or
 
 ## Evidence
 
+- Work-unit commit: `44b4d0e chore: relicense Shelly under GPL`.
 - LICENSE matches the official GNU GPL v3 text (Version 3, 29 June 2007).
 - Cargo metadata declares `GPL-3.0-or-later`.
 - `git diff --check` passed.
