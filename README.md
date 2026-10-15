@@ -10,7 +10,7 @@
 [![Release](https://img.shields.io/github/v/release/Soyagvs/shelly?include_prereleases&style=flat-square&label=release&color=7c3aed)](https://github.com/Soyagvs/shelly/releases)
 [![Downloads](https://img.shields.io/github/downloads/Soyagvs/shelly/total?style=flat-square&label=downloads&color=8b5cf6)](https://github.com/Soyagvs/shelly/releases)
 [![Stars](https://img.shields.io/github/stars/Soyagvs/shelly?style=flat-square&color=a78bfa)](https://github.com/Soyagvs/shelly/stargazers)
-[![MIT](https://img.shields.io/badge/license-MIT-6d28d9?style=flat-square)](LICENSE)
+[![GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-6d28d9?style=flat-square)](LICENSE)
 [![Rust](https://img.shields.io/badge/built_with-Rust-242038?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 
 [**Get started**](#-get-started) · [**Explore the language**](#-the-language) · [**Editor support**](#-editor-support) · [**Documentation**](#-documentation) · [**Releases**](https://github.com/Soyagvs/shelly/releases/latest)
@@ -268,6 +268,6 @@ cargo test
 
 **[Read the docs](docs/language.md)** · **[Try the latest release](https://github.com/Soyagvs/shelly/releases/latest)** · **[Explore the source](https://github.com/Soyagvs/shelly)**
 
-<sub>Made with Rust · Licensed under <a href="LICENSE">MIT</a></sub>
+<sub>Made with Rust · Licensed under <a href="LICENSE">GPL-3.0-or-later</a></sub>
 
 </div>

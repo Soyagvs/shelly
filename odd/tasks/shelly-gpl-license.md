@@ -11,6 +11,7 @@ Replace the MIT license with the unmodified GNU GPL v3 text. Declare `GPL-3.0-or
 - [x] Replace the repository license with the official GPL v3 text.
 - [x] Declare the SPDX license identifier in Cargo metadata.
 - [x] Verify license text integrity and package metadata.
+- [x] Document GPL-3.0-or-later in README.
 
 ## Constraints
 
