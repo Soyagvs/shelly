@@ -24,3 +24,4 @@ Replace the MIT license with the unmodified GNU GPL v3 text. Declare `GPL-3.0-or
 - LICENSE matches the official GNU GPL v3 text (Version 3, 29 June 2007).
 - Cargo metadata declares `GPL-3.0-or-later`.
 - `git diff --check` passed.
+- Documentation commit: `4bbfacc docs: document Shelly GPL license`.
