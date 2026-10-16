@@ -268,9 +268,10 @@ pub fn extract(name: &str, b: &[u8], root: &Path) -> Result<(), String> {
         if !p.is_file() {
             return Err("archive must contain exactly shelly and shelly-lsp".into());
         }
-        if p.is_file() && !cfg!(windows) {
-            use std::os::unix::fs::PermissionsExt;
+        #[cfg(unix)]
+        {
             let mut x = fs::metadata(&p).map_err(|e| e.to_string())?.permissions();
+            use std::os::unix::fs::PermissionsExt;
             x.set_mode(x.mode() | 0o755);
             fs::set_permissions(p, x).map_err(|e| e.to_string())?
         }

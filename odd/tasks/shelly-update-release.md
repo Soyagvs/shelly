@@ -24,3 +24,5 @@ Feature: publish the verified self-update feature and distribute the LSP editor 
 - `cargo fmt --check` — passed.
 - `cargo test --locked` — passed; 3 unit tests, 201 CLI smoke tests, 6 LSP feature tests, 4 LSP smoke tests, 5 LSP symbol tests, 4 LSP syntax tests, 1 Mason packaging test, 2 Neovim LSP tests, 3 release packaging tests, and 6 update tests passed; doc-tests passed with 0 tests.
 - `cargo check --locked` — passed; finished the dev profile check for `shelly v3.4.0`.
+- Remote Windows CI failure: compilation failed because `src/update.rs` unconditionally compiled the Unix-only `std::os::unix::fs::PermissionsExt` import and `set_mode` call; the permission adjustment is now gated with `#[cfg(unix)]`.
+- Local validation after the fix: `cargo fmt --all` and `cargo test --locked` passed; Unix archive extraction still applies executable permissions, while Windows no longer compiles the Unix-only code.
