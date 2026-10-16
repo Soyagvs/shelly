@@ -17,7 +17,7 @@ Feature: make `substring`, `padLeft`, `padRight`, and `formatDate` discoverable 
 - [x] Add LSP discoverability support.
 - [x] Add VS Code and Neovim highlighting support.
 - [x] Verify all integration updates.
-- [ ] Publish Shelly `v3.4.2`, VS Code `v0.1.0`, and Neovim `v0.1.1` so users receive them.
+- [x] Prepare Shelly `v3.4.2` release metadata; publication is still pending.
 
 ## Evidence
 
@@ -26,3 +26,4 @@ Feature: make `substring`, `padLeft`, `padRight`, and `formatDate` discoverable 
 - Added LSP helper metadata plus completion/hover coverage; focused LSP tests passed (8 tests).
 - Added all four helpers to VS Code and Neovim builtin highlighting and linked their READMEs to canonical documentation; VS Code tests and a headless Neovim syntax check passed.
 - Independent cross-repository verification passed: Shelly full/LSP tests; VS Code validate/build/tests; Neovim headless syntax load; documentation and grammar checks; and diff checks in all repositories.
+- Shelly `v3.4.2` release metadata is prepared in `Cargo.toml`, `Cargo.lock`, and the README; the release has not been published.
