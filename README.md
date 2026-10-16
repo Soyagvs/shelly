@@ -7,8 +7,8 @@
 
 **Write clear scripts. Automate real work. Go beyond Bash.**
 
-[![Release](https://img.shields.io/github/v/release/Soyagvs/shelly?include_prereleases&style=flat-square&label=release&color=7c3aed)](https://github.com/Soyagvs/shelly/releases)
-[![Downloads](https://img.shields.io/github/downloads/Soyagvs/shelly/total?style=flat-square&label=downloads&color=8b5cf6)](https://github.com/Soyagvs/shelly/releases)
+[![Release](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FSoyagvs%2Fshelly%2Fmain%2F.github%2Fbadges%2Frelease.json&style=flat-square)](https://github.com/Soyagvs/shelly/releases)
+[![Downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FSoyagvs%2Fshelly%2Fmain%2F.github%2Fbadges%2Fdownloads.json&style=flat-square)](https://github.com/Soyagvs/shelly/releases)
 [![Stars](https://img.shields.io/github/stars/Soyagvs/shelly?style=flat-square&color=a78bfa)](https://github.com/Soyagvs/shelly/stargazers)
 [![GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-6d28d9?style=flat-square)](LICENSE)
 [![Rust](https://img.shields.io/badge/built_with-Rust-242038?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)

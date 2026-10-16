@@ -1,0 +1,52 @@
+name: Update release badges
+
+on:
+  release:
+    types: [published]
+  schedule:
+    - cron: '15 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Update badge payloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          release_json=$(mktemp)
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/latest" > "$release_json" 2>/dev/null; then
+            tag=$(jq -r '.tag_name' "$release_json")
+            downloads=$(jq '[.assets[]?.download_count] | add // 0' "$release_json")
+          else
+            tag=unreleased
+            downloads=0
+          fi
+
+          jq --arg message "$tag" '.message = $message' .github/badges/release.json > release.json.tmp
+          mv release.json.tmp .github/badges/release.json
+          jq --arg message "$downloads" '.message = $message' .github/badges/downloads.json > downloads.json.tmp
+          mv downloads.json.tmp .github/badges/downloads.json
+      - name: Commit changed badge payloads
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- .github/badges/release.json .github/badges/downloads.json; then
+            echo 'Badge payloads are already current.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/badges/release.json .github/badges/downloads.json
+          git commit -m 'chore: update release badges'
+          git push origin HEAD:main
