@@ -56,7 +56,16 @@ if (-not [Environment]::Is64BitOperatingSystem) {
 }
 
 if ($Version -eq "latest") {
-    $Url = "https://github.com/$Repo/releases/latest/download/$Archive"
+    $ApiUrl = "https://api.github.com/repos/$Repo/releases/latest"
+    try {
+        $Release = Invoke-RestMethod -Uri $ApiUrl -Headers @{ Accept = "application/vnd.github+json" }
+        $Tag = $Release.tag_name
+    } catch {
+        Fail "Could not read the latest release tag from GitHub ($ApiUrl): $($_.Exception.Message)"
+    }
+    if ([string]::IsNullOrWhiteSpace($Tag)) {
+        Fail "GitHub latest release response did not contain a usable tag ($ApiUrl)."
+    }
     $IconRef = "main"
 } else {
     if ($Version.StartsWith("v")) {
@@ -64,9 +73,10 @@ if ($Version -eq "latest") {
     } else {
         $Tag = "v$Version"
     }
-    $Url = "https://github.com/$Repo/releases/download/$Tag/$Archive"
     $IconRef = $Tag
 }
+$Archive = "shelly-windows-x86_64-$Tag.zip"
+$Url = "https://github.com/$Repo/releases/download/$Tag/$Archive"
 $IconUrl = "https://raw.githubusercontent.com/$Repo/$IconRef/assets/icons/shelly.ico"
 
 $TempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("shelly-install-" + [System.Guid]::NewGuid())

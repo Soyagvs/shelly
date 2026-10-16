@@ -67,31 +67,32 @@ os="$(uname -s)"
 arch="$(uname -m)"
 
 case "$os:$arch" in
-  Linux:x86_64|Linux:amd64)
-    archive="shelly-linux-x86_64.tar.gz"
-    ;;
-  Darwin:x86_64)
-    archive="shelly-macos-x86_64.tar.gz"
-    ;;
-  Darwin:arm64|Darwin:aarch64)
-    archive="shelly-macos-arm64.tar.gz"
-    ;;
-  *)
-    fail "unsupported platform: $os $arch"
-    ;;
+  Linux:x86_64|Linux:amd64) target="linux-x86_64" ;;
+  Darwin:x86_64) target="macos-x86_64" ;;
+  Darwin:arm64|Darwin:aarch64) target="macos-arm64" ;;
+  *) fail "unsupported platform: $os $arch" ;;
 esac
 
 if [ "$VERSION" = "latest" ]; then
-  url="https://github.com/$REPO/releases/latest/download/$archive"
+  api_url="https://api.github.com/repos/$REPO/releases/latest"
+  release_json="$(curl -fsSL "$api_url")" || fail "could not read the latest release tag from GitHub ($api_url)"
+  tag="$(printf '%s' "$release_json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\\([^"\\]*\\)".*/\\1/p' | head -n 1)"
+  [ -n "$tag" ] || fail "GitHub latest release response did not contain a usable tag (check $api_url)"
   icon_ref="main"
 else
   case "$VERSION" in
     v*) tag="$VERSION" ;;
     *) tag="v$VERSION" ;;
   esac
-  url="https://github.com/$REPO/releases/download/$tag/$archive"
   icon_ref="$tag"
 fi
+
+case "$target" in
+  linux-x86_64) archive="shelly-linux-x86_64-$tag.tar.gz" ;;
+  macos-x86_64) archive="shelly-macos-x86_64-$tag.tar.gz" ;;
+  macos-arm64) archive="shelly-macos-arm64-$tag.tar.gz" ;;
+esac
+url="https://github.com/$REPO/releases/download/$tag/$archive"
 icon_base_url="https://raw.githubusercontent.com/$REPO/$icon_ref/assets/icons"
 
 tmpdir="$(mktemp -d)"

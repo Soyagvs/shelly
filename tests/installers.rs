@@ -7,6 +7,21 @@ fn installer(name: &str) -> String {
 }
 
 #[test]
+fn installers_resolve_latest_tag_and_use_versioned_archives() {
+    let unix = installer("install.sh");
+    assert!(unix.contains("releases/latest"));
+    assert!(unix.contains("archive=\"shelly-linux-x86_64-$tag.tar.gz\""));
+    assert!(unix.contains("archive=\"shelly-macos-x86_64-$tag.tar.gz\""));
+    assert!(unix.contains("archive=\"shelly-macos-arm64-$tag.tar.gz\""));
+    assert!(unix.contains("curl") && unix.contains("releases/latest"));
+
+    let windows = installer("install.ps1");
+    assert!(windows.contains("releases/latest"));
+    assert!(windows.contains("$Archive = \"shelly-windows-x86_64-$Tag.zip\""));
+    assert!(windows.contains("Invoke-WebRequest -Uri $Url -OutFile $ZipPath"));
+}
+
+#[test]
 fn installers_require_and_install_cli_and_lsp_binaries() {
     let unix = installer("install.sh");
     assert!(unix.contains("[ -f \"$tmpdir/shelly\" ]"));
