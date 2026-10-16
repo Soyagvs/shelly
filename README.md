@@ -342,7 +342,7 @@ For editor language features, see the [Shelly LSP guide](docs/lsp.md) and the [S
 <details>
 <summary><strong>Automation and tooling</strong></summary>
 
-[Commands and input](docs/commands.md) · [Files](docs/files.md) · [Logging](docs/logging.md) · [Choose menus](docs/choose.md) · [Standard helpers](docs/helpers.md) · [Modules](docs/modules.md) · [Project structure](docs/project-structure.md) · [File icons](docs/file-icons.md)
+[Commands and input](docs/commands.md) · [Files](docs/files.md) · [Logging](docs/logging.md) · [Choose menus](docs/choose.md) · [Standard helpers](docs/helpers.md) · [Date formatting](docs/date-formatting.md) · [Modules](docs/modules.md) · [Project structure](docs/project-structure.md) · [File icons](docs/file-icons.md)
 
 </details>
 

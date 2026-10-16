@@ -129,15 +129,25 @@ fn all_names(d: &DocumentStore, _: &Value) -> Vec<Value> {
             }
         }
     }
+    for h in HELPERS {
+        if !v.iter().any(|item| item["label"] == h.name) {
+            v.push(json!({"label":h.name,"kind":12,"detail":h.signature,"documentation":h.contract}));
+        }
+    }
     v
+}
+fn markdown_helper(h: &HelperMetadata) -> String {
+    format!("`{}`\n\n{}", h.signature, h.contract)
 }
 fn hover(d: &DocumentStore, p: &Value) -> Value {
     let t = text(d, &p["textDocument"]["uri"]);
     let at = position(t, &p["position"]);
-    if let Some((n, s, _e)) = word_at(t, at) {
+    if let Some((n, s, e)) = word_at(t, at) {
         {
-            let (l, _) = utf16_pos(t, s);
-            json!({"contents":{"kind":"markdown","value":n},"range":{"start":{"line":l,"character":4},"end":{"line":l,"character":9}}})
+            let contents = helper(&n)
+                .map(|h| markdown_helper(h))
+                .unwrap_or_else(|| n.clone());
+            json!({"contents":{"kind":"markdown","value":contents},"range":range(t, s, e)})
         }
     } else {
         Value::Null

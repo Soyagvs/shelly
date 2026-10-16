@@ -25,17 +25,18 @@ replace "one two" "two" "three" -> $text
 split "a,b,c" "," -> $items
 startsWith "hello" "he" -> $ok
 endsWith "hello" "lo" -> $ok
-```
-
-## Text
-
-```shelly
 substring "héllo" 2 3 -> $part
 padLeft "42" 5 "0" -> $padded
 padRight "ok" 4 "·" -> $padded
 ```
 
-`substring` uses one-based Unicode character positions and a positive length. `padLeft` and `padRight` accept exactly one Unicode fill character and only extend strings that are narrower than the requested width.
+| Helper | Behavior |
+| --- | --- |
+| `substring` | Uses one-based Unicode character positions and a positive length. |
+| `padLeft`, `padRight` | Accept exactly one Unicode fill character and only extend strings narrower than the requested width; existing text is never truncated. |
+| `formatDate` | Formats strict UTC timestamps; see the [date formatting guide](date-formatting.md). |
+
+For the complete `formatDate` token reference, input rules, and failure cases, see [date-formatting.md](date-formatting.md).
 
 ## Lists
 

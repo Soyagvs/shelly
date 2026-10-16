@@ -99,6 +99,40 @@ fn completion_in_incomplete_code_returns_items_at_utf16_position() {
 }
 
 #[test]
+fn completion_includes_builtin_helpers_without_dropping_declarations() {
+    let mut l = Lsp::start();
+    l.initialize();
+    let uri = "file:///helpers.shl";
+    l.open(uri, "let custom = 1\n");
+    let r = l.request(
+        2,
+        "textDocument/completion",
+        json!({"textDocument":doc(uri),"position":pos(1,0)}),
+    );
+    let items = r["result"]["items"].as_array().unwrap();
+    for name in ["custom", "substring", "padLeft", "padRight", "formatDate"] {
+        assert!(items.iter().any(|i| i["label"] == name), "missing {name}");
+    }
+}
+
+#[test]
+fn helper_hover_contains_signature_and_contract() {
+    let mut l = Lsp::start();
+    l.initialize();
+    let uri = "file:///helper-hover.shl";
+    l.open(uri, "formatDate(value, \"YYYY/MM/DD\")\n");
+    let r = l.request(
+        2,
+        "textDocument/hover",
+        json!({"textDocument":doc(uri),"position":pos(0,2)}),
+    );
+    let value = r["result"]["contents"]["value"].as_str().unwrap();
+    assert!(value.contains("formatDate(iso, format)"));
+    assert!(value.contains("strict UTC ISO input"));
+    assert!(value.contains("YYYY/MM/DD/HH/mm/ss"));
+}
+
+#[test]
 fn hover_at_declaration_and_reference_has_contents_and_utf16_range() {
     let mut l = Lsp::start();
     l.initialize();
@@ -111,9 +145,10 @@ fn hover_at_declaration_and_reference_has_contents_and_utf16_range() {
             json!({"textDocument":doc(uri),"position":pos(line,character)}),
         );
         assert!(r["result"]["contents"].is_object() || r["result"]["contents"].is_string());
+        let (start, end) = if line == 0 { (4, 8) } else { (0, 4) };
         assert_eq!(
             r["result"]["range"],
-            json!({"start":{"line":line,"character":4},"end":{"line":line,"character":9}})
+            json!({"start":{"line":line,"character":start},"end":{"line":line,"character":end}})
         );
     }
 }

@@ -54,6 +54,39 @@ pub fn symbols(text: &str) -> Vec<(String, usize, usize, SymbolKind, bool)> {
         .map(|s| (s.name, s.span.start, s.span.end, s.kind, s.declaration))
         .collect()
 }
+pub struct HelperMetadata {
+    pub name: &'static str,
+    pub signature: &'static str,
+    pub contract: &'static str,
+}
+
+pub const HELPERS: &[HelperMetadata] = &[
+    HelperMetadata {
+        name: "substring",
+        signature: "substring(text, start, length)",
+        contract: "Uses one-based Unicode character positions and a length, not an end position.",
+    },
+    HelperMetadata {
+        name: "padLeft",
+        signature: "padLeft(text, length, fill)",
+        contract: "Pads to length using exactly one Unicode character as fill.",
+    },
+    HelperMetadata {
+        name: "padRight",
+        signature: "padRight(text, length, fill)",
+        contract: "Pads to length using exactly one Unicode character as fill.",
+    },
+    HelperMetadata {
+        name: "formatDate",
+        signature: "formatDate(iso, format)",
+        contract: "Accepts strict UTC ISO input and only YYYY/MM/DD/HH/mm/ss tokens.",
+    },
+];
+
+pub fn helper(name: &str) -> Option<&'static HelperMetadata> {
+    HELPERS.iter().find(|h| h.name == name)
+}
+
 pub fn kind(k: SymbolKind) -> u8 {
     match k {
         SymbolKind::Function => 12,

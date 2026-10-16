@@ -33,7 +33,7 @@ text block
 - `choose "Question" ["A", "B"] -> $choice` prints an interactive menu and stores the chosen value.
 - `log "identifier"` wraps a block with structured file logging in script-relative `logs/`.
 - `exists` and `contains` provide built-in boolean predicates.
-- Standard helpers transform text, lists, values, path strings, time, and random numbers; see [helpers.md](helpers.md).
+- Standard helpers transform text, lists, values, path strings, time, and random numbers; see [helpers.md](helpers.md) and the [date formatting guide](date-formatting.md).
 - File commands (`create`, `copy`, `move`, `rename`, `remove`, `read`, `write`, `append`, `isFile`, `isDir`, `size`, `tempFile`, `tempDir`) and `files "pattern" -> $items` use script-relative paths where applicable.
 - `and`, `or`, `not`, and condition parentheses compose conditions; priority is `not`, then `and`, then `or`.
 - `case VALUE` / `when VALUE` / optional `else` dispatches exact value matches; see [conditionals.md](conditionals.md).
@@ -48,7 +48,7 @@ text block
 | Strings and interpolation | [strings.md](strings.md) |
 | Numeric expressions | [numeric-expressions.md](numeric-expressions.md) |
 | Lists | [lists.md](lists.md) |
-| Standard helpers | [helpers.md](helpers.md) |
+| Standard helpers | [helpers.md](helpers.md) · [Date formatting](date-formatting.md) |
 | Logging | [logging.md](logging.md) |
 | Files | [files.md](files.md) |
 | Commands and input | [commands.md](commands.md) |
