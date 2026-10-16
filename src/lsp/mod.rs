@@ -131,7 +131,9 @@ fn all_names(d: &DocumentStore, _: &Value) -> Vec<Value> {
     }
     for h in HELPERS {
         if !v.iter().any(|item| item["label"] == h.name) {
-            v.push(json!({"label":h.name,"kind":12,"detail":h.signature,"documentation":h.contract}));
+            v.push(
+                json!({"label":h.name,"kind":12,"detail":h.signature,"documentation":h.contract}),
+            );
         }
     }
     v

@@ -2695,25 +2695,48 @@ impl Interpreter {
             "substring" => {
                 expect_arg_count(name, &args, 3)?;
                 let text = self.eval_value(args[0])?;
-                let start = parse_positive_integer_arg(&self.eval_value(args[1])?, "substring start must be a positive integer")?;
-                let length = parse_positive_integer_arg(&self.eval_value(args[2])?, "substring length must be a positive integer")?;
+                let start = parse_positive_integer_arg(
+                    &self.eval_value(args[1])?,
+                    "substring start must be a positive integer",
+                )?;
+                let length = parse_positive_integer_arg(
+                    &self.eval_value(args[2])?,
+                    "substring length must be a positive integer",
+                )?;
                 let chars: Vec<char> = text.chars().collect();
                 let begin = start - 1;
-                if begin >= chars.len() { Value::Scalar(String::new()) } else {
-                    Value::Scalar(chars[begin..(begin + length).min(chars.len())].iter().collect())
+                if begin >= chars.len() {
+                    Value::Scalar(String::new())
+                } else {
+                    Value::Scalar(
+                        chars[begin..(begin + length).min(chars.len())]
+                            .iter()
+                            .collect(),
+                    )
                 }
             }
             "padLeft" | "padRight" => {
                 expect_arg_count(name, &args, 3)?;
                 let text = self.eval_value(args[0])?;
-                let width = parse_nonnegative_integer_arg(&self.eval_value(args[1])?, "padding width must be a non-negative integer")?;
+                let width = parse_nonnegative_integer_arg(
+                    &self.eval_value(args[1])?,
+                    "padding width must be a non-negative integer",
+                )?;
                 let fill = self.eval_value(args[2])?;
                 let mut chars = fill.chars();
-                let fill_char = chars.next().ok_or_else(|| format!("{name} fill must be exactly one Unicode character"))?;
-                if chars.next().is_some() { return Err(format!("{name} fill must be exactly one Unicode character")); }
+                let fill_char = chars
+                    .next()
+                    .ok_or_else(|| format!("{name} fill must be exactly one Unicode character"))?;
+                if chars.next().is_some() {
+                    return Err(format!("{name} fill must be exactly one Unicode character"));
+                }
                 let needed = width.saturating_sub(text.chars().count());
                 let padding: String = std::iter::repeat_n(fill_char, needed).collect();
-                Value::Scalar(if name == "padLeft" { format!("{padding}{text}") } else { format!("{text}{padding}") })
+                Value::Scalar(if name == "padLeft" {
+                    format!("{padding}{text}")
+                } else {
+                    format!("{text}{padding}")
+                })
             }
             "formatDate" => {
                 expect_arg_count(name, &args, 2)?;
@@ -4679,7 +4702,10 @@ fn split_dict_entry(input: &str) -> Result<(&str, &str), String> {
 
 fn parse_positive_integer_arg(text: &str, error: &str) -> Result<usize, String> {
     let value = parse_integer_arg(text, error)?;
-    usize::try_from(value).ok().filter(|value| *value > 0).ok_or_else(|| error.to_string())
+    usize::try_from(value)
+        .ok()
+        .filter(|value| *value > 0)
+        .ok_or_else(|| error.to_string())
 }
 
 fn parse_nonnegative_integer_arg(text: &str, error: &str) -> Result<usize, String> {
@@ -5379,13 +5405,33 @@ fn current_utc_timestamp() -> String {
 
 fn parse_utc_timestamp(text: &str) -> Result<(i32, u32, u32, u32, u32, u32), String> {
     let bytes = text.as_bytes();
-    if bytes.len() != 20 || [4, 7, 10, 13, 16, 19].iter().any(|&i| !matches!(bytes.get(i), Some(b'-' | b'T' | b':' | b'Z'))) {
+    if bytes.len() != 20
+        || [4, 7, 10, 13, 16, 19]
+            .iter()
+            .any(|&i| !matches!(bytes.get(i), Some(b'-' | b'T' | b':' | b'Z')))
+    {
         return Err("formatDate requires UTC ISO timestamp YYYY-MM-DDTHH:mm:ssZ".to_string());
     }
-    let number = |a, b| text[a..b].parse::<u32>().map_err(|_| "formatDate timestamp contains invalid digits".to_string());
-    let y = text[0..4].parse::<i32>().map_err(|_| "formatDate timestamp contains invalid year".to_string())?;
-    let m = number(5, 7)?; let d = number(8, 10)?; let h = number(11, 13)?; let min = number(14, 16)?; let s = number(17, 19)?;
-    if !(1..=12).contains(&m) || !(1..=31).contains(&d) || h > 23 || min > 59 || s > 59 || civil_from_days(days_from_civil(y, m, d)) != (y, m, d) {
+    let number = |a, b| {
+        text[a..b]
+            .parse::<u32>()
+            .map_err(|_| "formatDate timestamp contains invalid digits".to_string())
+    };
+    let y = text[0..4]
+        .parse::<i32>()
+        .map_err(|_| "formatDate timestamp contains invalid year".to_string())?;
+    let m = number(5, 7)?;
+    let d = number(8, 10)?;
+    let h = number(11, 13)?;
+    let min = number(14, 16)?;
+    let s = number(17, 19)?;
+    if !(1..=12).contains(&m)
+        || !(1..=31).contains(&d)
+        || h > 23
+        || min > 59
+        || s > 59
+        || civil_from_days(days_from_civil(y, m, d)) != (y, m, d)
+    {
         return Err("formatDate timestamp contains an invalid UTC date or time".to_string());
     }
     Ok((y, m, d, h, min, s))
@@ -5393,18 +5439,40 @@ fn parse_utc_timestamp(text: &str) -> Result<(i32, u32, u32, u32, u32, u32), Str
 
 fn format_date_helper(timestamp: &str, pattern: &str) -> Result<String, String> {
     let (y, m, d, h, min, s) = parse_utc_timestamp(timestamp)?;
-    let values = [("YYYY", format!("{y:04}")), ("MM", format!("{m:02}")), ("DD", format!("{d:02}")), ("HH", format!("{h:02}")), ("mm", format!("{min:02}")), ("ss", format!("{s:02}"))];
-    let mut result = String::new(); let mut rest = pattern;
+    let values = [
+        ("YYYY", format!("{y:04}")),
+        ("MM", format!("{m:02}")),
+        ("DD", format!("{d:02}")),
+        ("HH", format!("{h:02}")),
+        ("mm", format!("{min:02}")),
+        ("ss", format!("{s:02}")),
+    ];
+    let mut result = String::new();
+    let mut rest = pattern;
     while !rest.is_empty() {
-        if let Some((token, value)) = values.iter().find(|(token, _)| rest.starts_with(token)) { result.push_str(value); rest = &rest[token.len()..]; }
-        else { let ch = rest.chars().next().unwrap(); if ch.is_ascii_alphabetic() { return Err(format!("formatDate unsupported pattern token near '{rest}'; use YYYY, MM, DD, HH, mm, or ss")); } result.push(ch); rest = &rest[ch.len_utf8()..]; }
+        if let Some((token, value)) = values.iter().find(|(token, _)| rest.starts_with(token)) {
+            result.push_str(value);
+            rest = &rest[token.len()..];
+        } else {
+            let ch = rest.chars().next().unwrap();
+            if ch.is_ascii_alphabetic() {
+                return Err(format!(
+                    "formatDate unsupported pattern token near '{rest}'; use YYYY, MM, DD, HH, mm, or ss"
+                ));
+            }
+            result.push(ch);
+            rest = &rest[ch.len_utf8()..];
+        }
     }
     Ok(result)
 }
 
 fn days_from_civil(y: i32, m: u32, d: u32) -> i64 {
-    let y = y as i64 - if m <= 2 { 1 } else { 0 }; let era = y.div_euclid(400); let yoe = y - era * 400;
-    let mp = m as i64 + if m > 2 { -3 } else { 9 }; let doy = (153 * mp + 2) / 5 + d as i64 - 1;
+    let y = y as i64 - if m <= 2 { 1 } else { 0 };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = m as i64 + if m > 2 { -3 } else { 9 };
+    let doy = (153 * mp + 2) / 5 + d as i64 - 1;
     era * 146097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719468
 }
 

@@ -4411,7 +4411,13 @@ fn text_and_date_helpers_reject_invalid_inputs_and_arities() {
     ] {
         let output = run_script(source);
         assert!(!output.status.success(), "source succeeded: {source}");
-        assert!(stderr(&output).to_lowercase().contains(&expected.to_lowercase()), "stderr: {}", stderr(&output));
+        assert!(
+            stderr(&output)
+                .to_lowercase()
+                .contains(&expected.to_lowercase()),
+            "stderr: {}",
+            stderr(&output)
+        );
     }
 }
 
