@@ -25,3 +25,4 @@ Feature: make Unix and Windows installers resolve the latest GitHub release tag 
 - Installer fix committed as `3fc91e61c09d14ddfb3f9a978aa82e38fee12f1d` (`fix(installer): resolve versioned release assets`).
 - Post-publish isolated smoke test initially failed before installation: `install.sh` could not parse the GitHub `tag_name` due to incorrectly escaped POSIX `sed` capture syntax.
 - Corrected the parser and repeated independent verification: focused/full tests and diff check passed; a temporary isolated install downloaded official `v3.4.0`, installed both executables, and ran `shelly update` successfully without changing a user profile.
+- Parser correction committed as `2ed8fa4377bfddb5c0ed4a71e1eff6472c9224bd` (`fix(installer): parse latest release tags`).
