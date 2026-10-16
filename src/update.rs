@@ -215,10 +215,24 @@ pub fn transactional_replace(
             ));
         }
     }
+    for (s, _) in items.iter().take(if include_lsp { 2 } else { 1 }) {
+        cleanup_staged(s);
+    }
     for (b, _) in backups {
         let _ = fs::remove_file(b);
     }
     Ok(())
+}
+
+/// Remove a staged replacement when possible. Cleanup is deliberately best-effort:
+/// replacement and backup removal have already made the update successful.
+pub fn cleanup_staged(path: &Path) {
+    if let Err(e) = fs::remove_file(path) {
+        eprintln!(
+            "could not remove staged replacement {}: {e}",
+            path.display()
+        );
+    }
 }
 fn safe_name(p: &Path) -> Result<String, String> {
     let mut it = p.components();

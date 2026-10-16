@@ -100,9 +100,46 @@ fn replacement_rolls_back_both_binaries() {
     fs::write(&a, b"old-a").unwrap();
     fs::write(&b, b"old-b").unwrap();
     fs::write(&sa, b"new-a").unwrap();
-    assert!(update::transactional_replace(&[(sa, a.clone()), (sb, b.clone())], true).is_err());
+    assert!(
+        update::transactional_replace(&[(sa.clone(), a.clone()), (sb.clone(), b.clone())], true)
+            .is_err()
+    );
     assert_eq!(fs::read(a).unwrap(), b"old-a");
     assert_eq!(fs::read(b).unwrap(), b"old-b");
+    assert!(sa.exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn successful_replacement_removes_staged_binaries() {
+    let root = temp_dir("success-cleanup");
+    let a = root.join("shelly");
+    let b = root.join("shelly-lsp");
+    let sa = root.join("new-shelly");
+    let sb = root.join("new-shelly-lsp");
+    fs::write(&a, b"old-a").unwrap();
+    fs::write(&b, b"old-b").unwrap();
+    fs::write(&sa, b"new-a").unwrap();
+    fs::write(&sb, b"new-b").unwrap();
+
+    update::transactional_replace(&[(sa.clone(), a.clone()), (sb.clone(), b.clone())], true)
+        .unwrap();
+    assert_eq!(fs::read(a).unwrap(), b"new-a");
+    assert_eq!(fs::read(b).unwrap(), b"new-b");
+    assert!(!sa.exists());
+    assert!(!sb.exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn staged_cleanup_failure_is_non_fatal_and_retains_temp_path() {
+    let root = temp_dir("cleanup-failure");
+    let staged = root.join("staged");
+    fs::create_dir(&staged).unwrap();
+
+    update::cleanup_staged(&staged);
+
+    assert!(staged.is_dir());
     let _ = fs::remove_dir_all(root);
 }
 
