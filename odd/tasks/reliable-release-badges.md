@@ -16,7 +16,7 @@ Feature: show release version and download counts in Shelly, Shelly VS Code, and
 - [x] Add owned badge data and update the VS Code README/workflow.
 - [x] Add owned badge data and update the Neovim README/workflow.
 - [x] Verify badge payloads, workflows, and README links.
-- [ ] Commit the three repository changes.
+- [x] Commit the three repository changes.
 
 ## Evidence
 
@@ -24,3 +24,4 @@ Feature: show release version and download counts in Shelly, Shelly VS Code, and
 - Initialized payloads from the Releases API: Shelly `v3.4.0` / 6, VS Code `v0.0.8` / 0, and Neovim `unreleased` / 0.
 - Replaced Shelly's token-pool-dependent GitHub badges and added matching badges to both editor README files.
 - JSON payload validation passed; independent verification confirmed workflow triggers/permissions/fallbacks, raw-main endpoint URLs, and `git diff --check` in all three repositories.
+- Committed the implementation as Shelly `bf34369`, VS Code `f4e2713`, and Neovim `9fbd7e5` (`feat(readme): add reliable release badges`).
