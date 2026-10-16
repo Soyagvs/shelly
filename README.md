@@ -314,7 +314,7 @@ For the quickest setup, follow the [editor support quickstart](docs/editor-suppo
 | Editor / resource | Integration |
 | :--- | :--- |
 | **VS Code** | [Shelly VS Code extension](https://github.com/Soyagvs/shelly-vscode) — diagnostics and editing support |
-| **Neovim** | [Syntax, icons, and Shelly LSP](editors/nvim) |
+| **Neovim** | [Shelly Neovim plugin](https://github.com/Soyagvs/shelly-nvim) |
 | **LSP** | [Shelly LSP v1](docs/lsp.md) — static workspace analysis, diagnostics, navigation, symbols, completion, hover, and safe rename |
 | **File icons** | [Icon setup guide](docs/file-icons.md) |
 | **Artwork** | [Shelly SVG](shelly.svg) |
@@ -323,7 +323,7 @@ For the quickest setup, follow the [editor support quickstart](docs/editor-suppo
 
 **Start with the [Language Guide](docs/language.md)**, then jump to the topic you need.
 
-For editor language features, see the [Shelly LSP guide](docs/lsp.md) and the [Neovim setup](editors/nvim).
+For editor language features, see the [Shelly LSP guide](docs/lsp.md) and the [Shelly Neovim plugin](https://github.com/Soyagvs/shelly-nvim).
 
 <details>
 <summary><strong>Language basics</strong></summary>

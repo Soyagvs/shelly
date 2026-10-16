@@ -12,7 +12,7 @@ shelly-lsp
 
 This is a stdio server. Do not pass a script path or pipe script output into it; the editor owns the LSP/JSON-RPC stream. The server never executes Shelly scripts. Editor positions use the LSP UTF-16 convention implicitly, so clients should send and consume normal LSP positions.
 
-For Neovim, see the [setup](../editors/nvim/README.md).
+For Neovim, install the [Shelly Neovim plugin](https://github.com/Soyagvs/shelly-nvim) using its README.
 
 ## Supported scope
 

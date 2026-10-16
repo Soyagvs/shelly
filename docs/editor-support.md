@@ -26,9 +26,9 @@ If nothing appears:
 
 ## Neovim
 
-1. Install the runtime files described in the [Neovim setup](../editors/nvim/README.md), or add that directory as a plugin.
-2. Install `shelly-lsp` and put it on your `PATH`.
-3. Open a file such as `main.shelly` in Neovim.
+1. Install [`shelly-nvim`](https://github.com/Soyagvs/shelly-nvim) by following its README.
+2. Install Shelly, including `shelly-lsp`, and put `shelly-lsp` on your `PATH`.
+3. Open a `.shelly` file in Neovim.
 
 The runtime plugin detects `.shelly` buffers and starts `shelly-lsp` automatically. No extra LSP configuration is required. You should see diagnostics for invalid Shelly syntax, and completion or hover when your Neovim setup displays them.
 
