@@ -62,7 +62,7 @@ Lists, dictionaries, nested values, JSON helpers, and modules.
 
 ## ⚡ Get started
 
-**Latest release featured in this README: `v3.3.1` · [Download release assets](https://github.com/Soyagvs/shelly/releases/latest)
+**Latest release featured in this README: `v3.4.0` · [Download release assets](https://github.com/Soyagvs/shelly/releases/latest)
 
 <details open>
 <summary><strong>Linux / macOS</strong></summary>
@@ -86,6 +86,10 @@ irm https://raw.githubusercontent.com/Soyagvs/shelly/main/install.ps1 | iex
 
 > [!TIP]
 > Prefer to inspect installation scripts first? Read [install.sh](install.sh) or [install.ps1](install.ps1), or download a binary from [Releases](https://github.com/Soyagvs/shelly/releases/latest).
+
+### Self-update
+
+Run `shelly update` manually to download and install the latest Shelly and colocated `shelly-lsp`. It is supported on Linux x86_64, macOS x86_64/aarch64, and Windows x86_64. The command contacts GitHub Releases, selects the strictly versioned target asset, and verifies its SHA-256 sidecar; it does not auto-update or replace OS trust. It needs permission to replace both installed binaries. On Windows a helper performs the deferred replacement after Shelly exits; restart Shelly when the handoff completes. Network, checksum, archive, and permission failures leave the installation unchanged.
 
 ### Release artifacts
 
@@ -300,6 +304,12 @@ args -> $all
 ```
 
 ## 🧩 Editor support
+
+### Editor help: see mistakes while you type
+
+Shelly's **corrector** is `shelly-lsp`, a small language server that reads your open `.shelly` file and reports likely mistakes without running the script. It can also provide completion, hover information, navigation, symbols, and safe rename. You need the `shelly-lsp` executable on your `PATH`; installing only Shelly is not enough.
+
+For the quickest setup, follow the [editor support quickstart](docs/editor-support.md). It covers [VS Code](https://github.com/Soyagvs/shelly-vscode) and Neovim in plain language. The [LSP guide](docs/lsp.md) is the technical reference. Mason setup is not documented as an available installation path yet: the registry package has not been published upstream.
 
 | Editor / resource | Integration |
 | :--- | :--- |

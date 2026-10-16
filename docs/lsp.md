@@ -4,7 +4,7 @@
 
 ## Setup
 
-Make `shelly-lsp` available on your `PATH`, then configure your editor to start exactly:
+For a plain-language setup, see the [editor support quickstart](editor-support.md). Make `shelly-lsp` available on your `PATH`, then configure your editor to start exactly:
 
 ```sh
 shelly-lsp
@@ -26,6 +26,6 @@ Shelly LSP v1 provides static, workspace-aware analysis for open workspace docum
 
 Module diagnostics use the workspace files as a baseline, but an open, unsaved buffer overrides the corresponding file. Diagnostics therefore reflect edits currently held by the editor. Static analysis does not run scripts or evaluate runtime behavior.
 
-Rename and navigation are deliberately conservative: dynamic or ambiguous targets may be refused rather than guessed. Rename can likewise return an error when safety cannot be established. Formatting is not supported in v1.
+Rename and navigation are deliberately conservative: dynamic or ambiguous targets may be refused rather than guessed. Rename can likewise return an error when safety cannot be established. Formatting is not supported in v1; the server is not a formatter.
 
 The server tracks `didOpen`, `didChange`, and `didClose` documents and supports the normal `initialize`/`shutdown` lifecycle. See the [Language Guide](language.md) for syntax and [Project structure](project-structure.md) for workspace organization.

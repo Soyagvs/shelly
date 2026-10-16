@@ -26,3 +26,17 @@ jobs:
 
       - name: Run sample script
         run: cargo run --quiet -- examples/conditionals.shelly
+
+  windows-update-handoff:
+    name: Windows updater hand-off
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify deferred update hand-off
+        run: cargo test --locked --test update windows_deferred_hand_off_replaces_binaries

@@ -13,6 +13,7 @@ mod comments;
 pub mod lsp;
 mod parser;
 mod shell;
+pub mod update;
 mod value;
 
 use comments::strip_comments;
@@ -47,10 +48,19 @@ pub fn cli_main() {
         return;
     }
     let mut args = env::args_os().skip(1);
+    if args.next().as_deref() == Some(std::ffi::OsStr::new("--shelly-update-helper")) {
+        if let Err(error) = update::helper(args) {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+    let mut args = env::args_os().skip(1);
     let result = match args.next() {
         Some(command) if command == "init" => init_project(args),
         Some(command) if command == "test" => run_tests(args),
         Some(command) if command == "run" => run_project(args),
+        Some(command) if command == "update" => update::run(args),
         Some(command) if command == "check" => {
             let mut format = CheckFormat::Text;
             let next = args.next();

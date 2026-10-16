@@ -1,5 +1,9 @@
 # Commands and input
 
+## `shelly update`
+
+`shelly update` is a manual-only command; it does not run automatically. It downloads the latest versioned GitHub Release asset for Linux x86_64, macOS x86_64/aarch64, or Windows x86_64, including both `shelly` and `shelly-lsp`, and verifies the archive's SHA-256 checksum sidecar. It requires permission to replace the installed binaries. GitHub network access and checksum validation cover the downloaded archive, not OS trust. On Windows replacement is handed to a helper after exit; restart Shelly after the handoff.
+
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
