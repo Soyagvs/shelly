@@ -865,6 +865,7 @@ struct Interpreter {
     script_args: Vec<String>,
     pending_process_error: Option<BTreeMap<String, Value>>,
     deadline: Option<Instant>,
+    defers: Vec<Vec<Vec<(usize, String)>>>,
 }
 
 #[derive(Clone)]
@@ -888,6 +889,23 @@ impl Interpreter {
     }
 
     fn run_lines(&mut self, lines: &[(usize, String)]) -> Result<(), String> {
+        self.defers.push(Vec::new());
+        let result = self.run_lines_inner(lines);
+        let defers = self.defers.pop().unwrap_or_default();
+        let mut cleanup_error = None;
+        for body in defers.into_iter().rev() {
+            if let Err(error) = self.run_lines(&body) {
+                cleanup_error = Some(error);
+                break;
+            }
+        }
+        match result {
+            Err(error) => Err(error),
+            Ok(()) => cleanup_error.map_or(Ok(()), Err),
+        }
+    }
+
+    fn run_lines_inner(&mut self, lines: &[(usize, String)]) -> Result<(), String> {
         let mut index = 0;
         while index < lines.len() {
             if self
@@ -971,6 +989,18 @@ impl Interpreter {
                     return Err(line_error(line_no, "timeout".to_string()));
                 }
                 result.map_err(|error| line_error(line_no, error))?;
+                index = next_index;
+                continue;
+            }
+            if line == "defer" || line.starts_with("defer ") {
+                if line != "defer" {
+                    return Err(format!("line {line_no}: defer takes no arguments"));
+                }
+                let (body, next_index) = collect_block(lines, index, "defer")?;
+                self.defers
+                    .last_mut()
+                    .expect("run_lines always establishes a scope")
+                    .push(body);
                 index = next_index;
                 continue;
             }
@@ -3616,6 +3646,7 @@ enum BlockKind {
     Try { saw_catch: bool },
     Log,
     Timeout,
+    Defer,
 }
 
 impl Checker {
@@ -3654,6 +3685,7 @@ impl Checker {
                 }
                 BlockKind::Log => "log",
                 BlockKind::Timeout => "timeout",
+                BlockKind::Defer => "defer",
             };
             if matches!(
                 kind,
@@ -3739,6 +3771,13 @@ impl Checker {
                 Some(BlockKind::Case { .. }) => return Err("duplicate else".to_string()),
                 _ => return Err("unexpected conditional marker".to_string()),
             }
+        }
+        if line == "defer" {
+            self.blocks.push(BlockKind::Defer);
+            return Ok(());
+        }
+        if line.starts_with("defer ") {
+            return Err("defer takes no arguments".to_string());
         }
         if let Some(rest) = line.strip_prefix("timeout ") {
             parse_timeout(rest.trim())?;
@@ -5625,6 +5664,7 @@ fn collect_case_block(
 
 fn starts_block(line: &str) -> bool {
     line.starts_with("case ")
+        || line == "defer"
         || line.starts_with("if ")
         || line.starts_with("while ")
         || line.starts_with("for ")

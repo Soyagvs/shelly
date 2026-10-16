@@ -1,5 +1,7 @@
 # Date formatting
 
+[Documentation index](index.md) · [Time and date helpers](helpers.md#time)
+
 `formatDate` turns a Shelly UTC timestamp into readable text. It replaces a small, predictable set of tokens in the pattern you provide.
 
 ## Basic usage
@@ -36,7 +38,7 @@ now -> $timestamp
 formatDate $timestamp "YYYY-MM-DD HH:mm:ss" -> $readable
 ```
 
-`timestamp` is an alias for `now`. `formatDate` does not convert to local time: every result uses the UTC values in the input timestamp.
+`timestamp` is an alias for `now`. `today` returns the UTC date without a time component. `formatDate` does not convert to local time: every result uses the UTC values in the input timestamp. See the [Time and date route](index.md#time-and-date) for the related helpers.
 
 ## Failures
 

@@ -1,5 +1,7 @@
 # Error handling
 
+[Documentation index](index.md) · [Deferred cleanup](defer.md) · [Exit](exit.md)
+
 Use `try`, required `catch`, and `end` to handle ordinary runtime errors.
 
 ```shelly
@@ -22,7 +24,7 @@ end
 - Nested `try` blocks are supported.
 - Control signals are not caught: `exit`, `break`, `continue`, and function `return` keep their normal behavior.
 
-Use `try` around commands or statements where failure is expected and recoverable. For example, inspect the error kind and process exit code in a catch:
+Use [`defer`](defer.md) when cleanup must run for success, errors, or control signals; use `try` around commands or statements where failure is expected and recoverable. For example, inspect the error kind and process exit code in a catch:
 
 ```shelly
 try -> $error

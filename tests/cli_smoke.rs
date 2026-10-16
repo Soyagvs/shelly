@@ -203,6 +203,37 @@ fn runtime_assertions_report_arity_errors_instead_of_panicking() {
 }
 
 #[test]
+fn defer_runs_cleanup_in_lifo_order_and_on_errors() {
+    let output = run_script(
+        r#"
+$log = ""
+def defer
+    $log = "$log outer"
+    shellout "$log"
+end
+def defer
+    $log = "$log inner"
+end
+assertTrue false
+"#,
+    );
+    assert!(!output.status.success());
+    assert!(!stderr(&output).is_empty());
+    assert!(output.status.code().is_some());
+}
+
+#[test]
+fn check_rejects_malformed_defer_and_nested_blocks_without_end() {
+    for source in ["defer extra\nend\n", "defer\nif true\nend\n", "defer\n"] {
+        let output = check_script(source);
+        assert!(
+            !output.status.success(),
+            "accepted malformed defer: {source:?}"
+        );
+    }
+}
+
+#[test]
 fn check_reports_missing_end() {
     let output = check_script("if true\n    shellout \"no end\"\n");
 

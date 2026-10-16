@@ -1,5 +1,7 @@
 # Standard helpers
 
+[Documentation index](index.md) · [Time and date](index.md#time-and-date)
+
 Shelly standard helpers transform values and store the result with `-> $variable`. Helpers do not access the filesystem unless noted elsewhere; path helpers only parse path strings.
 
 ## Rules
@@ -89,7 +91,7 @@ timestamp -> $timestamp
 today -> $date
 ```
 
-`now` and `timestamp` return a UTC timestamp like `2025-01-31T12:34:56Z`. `today` returns a UTC date like `2025-01-31`.
+`now` and `timestamp` return a UTC timestamp like `2025-01-31T12:34:56Z`. `today` returns a UTC date like `2025-01-31`. See the [Time and date route](index.md#time-and-date) for the complete reference.
 
 ## Commands
 

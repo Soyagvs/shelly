@@ -321,7 +321,9 @@ For the quickest setup, follow the [editor support quickstart](docs/editor-suppo
 
 ## 📚 Documentation
 
-**Start with the [Language Guide](docs/language.md)**, then jump to the topic you need.
+**Start with the [documentation index](docs/index.md)** for the canonical, book-like reading path. The [Language Guide](docs/language.md) is the quickest syntax overview; [Deferred cleanup](docs/defer.md) covers `defer`.
+
+For time and date, use the [Time and date route](docs/index.md#time-and-date): it connects `now`, `timestamp`, `today`, and [`formatDate`](docs/date-formatting.md) without duplicating their complete references.
 
 For editor language features, see the [Shelly LSP guide](docs/lsp.md) and the [Shelly Neovim plugin](https://github.com/Soyagvs/shelly-nvim).
 
@@ -335,14 +337,14 @@ For editor language features, see the [Shelly LSP guide](docs/lsp.md) and the [S
 <details>
 <summary><strong>Control flow and functions</strong></summary>
 
-[Conditionals](docs/conditionals.md) · [Predicates](docs/predicates.md) · [Repeat](docs/repeat.md) · [While](docs/while.md) · [For](docs/for.md) · [Functions](docs/functions.md) · [Error handling](docs/errors.md) · [Timeouts](docs/timeouts.md) · [Exit](docs/exit.md)
+[Conditionals](docs/conditionals.md) · [Predicates](docs/predicates.md) · [Repeat](docs/repeat.md) · [While](docs/while.md) · [For](docs/for.md) · [Functions](docs/functions.md) · [Error handling](docs/errors.md) · [Deferred cleanup](docs/defer.md) · [Timeouts](docs/timeouts.md) · [Exit](docs/exit.md)
 
 </details>
 
 <details>
 <summary><strong>Automation and tooling</strong></summary>
 
-[Commands and input](docs/commands.md) · [Files](docs/files.md) · [Logging](docs/logging.md) · [Choose menus](docs/choose.md) · [Standard helpers](docs/helpers.md) · [Date formatting](docs/date-formatting.md) · [Modules](docs/modules.md) · [Project structure](docs/project-structure.md) · [File icons](docs/file-icons.md)
+[Commands and input](docs/commands.md) · [Files](docs/files.md) · [Logging](docs/logging.md) · [Choose menus](docs/choose.md) · [Standard helpers](docs/helpers.md) · [Time and date](docs/index.md#time-and-date) · [Date formatting](docs/date-formatting.md) · [Modules](docs/modules.md) · [Project structure](docs/project-structure.md) · [File icons](docs/file-icons.md)
 
 </details>
 

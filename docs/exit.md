@@ -1,10 +1,12 @@
 # Exit
 
+[Documentation index](index.md) · [Error handling](errors.md) · [Deferred cleanup](defer.md)
+
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
 
-`exit` stops the whole Shelly process immediately.
+`exit` stops the whole Shelly process immediately. Any [`defer`](defer.md) blocks in active scopes run first; cleanup does not turn an explicit control signal into an ordinary error.
 
 ```shelly
 exit

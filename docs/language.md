@@ -1,5 +1,7 @@
 # Shelly language guide
 
+[Documentation index](index.md) · [Deferred cleanup](defer.md) · [Time and date](index.md#time-and-date)
+
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
@@ -37,6 +39,7 @@ text block
 - File commands (`create`, `copy`, `move`, `rename`, `remove`, `read`, `write`, `append`, `isFile`, `isDir`, `size`, `tempFile`, `tempDir`) and `files "pattern" -> $items` use script-relative paths where applicable.
 - `and`, `or`, `not`, and condition parentheses compose conditions; priority is `not`, then `and`, then `or`.
 - `case VALUE` / `when VALUE` / optional `else` dispatches exact value matches; see [conditionals.md](conditionals.md).
+- `defer ... end` registers cleanup for scope exit; see [deferred cleanup](defer.md).
 
 ## Reference
 
