@@ -14,7 +14,7 @@ Feature: make fresh Shelly installations place both `shelly` and `shelly-lsp` in
 - [x] Update Unix and Windows installers to install `shelly-lsp` atomically with Shelly.
 - [x] Add regression coverage for both installer scripts.
 - [x] Run focused and full verification.
-- [ ] Commit the installer fix.
+- [x] Commit the installer fix.
 
 ## Evidence
 
@@ -22,3 +22,4 @@ Feature: make fresh Shelly installations place both `shelly` and `shelly-lsp` in
 - Added `tests/installers.rs`; focused `cargo test --test installers` passed (1 test).
 - No meaningful RED observation was recorded because the pre-existing scripts did not have installer coverage.
 - Independent verification passed: `cargo test --test installers`, full `cargo test`, and `git diff --check`; both installers validate and install the LSP before reporting success.
+- Installer fix committed as `5e22fc3a2b26b8a181736023d07692cb5aa6757e` (`fix(installer): install shelly-lsp with Shelly`).
