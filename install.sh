@@ -76,7 +76,7 @@ esac
 if [ "$VERSION" = "latest" ]; then
   api_url="https://api.github.com/repos/$REPO/releases/latest"
   release_json="$(curl -fsSL "$api_url")" || fail "could not read the latest release tag from GitHub ($api_url)"
-  tag="$(printf '%s' "$release_json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\\([^"\\]*\\)".*/\\1/p' | head -n 1)"
+  tag="$(printf '%s' "$release_json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)"
   [ -n "$tag" ] || fail "GitHub latest release response did not contain a usable tag (check $api_url)"
   icon_ref="main"
 else

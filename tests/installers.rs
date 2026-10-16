@@ -14,6 +14,7 @@ fn installers_resolve_latest_tag_and_use_versioned_archives() {
     assert!(unix.contains("archive=\"shelly-macos-x86_64-$tag.tar.gz\""));
     assert!(unix.contains("archive=\"shelly-macos-arm64-$tag.tar.gz\""));
     assert!(unix.contains("curl") && unix.contains("releases/latest"));
+    assert!(unix.contains(r#"sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'"#));
 
     let windows = installer("install.ps1");
     assert!(windows.contains("releases/latest"));

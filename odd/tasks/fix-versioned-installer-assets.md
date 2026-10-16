@@ -15,6 +15,7 @@ Feature: make Unix and Windows installers resolve the latest GitHub release tag 
 - [x] Update Unix and Windows installers to resolve versioned assets.
 - [x] Run focused and full verification.
 - [x] Commit the installer fix.
+- [x] Fix the POSIX latest-release tag parser and repeat the isolated smoke test.
 
 ## Evidence
 
@@ -22,3 +23,5 @@ Feature: make Unix and Windows installers resolve the latest GitHub release tag 
 - GREEN observed: both installers resolve latest release tags through the GitHub Releases API, construct versioned archive names, and `cargo test --test installers` passed (2 tests).
 - Independent verification passed: focused installer tests, full `cargo test`, and `git diff --check`.
 - Installer fix committed as `3fc91e61c09d14ddfb3f9a978aa82e38fee12f1d` (`fix(installer): resolve versioned release assets`).
+- Post-publish isolated smoke test initially failed before installation: `install.sh` could not parse the GitHub `tag_name` due to incorrectly escaped POSIX `sed` capture syntax.
+- Corrected the parser and repeated independent verification: focused/full tests and diff check passed; a temporary isolated install downloaded official `v3.4.0`, installed both executables, and ran `shelly update` successfully without changing a user profile.
