@@ -7,9 +7,10 @@ Feature: publish the verified self-update feature and distribute the LSP editor 
 - [x] Inspect and add Windows runtime verification for updater hand-off.
 - [x] Remove staged updater binaries after successful transactional replacement while preserving them for rollback recovery.
 - [x] Make staged-binary cleanup best-effort so cleanup failure cannot report a successful replacement as failed.
-- [ ] Commit and push the Shelly update and documentation work to `main`.
-- [ ] Create and verify a Shelly release containing the updater.
-- [ ] Commit, push, package, and publish the Shelly VS Code LSP client.
+- [x] Commit and push the Shelly update and documentation work to `main`.
+- [x] Create and verify the `v3.4.0` Shelly release containing the updater.
+- [x] Commit, push, package, and verify the Shelly VS Code LSP client.
+- [ ] Publish the VS Code extension to Marketplace (blocked: invalid publisher PAT).
 
 ## Constraints
 
@@ -30,3 +31,6 @@ Feature: publish the verified self-update feature and distribute the LSP editor 
 - Remote Windows CI run 38904116685: `windows_deferred_hand_off_replaces_binaries` failed because staged files remained after paired replacement; successful replacement now removes staged sources, while rollback tests verify they remain after failure.
 - Local validation after the fix: `cargo fmt --all` and `cargo test --locked` passed; Unix archive extraction still applies executable permissions, while Windows no longer compiles the Unix-only code.
 - Cleanup-failure validation: staged cleanup now logs and retains an unremovable temporary path without failing the update; focused update tests cover this deterministically.
+- GitHub Actions run 38905111679 passed both the standard suite and the real Windows deferred hand-off test.
+- Release `v3.4.0` is public with Linux x86_64, macOS x86_64/arm64, and Windows x86_64 archives, each paired with a SHA-256 sidecar.
+- VS Code extension `0.0.6` was committed and pushed at `3bf7573` and `b64134e`; its VSIX contains the runtime LSP client and `vscode-languageclient` dependencies. Marketplace upload was rejected because the configured publisher token is unauthorized.
