@@ -62,7 +62,7 @@ Lists, dictionaries, nested values, JSON helpers, and modules.
 
 ## ⚡ Get started
 
-**Latest release featured in this README: `v3.4.0` · [Download release assets](https://github.com/Soyagvs/shelly/releases/latest)
+**Latest release featured in this README: `v3.4.1` · [Download release assets](https://github.com/Soyagvs/shelly/releases/latest)
 
 <details open>
 <summary><strong>Linux / macOS</strong></summary>
