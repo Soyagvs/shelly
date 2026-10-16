@@ -16,7 +16,7 @@ Feature: publish the Neovim runtime as the standalone public `Soyagvs/shelly-nvi
 - [x] Write repository-independent Neovim installation and troubleshooting documentation.
 - [x] Remove the embedded runtime and update Shelly documentation links and tests.
 - [x] Verify plugin structure and Shelly regression checks.
-- [ ] Commit, push, and publish the extracted plugin and the Shelly documentation update.
+- [x] Commit, push, and publish the extracted plugin and the Shelly documentation update.
 
 ## Evidence
 
@@ -27,3 +27,5 @@ Feature: publish the Neovim runtime as the standalone public `Soyagvs/shelly-nvi
 - Updated the active Shelly documentation links; removed the embedded runtime and root-repository test coupled to it. `git diff --check` passed before the removals.
 - Shelly verification passed: `cargo test` (238 tests), `git diff --check`, active-doc link checks, and no remaining live embedded-runtime paths.
 - Plugin verification passed: runtime layout and GPL license checks, documentation checks, `git diff --check`, and a headless Neovim filetype test. The expected warning appeared because `shelly-lsp` was unavailable to the verifier.
+- Published standalone plugin: <https://github.com/Soyagvs/shelly-nvim> at `3a5b5843b4299a222bb251ea9b8c2cceffb2ce42` (`feat: add Shelly Neovim runtime`).
+- Merged and pushed Shelly documentation extraction at `ec55fed151a0a71859f034ccb22e687fb045a640` (`docs(neovim): link standalone plugin`).
