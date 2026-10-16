@@ -10,6 +10,7 @@ Feature: publish the verified self-update feature and distribute the LSP editor 
 - [x] Commit and push the Shelly update and documentation work to `main`.
 - [x] Create and verify the `v3.4.0` Shelly release containing the updater.
 - [x] Commit, push, package, and verify the Shelly VS Code LSP client.
+- [x] Create the GitHub `v0.0.6` VSIX release.
 - [ ] Publish the VS Code extension to Marketplace (blocked: invalid publisher PAT).
 
 ## Constraints
@@ -33,4 +34,4 @@ Feature: publish the verified self-update feature and distribute the LSP editor 
 - Cleanup-failure validation: staged cleanup now logs and retains an unremovable temporary path without failing the update; focused update tests cover this deterministically.
 - GitHub Actions run 38905111679 passed both the standard suite and the real Windows deferred hand-off test.
 - Release `v3.4.0` is public with Linux x86_64, macOS x86_64/arm64, and Windows x86_64 archives, each paired with a SHA-256 sidecar.
-- VS Code extension `0.0.6` was committed and pushed at `3bf7573` and `b64134e`; its VSIX contains the runtime LSP client and `vscode-languageclient` dependencies. Marketplace upload was rejected because the configured publisher token is unauthorized.
+- VS Code extension `0.0.6` was committed and pushed at `3bf7573` and `b64134e`; its VSIX contains the runtime LSP client and `vscode-languageclient` dependencies. GitHub release [`v0.0.6`](https://github.com/Soyagvs/shelly-vscode/releases/tag/v0.0.6) attaches the verified VSIX. Marketplace upload was rejected because the configured publisher token is unauthorized.
