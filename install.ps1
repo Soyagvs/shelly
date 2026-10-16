@@ -80,12 +80,17 @@ try {
     Expand-Archive -Path $ZipPath -DestinationPath $TempDir -Force
 
     $ExePath = Join-Path $TempDir "shelly.exe"
+    $LspExePath = Join-Path $TempDir "shelly-lsp.exe"
     if (-not (Test-Path $ExePath)) {
-        Fail "Downloaded archive did not contain shelly.exe."
+        Fail "Downloaded archive did not contain shelly.exe; cannot install the CLI."
+    }
+    if (-not (Test-Path $LspExePath)) {
+        Fail "Downloaded archive did not contain shelly-lsp.exe; cannot install the language server."
     }
 
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     Copy-Item -Path $ExePath -Destination (Join-Path $InstallDir "shelly.exe") -Force
+    Copy-Item -Path $LspExePath -Destination (Join-Path $InstallDir "shelly-lsp.exe") -Force
 
     $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
     $PathParts = @()

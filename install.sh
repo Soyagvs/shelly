@@ -101,12 +101,14 @@ log "Downloading Shelly from $url"
 curl -fL "$url" -o "$tmpdir/$archive"
 
 tar -xzf "$tmpdir/$archive" -C "$tmpdir"
-[ -f "$tmpdir/shelly" ] || fail "downloaded archive did not contain shelly"
-chmod +x "$tmpdir/shelly"
+[ -f "$tmpdir/shelly" ] || fail "downloaded archive did not contain shelly; cannot install the CLI"
+[ -f "$tmpdir/shelly-lsp" ] || fail "downloaded archive did not contain shelly-lsp; cannot install the language server"
+chmod +x "$tmpdir/shelly" "$tmpdir/shelly-lsp"
 
 mkdir -p "$INSTALL_DIR"
 cp "$tmpdir/shelly" "$INSTALL_DIR/shelly"
-chmod +x "$INSTALL_DIR/shelly"
+cp "$tmpdir/shelly-lsp" "$INSTALL_DIR/shelly-lsp"
+chmod +x "$INSTALL_DIR/shelly" "$INSTALL_DIR/shelly-lsp"
 
 log "Shelly installed to $INSTALL_DIR/shelly"
 install_linux_file_icon
