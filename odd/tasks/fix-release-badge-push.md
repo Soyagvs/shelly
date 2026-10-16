@@ -11,10 +11,12 @@ Feature: make release-triggered badge workflows check out `main` before committi
 ## Tasks
 
 - [x] Fix checkout refs in Shelly, Shelly VS Code, and Shelly Neovim workflows.
-- [ ] Verify workflow structure and publish the three corrections.
-- [ ] Refresh the Neovim v0.1.0 badge payload.
+- [x] Verify workflow structure and publish the three corrections.
+- [x] Refresh the Neovim v0.1.0 badge payload.
 
 ## Evidence
 
 - Neovim release-badge run `38971947003` committed the generated data but failed on `git push` because checkout was detached at the release tag.
 - Shelly already specified `ref: main`; added that checkout ref to the VS Code and Neovim workflows.
+- Independent verification confirmed checkout happens on `main` before commit/push; published the correction to all three repositories.
+- Manual Neovim workflow run `38972562197` passed and committed `b6af8b4`, changing its release badge to `v0.1.0`.
