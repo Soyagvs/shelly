@@ -14,7 +14,8 @@ Feature: add substring extraction, left/right padding, and UTC ISO date formatti
 - [x] Map helper implementation and add failing behavior tests.
 - [x] Implement text/date helpers and documentation.
 - [x] Run focused and full verification.
-- [ ] Commit the helper feature.
+- [x] Commit the helper feature.
+- [ ] Publish Shelly `v3.4.1` so users receive the helpers.
 
 ## Evidence
 
@@ -22,3 +23,4 @@ Feature: add substring extraction, left/right padding, and UTC ISO date formatti
 - Mapped runtime dispatch, helper registry, check-time validation, existing UTC helpers, integration test conventions, and documentation surface before implementation.
 - GREEN observed: helper runtime, check-time validation, strict UTC ISO formatting, and documentation are implemented; focused tests pass 2/2 after correcting the test's expected newline.
 - Independent verification passed: focused tests (2/2), full test suite including 203 CLI smoke tests, and diff check.
+- Helper feature committed as `860785c7b57f9e9b7cbdced3e425905936f256d0` (`feat(helpers): add text and date formatting`).
