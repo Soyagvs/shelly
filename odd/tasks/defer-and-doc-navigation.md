@@ -13,7 +13,7 @@ Feature: add a portable `defer ... end` cleanup block and make Shelly's time/dat
 - [x] Implement checked and runtime `defer` semantics with focused CLI coverage.
 - [x] Restructure time/date documentation navigation and add deferred-cleanup reference documentation.
 - [x] Run focused and full verification.
-- [ ] Review, commit, and publish Shelly `v3.4.3`.
+- [x] Prepare Shelly `v3.4.3` release metadata; publication is still pending.
 
 ## Evidence
 
@@ -22,3 +22,4 @@ Feature: add a portable `defer ... end` cleanup block and make Shelly's time/dat
 - Focused defer tests observed RED before implementation; focused and full CLI smoke tests passed after implementation (205 tests).
 - Added `docs/index.md` as a categorized documentation table of contents, a standalone `docs/defer.md` reference, and bidirectional Time and date navigation across README and language references.
 - Final verification passed: `cargo fmt --check`, all 236 tests, `git diff --check`, and 117 local Markdown targets/anchors.
+- Shelly `v3.4.3` release metadata is prepared in `Cargo.toml`, `Cargo.lock`, and the README; the release has not been published.

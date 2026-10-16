@@ -523,7 +523,7 @@ dependencies = [
 
 [[package]]
 name = "shelly"
-version = "3.4.2"
+version = "3.4.3"
 dependencies = [
  "flate2",
  "serde",
