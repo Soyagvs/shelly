@@ -27,6 +27,16 @@ startsWith "hello" "he" -> $ok
 endsWith "hello" "lo" -> $ok
 ```
 
+## Text
+
+```shelly
+substring "héllo" 2 3 -> $part
+padLeft "42" 5 "0" -> $padded
+padRight "ok" 4 "·" -> $padded
+```
+
+`substring` uses one-based Unicode character positions and a positive length. `padLeft` and `padRight` accept exactly one Unicode fill character and only extend strings that are narrower than the requested width.
+
 ## Lists
 
 ```shelly
@@ -65,6 +75,12 @@ withoutExtension "dir/archive.tar.gz" -> $name
 ```
 
 ## Time
+
+```shelly
+formatDate "2025-01-31T12:34:56Z" "YYYY/MM/DD HH:mm:ss" -> $formatted
+```
+
+`formatDate` accepts strict UTC timestamps in `YYYY-MM-DDTHH:mm:ssZ` form. Patterns replace only `YYYY`, `MM`, `DD`, `HH`, `mm`, and `ss`; unsupported pattern letters produce an actionable error.
 
 ```shelly
 now -> $timestamp

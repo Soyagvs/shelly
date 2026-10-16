@@ -4373,6 +4373,49 @@ fn stdout(output: &std::process::Output) -> String {
 }
 
 #[test]
+fn text_and_date_helpers_honor_character_safe_padding_and_utc_contracts() {
+    let output = run_script(
+        r#"
+substring "héllo" 2 3 -> $slice
+padLeft "42" 5 "0" -> $left
+padRight "42" 5 "." -> $right
+padLeft "already-wide" 5 "0" -> $unchanged_left
+padRight "already-wide" 5 "0" -> $unchanged_right
+formatDate "2024-03-05T16:07:08Z" "YYYY-MM-DD HH:mm:ss" -> $date
+shellout "$slice/$left/$right/$unchanged_left/$unchanged_right/$date"
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "éll/00042/42.../already-wide/already-wide/2024-03-05 16:07:08\n"
+    );
+}
+
+#[test]
+fn text_and_date_helpers_reject_invalid_inputs_and_arities() {
+    for (source, expected) in [
+        ("substring \"text\" 0 1 -> $value\n", "substring"),
+        ("substring \"text\" 1 -> $value\n", "substring"),
+        ("padLeft \"x\" 3 \"ab\" -> $value\n", "padleft"),
+        ("padRight \"x\" 3 -> $value\n", "padright"),
+        (
+            "formatDate \"not-an-iso-date\" \"YYYY\" -> $value\n",
+            "formatdate",
+        ),
+        (
+            "formatDate \"2024-01-01T00:00:00Z\" \"QQ\" -> $value\n",
+            "formatdate",
+        ),
+    ] {
+        let output = run_script(source);
+        assert!(!output.status.success(), "source succeeded: {source}");
+        assert!(stderr(&output).to_lowercase().contains(&expected.to_lowercase()), "stderr: {}", stderr(&output));
+    }
+}
+
+#[test]
 fn standard_helper_commands_cover_text_lists_types_paths_time_and_random() {
     let output = run_script(
         r#"
