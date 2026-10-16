@@ -62,7 +62,7 @@ Lists, dictionaries, nested values, JSON helpers, and modules.
 
 ## ⚡ Get started
 
-**Latest release featured in this README: `v3.3.0`** · [Download release assets](https://github.com/Soyagvs/shelly/releases/latest)
+**Latest release featured in this README: `v3.3.1` · [Download release assets](https://github.com/Soyagvs/shelly/releases/latest)
 
 <details open>
 <summary><strong>Linux / macOS</strong></summary>
@@ -89,7 +89,7 @@ irm https://raw.githubusercontent.com/Soyagvs/shelly/main/install.ps1 | iex
 
 ### Release artifacts
 
-Each release publishes one versioned archive per target: `shelly-<target>-<version>.tar.gz` (or `.zip` on Windows). Linux x86_64, macOS x86_64, and macOS aarch64 archives contain both `shelly` and `shelly-lsp`; every archive has a matching `.sha256` checksum file. A Mason registry package definition is prepared locally at [`packaging/mason-registry/packages/shelly-lsp/package.yaml`](packaging/mason-registry/packages/shelly-lsp/package.yaml); it has not been published or submitted upstream.
+Each release publishes one versioned archive per target: `shelly-<target>-<version>.tar.gz` (or `.zip` on Windows). Linux x86_64, macOS x86_64, and macOS aarch64 archives contain both `shelly` and `shelly-lsp`; every archive has a matching `.sha256` checksum file. Release builds use GitHub's supported `macos-15-intel` runner for macOS x86_64 and `macos-latest` for macOS arm64. A Mason registry package definition is prepared locally at [`packaging/mason-registry/packages/shelly-lsp/package.yaml`](packaging/mason-registry/packages/shelly-lsp/package.yaml); it has not been published or submitted upstream.
 
 ### Start a project
 
