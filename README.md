@@ -62,7 +62,7 @@ Lists, dictionaries, nested values, JSON helpers, and modules.
 
 ## ⚡ Get started
 
-**Latest release featured in this README: `v3.2.0`** · [Download release assets](https://github.com/Soyagvs/shelly/releases/latest)
+**Latest release featured in this README: `v3.3.0`** · [Download release assets](https://github.com/Soyagvs/shelly/releases/latest)
 
 <details open>
 <summary><strong>Linux / macOS</strong></summary>
@@ -86,6 +86,105 @@ irm https://raw.githubusercontent.com/Soyagvs/shelly/main/install.ps1 | iex
 
 > [!TIP]
 > Prefer to inspect installation scripts first? Read [install.sh](install.sh) or [install.ps1](install.ps1), or download a binary from [Releases](https://github.com/Soyagvs/shelly/releases/latest).
+
+### Release artifacts
+
+Each release publishes one versioned archive per target: `shelly-<target>-<version>.tar.gz` (or `.zip` on Windows). Linux x86_64, macOS x86_64, and macOS aarch64 archives contain both `shelly` and `shelly-lsp`; every archive has a matching `.sha256` checksum file. A Mason registry package definition is prepared locally at [`packaging/mason-registry/packages/shelly-lsp/package.yaml`](packaging/mason-registry/packages/shelly-lsp/package.yaml); it has not been published or submitted upstream.
+
+### Start a project
+
+Create and enter a directory, initialize the scaffold, then run its entry point:
+
+```sh
+mkdir my-shelly-project
+cd my-shelly-project
+shelly init
+shelly main.shelly
+```
+
+`init` always uses the current directory and accepts no project-name argument. It checks every scaffold target before writing; if any target already exists, it fails without changing files.
+
+For a complete inventory of the generated files and directories, see [Project structure](docs/project-structure.md).
+
+### Project configuration
+
+`Shelly.toml` describes the project and its test discovery settings. The required `[project]` fields are `name`, `version`, and `entry`. `[test]` is optional; `directory` defaults to `tests` and `pattern` defaults to `*_test.shelly`.
+
+```toml
+[project]
+name = "my-shelly-project"
+version = "0.1.0"
+entry = "main.shelly"
+
+[test]
+directory = "tests"
+pattern = "*_test.shelly"
+```
+
+Run the manifest entry point from the project directory with `shelly run`. Shelly reads `Shelly.toml` from the current directory and resolves `[project].entry` relative to it:
+
+```sh
+shelly run
+```
+
+Validate the manifest entry without running it with the no-argument project check. It reads `Shelly.toml`, resolves `[project].entry`, and checks that script without executing its commands:
+
+```sh
+shelly check
+```
+
+You can also validate an explicit script path, or request JSON diagnostics:
+
+```sh
+shelly check path/to/script.shelly
+shelly check --format json path/to/script.shelly
+```
+
+To forward arguments to the entry script, put `--` after `run`; every value after that separator is passed to the script:
+
+```sh
+shelly run -- --dry-run input.txt
+```
+
+The `--` separator is required before forwarded arguments. `shelly run --dry-run` is invalid because `--dry-run` is treated as an option to `shelly run`. The direct alternative remains available when you want to choose a script explicitly:
+
+```sh
+shelly main.shelly --dry-run input.txt
+```
+
+### Run tests
+
+After `shelly init`, add a file such as **`tests/name_test.shelly`**. Tests are ordinary Shelly scripts: use normal control flow and finish with `exit 0` for success or a non-zero exit for failure.
+
+```shelly
+if $name != "Shelly"
+    exit 1
+end
+exit 0
+```
+
+Run the test suite with:
+
+```sh
+shelly test
+```
+
+`shelly test` recursively discovers files named `*_test.shelly`, executes each in isolation, and prints a PASS/FAIL summary. It exits successfully only when every test passes; a failed test or test execution error makes the aggregate command fail.
+
+### Test assertions
+
+Use these assertion commands in `*_test.shelly` files:
+
+```shelly
+$value = "ready"
+$items = ["one", "two"]
+assertEqual $value "ready"
+assertTrue true
+assertFalse false
+assertContains $items "two"
+```
+
+Assertions stop the test immediately when one fails. They are intended for test checks, not normal or recoverable program flow; use `if` for conditions and `try`/`catch` for recoverable errors.
 
 Create **`hello.shelly`**:
 
@@ -136,8 +235,9 @@ case $answer
         shellout "stopping"
 end
 
-command "pwd" -> $cwd
-command "printf 'warning\n' >&2; exit 7" -> $out, $err, $code
+command pwd -> $cwd
+command printf "warning" -> $out, $err, $code
+shell "printf 'warning\\n' >&2; exit 7" -> $out, $err, $code
 shellout "Running from $cwd"
 shellout "last command code: $code stderr: $err"
 exit 0
@@ -204,13 +304,16 @@ args -> $all
 | Editor / resource | Integration |
 | :--- | :--- |
 | **VS Code** | [Shelly VS Code extension](https://github.com/Soyagvs/shelly-vscode) — diagnostics and editing support |
-| **Neovim** | [Syntax and icons](editors/nvim) |
+| **Neovim** | [Syntax, icons, and Shelly LSP](editors/nvim) |
+| **LSP** | [Shelly LSP v1](docs/lsp.md) — static workspace analysis, diagnostics, navigation, symbols, completion, hover, and safe rename |
 | **File icons** | [Icon setup guide](docs/file-icons.md) |
 | **Artwork** | [Shelly SVG](shelly.svg) |
 
 ## 📚 Documentation
 
 **Start with the [Language Guide](docs/language.md)**, then jump to the topic you need.
+
+For editor language features, see the [Shelly LSP guide](docs/lsp.md) and the [Neovim setup](editors/nvim).
 
 <details>
 <summary><strong>Language basics</strong></summary>
@@ -222,7 +325,7 @@ args -> $all
 <details>
 <summary><strong>Control flow and functions</strong></summary>
 
-[Conditionals](docs/conditionals.md) · [Predicates](docs/predicates.md) · [Repeat](docs/repeat.md) · [While](docs/while.md) · [For](docs/for.md) · [Functions](docs/functions.md) · [Error handling](docs/errors.md) · [Exit](docs/exit.md)
+[Conditionals](docs/conditionals.md) · [Predicates](docs/predicates.md) · [Repeat](docs/repeat.md) · [While](docs/while.md) · [For](docs/for.md) · [Functions](docs/functions.md) · [Error handling](docs/errors.md) · [Timeouts](docs/timeouts.md) · [Exit](docs/exit.md)
 
 </details>
 

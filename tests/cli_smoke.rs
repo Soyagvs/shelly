@@ -4,6 +4,112 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn init_in_current_directory_creates_the_approved_scaffold() {
+    let dir = test_dir();
+    let output = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .arg("init")
+        .current_dir(&dir)
+        .output()
+        .expect("run shelly init");
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    for file in ["Shelly.toml", "main.shelly", "README.md", ".gitignore"] {
+        assert!(dir.join(file).is_file(), "missing {file}");
+    }
+    for directory in [
+        "tests",
+        "consts",
+        "functions",
+        "utils",
+        "setup",
+        "scripts",
+        "modules",
+        "domains",
+    ] {
+        assert!(
+            dir.join(directory).join(".gitkeep").is_file(),
+            "missing {directory}/.gitkeep"
+        );
+    }
+    assert!(!dir.join("logs").exists());
+    assert!(
+        fs::read_to_string(dir.join(".gitignore"))
+            .expect("read .gitignore")
+            .contains("logs/")
+    );
+    assert!(!dir.join(dir.file_name().expect("directory name")).exists());
+}
+
+#[test]
+fn init_preflights_existing_targets_without_partial_scaffold() {
+    let dir = test_dir();
+    let readme = "keep this README";
+    fs::write(dir.join("README.md"), readme).expect("write README");
+    fs::create_dir(dir.join("tests")).expect("create tests");
+    fs::write(dir.join("tests/existing.shelly"), "keep this test").expect("write test");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .arg("init")
+        .current_dir(&dir)
+        .output()
+        .expect("run shelly init");
+
+    assert!(!output.status.success());
+    assert_eq!(fs::read_to_string(dir.join("README.md")).unwrap(), readme);
+    assert_eq!(
+        fs::read_to_string(dir.join("tests/existing.shelly")).unwrap(),
+        "keep this test"
+    );
+    for target in [
+        "Shelly.toml",
+        "main.shelly",
+        ".gitignore",
+        "consts",
+        "functions",
+        "utils",
+        "setup",
+        "scripts",
+        "modules",
+        "domains",
+        "logs",
+    ] {
+        assert!(
+            !dir.join(target).exists(),
+            "unexpected partial target: {target}"
+        );
+    }
+}
+
+#[test]
+fn init_second_run_fails_without_changing_generated_contents() {
+    let dir = test_dir();
+    let init = || {
+        Command::new(env!("CARGO_BIN_EXE_shelly"))
+            .arg("init")
+            .current_dir(&dir)
+            .output()
+            .expect("run shelly init")
+    };
+    let first = init();
+    assert!(first.status.success(), "stderr: {}", stderr(&first));
+    let targets = ["Shelly.toml", "main.shelly", "README.md", ".gitignore"];
+    let before: Vec<_> = targets
+        .iter()
+        .map(|name| fs::read(dir.join(name)).expect("read generated file"))
+        .collect();
+
+    let second = init();
+    assert!(!second.status.success());
+    for (name, contents) in targets.iter().zip(before) {
+        assert_eq!(
+            fs::read(dir.join(name)).unwrap(),
+            contents,
+            "changed {name}"
+        );
+    }
+}
+
+#[test]
 fn prints_placeholder_when_no_script_is_provided() {
     let output = Command::new(env!("CARGO_BIN_EXE_shelly"))
         .output()
@@ -59,7 +165,7 @@ shellout "$APP $app"
 fn check_does_not_execute_command_shellout_ask_or_shellin() {
     let output = check_script(
         r#"
-command "printf SHOULD_NOT_PRINT"
+command printf SHOULD_NOT_PRINT
 shellout "SHOULD_NOT_PRINT"
 ask "Question? " -> $answer
 shellin $input
@@ -68,6 +174,32 @@ shellin $input
 
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "");
+}
+
+#[test]
+fn runtime_assertions_report_arity_errors_instead_of_panicking() {
+    for source in [
+        "assertEqual \"only one\"\n",
+        "assertTrue\n",
+        "assertFalse true extra\n",
+        "assertContains \"only one\"\n",
+    ] {
+        let output = run_script(source);
+        assert!(
+            !output.status.success(),
+            "accepted malformed assertion: {source:?}"
+        );
+        assert!(
+            stderr(&output).contains("expects"),
+            "stderr: {}",
+            stderr(&output)
+        );
+        assert!(
+            !stderr(&output).contains("panicked"),
+            "stderr: {}",
+            stderr(&output)
+        );
+    }
 }
 
 #[test]
@@ -369,10 +501,180 @@ shellout $value
 }
 
 #[test]
+fn command_timeout_succeeds_and_times_out_with_timeout_error_kind() {
+    let success = run_script(r#"command printf hello timeout 1"#);
+    assert!(success.status.success(), "stderr: {}", stderr(&success));
+    assert_eq!(stdout(&success), "hello");
+
+    let failure = run_script(
+        r#"
+try -> $error
+    command sleep 1 timeout 0.01
+catch
+    shellout "kind=$error.kind"
+end
+"#,
+    );
+    assert!(failure.status.success(), "stderr: {}", stderr(&failure));
+    assert_eq!(stdout(&failure), "kind=timeout\n");
+}
+
+#[test]
+fn timeout_blocks_expire_and_inherit_into_functions_and_loops() {
+    let output = run_script(
+        r#"
+fn wait() {
+    command sleep 1
+}
+timeout 0.01
+    call wait
+end
+"#,
+    );
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("timeout"));
+
+    let loop_output = run_script(
+        r#"
+timeout 0.01
+    while true
+        command sleep 1
+    end
+end
+"#,
+    );
+    assert!(!loop_output.status.success());
+    assert!(stderr(&loop_output).contains("timeout"));
+}
+
+#[test]
+fn nested_timeout_cannot_extend_parent_deadline() {
+    let output = run_script(
+        r#"
+timeout 0.01
+    timeout 10
+        command sleep 1
+    end
+end
+"#,
+    );
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("timeout"));
+}
+
+#[test]
+fn timeout_checkers_accept_fractional_values_and_reject_invalid_values() {
+    for source in [
+        "command printf ok timeout 1.5\n",
+        "timeout 0.5\n    command printf ok\nend\n",
+    ] {
+        let output = check_script(source);
+        assert!(output.status.success(), "stderr: {}", stderr(&output));
+    }
+
+    for source in [
+        "command printf ok timeout 0\n",
+        "command printf ok timeout -1\n",
+        "command printf ok timeout nope\n",
+        "timeout 0\n    command printf ok\nend\n",
+        "timeout -1\n    command printf ok\nend\n",
+        "timeout nope\n    command printf ok\nend\n",
+    ] {
+        let output = check_script(source);
+        assert!(
+            !output.status.success(),
+            "accepted invalid timeout: {source:?}"
+        );
+    }
+}
+
+#[test]
+fn command_executes_program_and_arguments_directly() {
+    let output = run_script(r#"command printf hello"#);
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "hello");
+}
+
+#[test]
+fn command_preserves_interpolated_argument_as_one_literal_argument() {
+    let output = run_script(
+        r#"
+$value = "x; printf BAD"
+command printf $value
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "x; printf BAD");
+}
+
+#[test]
+fn command_rejects_quoted_legacy_syntax() {
+    let output = run_script(r#"command \"printf hello\""#);
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("line 1"));
+}
+
+#[test]
+fn shell_executes_intentional_shell_syntax() {
+    let output = run_script(r#"shell "printf x | tr x y""#);
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "y");
+}
+
+#[test]
+fn command_direct_capture_supports_one_destination() {
+    let output = run_script(
+        r#"
+command printf hello -> $out
+shellout "captured=$out"
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "captured=hello\n");
+}
+
+#[test]
+fn command_direct_capture_supports_three_destinations() {
+    let output = run_script(
+        r#"
+command printf hello -> $out, $err, $code
+shellout "out=<$out> err=<$err> code=$code"
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "out=<hello> err=<> code=0\n");
+}
+
+#[test]
+fn command_nonzero_error_exposes_program_and_argv_in_catch() {
+    let output = run_script(
+        r#"
+try -> $error
+    command sh -c "printf err >&2; exit 7"
+catch
+    shellout "kind=$error.kind program=$error.program args=$error.args code=$error.code"
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "kind=process program=sh args=[-c, printf err >&2; exit 7] code=7\n"
+    );
+}
+
+#[test]
 fn command_arrow_captures_stdout_without_printing_it_directly() {
     let output = run_script(
         r#"
-command "printf hello" -> $out
+command printf hello -> $out
 shellout "captured=$out"
 "#,
     );
@@ -385,7 +687,7 @@ shellout "captured=$out"
 fn command_arrow_trims_trailing_newlines() {
     let output = run_script(
         r#"
-command "printf 'hello\n\n'" -> $out
+command printf "hello\n\n" -> $out
 shellout "<$out>"
 "#,
     );
@@ -398,7 +700,7 @@ shellout "<$out>"
 fn command_arrow_capture_can_be_interpolated_with_shellout() {
     let output = run_script(
         r#"
-command "printf blue" -> $color
+command printf blue -> $color
 shellout "favorite=$color"
 "#,
     );
@@ -409,7 +711,7 @@ shellout "favorite=$color"
 
 #[test]
 fn command_streams_system_command_output() {
-    let output = run_script(r#"command "printf hello""#);
+    let output = run_script(r#"command printf hello"#);
 
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "hello");
@@ -419,7 +721,7 @@ fn command_streams_system_command_output() {
 fn command_arrow_triple_captures_stdout_stderr_and_zero_code() {
     let output = run_script(
         r#"
-command "printf 'out\n'; printf 'err\n' >&2" -> $out, $err, $code
+shell "printf 'out\n'; printf 'err\n' >&2" -> $out, $err, $code
 shellout "out=<$out> err=<$err> code=$code"
 "#,
     );
@@ -432,7 +734,7 @@ shellout "out=<$out> err=<$err> code=$code"
 fn command_arrow_triple_captures_nonzero_status_without_failing() {
     let output = run_script(
         r#"
-command "printf 'bad\n' >&2; exit 7" -> $out, $err, $code
+shell "printf 'bad\n' >&2; exit 7" -> $out, $err, $code
 shellout "continued code=$code err=<$err> out=<$out>"
 "#,
     );
@@ -443,16 +745,16 @@ shellout "continued code=$code err=<$err> out=<$out>"
 
 #[test]
 fn command_arrow_one_destination_still_fails_on_nonzero_status() {
-    let output = run_script(r#"command "printf 'bad\n' >&2; exit 7" -> $out"#);
+    let output = run_script(r#"shell "printf 'bad\n' >&2; exit 7" -> $out"#);
 
     assert!(!output.status.success());
     assert!(stderr(&output).contains("line 1"));
-    assert!(stderr(&output).contains("command exited with status"));
+    assert!(stderr(&output).contains("shell exited with status"));
 }
 
 #[test]
 fn check_accepts_command_triple_capture() {
-    let output = check_script(r#"command "printf hello" -> $out, $err, $code"#);
+    let output = check_script(r#"command printf hello -> $out, $err, $code"#);
 
     assert!(output.status.success(), "stderr: {}", stderr(&output));
 }
@@ -460,8 +762,8 @@ fn check_accepts_command_triple_capture() {
 #[test]
 fn command_arrow_rejects_two_destinations() {
     for output in [
-        run_script(r#"command "printf hello" -> $out, $err"#),
-        check_script(r#"command "printf hello" -> $out, $err"#),
+        run_script(r#"command printf hello -> $out, $err"#),
+        check_script(r#"command printf hello -> $out, $err"#),
     ] {
         assert!(!output.status.success());
         assert!(stderr(&output).contains("line 1"));
@@ -471,7 +773,7 @@ fn command_arrow_rejects_two_destinations() {
 
 #[test]
 fn command_arrow_rejects_more_than_three_destinations() {
-    let output = check_script(r#"command "printf hello" -> $out, $err, $code, $extra"#);
+    let output = check_script(r#"command printf hello -> $out, $err, $code, $extra"#);
 
     assert!(!output.status.success());
     assert!(stderr(&output).contains("line 1"));
@@ -484,14 +786,14 @@ fn old_capture_syntax_is_rejected() {
 
     assert!(!output.status.success());
     assert!(stderr(&output).contains("line 1"));
-    assert!(stderr(&output).contains("command \"...\" -> $var"));
+    assert!(stderr(&output).contains("capture syntax was removed"));
 }
 
 #[test]
 fn command_arrow_rejects_constant_destination() {
     for output in [
-        run_script(r#"command "pwd" -> $CWD"#),
-        check_script(r#"command "pwd" -> $out, $ERR, $code"#),
+        run_script(r#"command pwd -> $CWD"#),
+        check_script(r#"command pwd -> $out, $ERR, $code"#),
     ] {
         assert!(!output.status.success());
         assert!(stderr(&output).contains("line 1"));
@@ -502,15 +804,14 @@ fn command_arrow_rejects_constant_destination() {
 #[test]
 fn command_arrow_rejects_malformed_destination() {
     for source in [
-        r#"command "printf hello" -> "#,
-        r#"command "printf hello" -> out"#,
-        r#"command "printf hello" -> $9out"#,
-        r#"command "printf hello" -> $out extra"#,
-        r#"command "printf hello" -> $out, err, $code"#,
-        r#"command "printf hello" -> $out, $err, $9code"#,
-        r#"command "printf hello" - $out"#,
+        r#"command printf hello -> "#,
+        r#"command printf hello -> out"#,
+        r#"command printf hello -> $9out"#,
+        r#"command printf hello -> $out extra"#,
+        r#"command printf hello -> $out, err, $code"#,
+        r#"command printf hello -> $out, $err, $9code"#,
     ] {
-        let output = run_script(source);
+        let output = check_script(source);
 
         assert!(!output.status.success(), "source succeeded: {source}");
         assert!(stderr(&output).contains("line 1"));
@@ -1310,6 +1611,116 @@ fn import_include_errors_cover_export_variables_missing_files_cycles_and_duplica
     let output = run_script_path(dir.join("main.shelly"));
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "once\n");
+}
+
+#[test]
+fn check_traverses_transitive_imports_and_includes_without_execution() {
+    let dir = test_dir();
+    fs::write(
+        dir.join("leaf.shelly"),
+        "shellout \"MUST_NOT_EXECUTE\"\nexport $VALUE = \"ok\"\n",
+    )
+    .expect("write leaf");
+    fs::write(dir.join("middle.shelly"), "include \"leaf.shelly\"\n").expect("write middle");
+    fs::write(
+        dir.join("main.shelly"),
+        "import \"middle.shelly\"\nshellout $VALUE\n",
+    )
+    .expect("write main");
+
+    let output = run_shelly_check(&dir, &["main.shelly"]);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "");
+}
+
+#[test]
+fn check_reports_missing_and_malformed_transitive_dependencies() {
+    let dir = test_dir();
+    fs::write(dir.join("main.shelly"), "import \"middle.shelly\"\n").expect("write main");
+    fs::write(dir.join("middle.shelly"), "include \"missing.shelly\"\n").expect("write middle");
+    let output = run_shelly_check(&dir, &["main.shelly"]);
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("missing.shelly"),
+        "stderr: {}",
+        stderr(&output)
+    );
+
+    fs::write(dir.join("middle.shelly"), "if true\n").expect("write malformed middle");
+    let output = run_shelly_check(&dir, &["main.shelly"]);
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("middle.shelly"),
+        "stderr: {}",
+        stderr(&output)
+    );
+    assert!(
+        stderr(&output).contains("missing end"),
+        "stderr: {}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn check_detects_direct_two_node_and_mixed_import_include_cycles() {
+    for (name, files) in [
+        (
+            "direct",
+            vec![("main.shelly", "import \\\"main.shelly\\\"\\n")],
+        ),
+        (
+            "two-node",
+            vec![
+                ("main.shelly", "import \\\"other.shelly\\\"\\n"),
+                ("other.shelly", "import \\\"main.shelly\\\"\\n"),
+            ],
+        ),
+        (
+            "mixed",
+            vec![
+                ("main.shelly", "import \\\"other.shelly\\\"\\n"),
+                ("other.shelly", "include \\\"main.shelly\\\"\\n"),
+            ],
+        ),
+    ] {
+        let dir = test_dir();
+        for (file, source) in files {
+            fs::write(dir.join(file), source).expect("write cycle file");
+        }
+        let output = run_shelly_check(&dir, &["main.shelly"]);
+        assert!(!output.status.success(), "accepted {name} cycle");
+        assert!(
+            stderr(&output).contains("cycle"),
+            "stderr: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
+fn check_json_reports_dependency_diagnostics_and_preserves_duplicate_imports() {
+    let dir = test_dir();
+    fs::write(dir.join("dep.shelly"), "if true\n").expect("write dep");
+    fs::write(
+        dir.join("main.shelly"),
+        "import \"dep.shelly\"\nimport \"dep.shelly\"\n",
+    )
+    .expect("write main");
+
+    let output = run_shelly_check(&dir, &["--format", "json", "main.shelly"]);
+    assert!(!output.status.success());
+    assert_eq!(stderr(&output), "");
+    let diagnostics = stdout(&output);
+    assert!(diagnostics.starts_with('['));
+    assert!(diagnostics.contains("dep.shelly"));
+    assert!(
+        diagnostics.matches("dep.shelly").count() >= 2,
+        "diagnostics: {diagnostics}"
+    );
+    assert!(
+        diagnostics.contains("missing end"),
+        "diagnostics: {diagnostics}"
+    );
 }
 
 #[test]
@@ -3004,13 +3415,13 @@ end
 }
 
 #[test]
-fn try_captures_error_message_and_nested_try_works() {
+fn try_captures_structured_runtime_error_and_nested_try_works() {
     let output = run_script(
         r#"
 try -> $error
     unknown-command
 catch
-    shellout "error=$error"
+    shellout "kind=$error.kind message=$error.message"
 end
 try
     try
@@ -3028,10 +3439,31 @@ end
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     let out = stdout(&output);
     assert!(
-        out.contains("error=line 3: unknown command or invalid syntax: unknown-command"),
+        out.contains(
+            "kind=runtime message=line 3: unknown command or invalid syntax: unknown-command"
+        ),
         "stdout: {out}"
     );
     assert!(out.contains("inner\nouter ok\n"), "stdout: {out}");
+}
+
+#[test]
+fn try_captures_failed_command_as_process_error_with_metadata() {
+    let output = run_script(
+        r#"
+try -> $error
+    command sh -c "printf out; printf err >&2; exit 7" -> $captured
+catch
+    shellout "kind=$error.kind program=$error.program args=$error.args code=$error.code stdout=$error.stdout stderr=$error.stderr message=$error.message"
+end
+"#,
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "kind=process program=sh args=[-c, printf out; printf err >&2; exit 7] code=7 stdout=out stderr=err message=command exited with status 7\n"
+    );
 }
 
 #[test]
@@ -3067,8 +3499,7 @@ fn try_does_not_catch_exit_break_continue_or_return() {
 
 #[test]
 fn check_validates_try_catch_structure() {
-    let valid =
-        check_script("try -> $error\n    command \"false\"\ncatch\n    shellout $error\nend\n");
+    let valid = check_script("try -> $error\n    command false\ncatch\n    shellout $error\nend\n");
     assert!(valid.status.success(), "stderr: {}", stderr(&valid));
 
     for (source, expected) in [
@@ -3102,7 +3533,7 @@ fn log_block_writes_structured_file_and_keeps_stdout() {
         r#"
 log "run"
     shellout "visible"
-    command "printf cmd-out"
+    command printf cmd-out
 end
 "#,
     )
@@ -3116,7 +3547,7 @@ end
     assert!(log.contains("--- run ---"), "log: {log}");
     assert!(log.contains("ENTER"), "log: {log}");
     assert!(log.contains("shellout: visible"), "log: {log}");
-    assert!(log.contains("command: printf cmd-out"), "log: {log}");
+    assert!(log.contains("command: printf [\"cmd-out\"]"), "log: {log}");
     assert!(log.contains("EXIT ok"), "log: {log}");
 }
 
@@ -3320,6 +3751,491 @@ fn check_script(source: &str) -> std::process::Output {
         .arg(script)
         .output()
         .expect("run shelly check")
+}
+
+#[test]
+fn test_requires_manifest() {
+    let dir = test_dir();
+    let output = run_shelly_test(&dir);
+
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("Shelly.toml"));
+}
+
+#[test]
+fn test_accepts_custom_test_directory_and_pattern() {
+    let dir = test_dir();
+    write_manifest_with(
+        &dir,
+        r#"
+[test]
+directory = "specs"
+pattern = "*_spec.shelly"
+"#,
+    );
+    write_test(&dir, "specs/kept_spec.shelly", "shellout \"kept\\n\"\n");
+    write_test(&dir, "specs/ignored.shelly", "exit 1\n");
+
+    let output = run_shelly_test(&dir);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stdout(&output).contains("PASS specs/kept_spec.shelly"));
+    assert!(!stdout(&output).contains("ignored.shelly"));
+}
+
+#[test]
+fn test_uses_default_test_configuration_when_test_section_is_omitted() {
+    let dir = test_dir();
+    write_manifest(&dir);
+    write_test(
+        &dir,
+        "tests/default_test.shelly",
+        "shellout \"default\\n\"\n",
+    );
+
+    let output = run_shelly_test(&dir);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stdout(&output).contains("PASS tests/default_test.shelly"));
+}
+
+#[test]
+fn test_fills_missing_test_configuration_fields_with_defaults() {
+    let dir = test_dir();
+    write_manifest_with(&dir, "\n[test]\ndirectory = \"custom-tests\"\n");
+    write_test(
+        &dir,
+        "custom-tests/partial_test.shelly",
+        "shellout \"partial\\n\"\n",
+    );
+
+    let output = run_shelly_test(&dir);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stdout(&output).contains("PASS custom-tests/partial_test.shelly"));
+}
+
+#[test]
+fn test_rejects_missing_or_invalid_required_project_fields() {
+    for (manifest, field) in [
+        (
+            "[project]\nversion = \"0.1.0\"\nentry = \"main.shelly\"\n",
+            "name",
+        ),
+        (
+            "[project]\nname = \"test\"\nentry = \"main.shelly\"\n",
+            "version",
+        ),
+        ("[project]\nname = \"test\"\nversion = \"0.1.0\"\n", "entry"),
+        (
+            "[project]\nname = \"\"\nversion = \"0.1.0\"\nentry = \"main.shelly\"\n",
+            "name",
+        ),
+        (
+            "[project]\nname = \"test\"\nversion = \"\"\nentry = \"main.shelly\"\n",
+            "version",
+        ),
+        (
+            "[project]\nname = \"test\"\nversion = \"0.1.0\"\nentry = \"\"\n",
+            "entry",
+        ),
+    ] {
+        let dir = test_dir();
+        fs::write(dir.join("Shelly.toml"), manifest).expect("write manifest");
+        fs::create_dir(dir.join("tests")).expect("create tests directory");
+        write_test(
+            &dir,
+            "tests/placeholder_test.shelly",
+            "shellout \"placeholder\\n\"\n",
+        );
+        let output = run_shelly_test(&dir);
+        assert!(!output.status.success(), "accepted invalid {field}");
+        assert!(
+            stderr(&output).contains(field),
+            "stderr: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
+fn test_fails_when_tests_directory_is_missing_or_empty() {
+    let dir = test_dir();
+    write_manifest(&dir);
+    let missing = run_shelly_test(&dir);
+    assert!(!missing.status.success());
+    assert!(stderr(&missing).contains("tests"));
+
+    fs::create_dir(dir.join("tests")).expect("create tests directory");
+    let empty = run_shelly_test(&dir);
+    assert!(!empty.status.success());
+    assert!(stderr(&empty).contains("tests"));
+}
+
+#[test]
+fn test_recursively_discovers_sorted_test_files_and_reports_relative_paths() {
+    let dir = test_dir();
+    write_manifest(&dir);
+    write_test(&dir, "tests/z_test.shelly", "shellout \"z\\n\"\n");
+    write_test(&dir, "tests/nested/a_test.shelly", "shellout \"a\\n\"\n");
+    write_test(&dir, "tests/ignored.shelly", "exit 1\n");
+
+    let output = run_shelly_test(&dir);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    let out = stdout(&output);
+    assert!(
+        out.find("PASS tests/nested/a_test.shelly").unwrap()
+            < out.find("PASS tests/z_test.shelly").unwrap()
+    );
+    assert!(!out.contains("ignored.shelly"));
+}
+
+#[test]
+fn test_reports_pass_fail_continues_and_aggregates_failure() {
+    let dir = test_dir();
+    write_manifest(&dir);
+    write_test(
+        &dir,
+        "tests/01_pass_test.shelly",
+        "shellout \"before\\n\"\n",
+    );
+    write_test(&dir, "tests/02_fail_test.shelly", "exit 3\n");
+    write_test(
+        &dir,
+        "tests/03_after_test.shelly",
+        "shellout \"after\\n\"\n",
+    );
+
+    let output = run_shelly_test(&dir);
+    assert!(!output.status.success());
+    let out = stdout(&output);
+    assert!(out.contains("PASS tests/01_pass_test.shelly"));
+    assert!(out.contains("FAIL tests/02_fail_test.shelly"));
+    assert!(out.contains("PASS tests/03_after_test.shelly"));
+    assert!(out.contains("passed") && out.contains("failed"));
+}
+
+#[test]
+fn test_succeeds_when_all_discovered_tests_pass() {
+    let dir = test_dir();
+    write_manifest(&dir);
+    write_test(&dir, "tests/one_test.shelly", "shellout \"one\\n\"\n");
+    write_test(&dir, "tests/two_test.shelly", "shellout \"two\\n\"\n");
+
+    let output = run_shelly_test(&dir);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stdout(&output).contains("passed"));
+}
+
+#[test]
+fn test_runs_each_file_in_an_isolated_shelly_process() {
+    let dir = test_dir();
+    write_manifest(&dir);
+    write_test(&dir, "tests/first_test.shelly", "$value = \"first\"\n");
+    write_test(&dir, "tests/second_test.shelly", "shellout $value\n");
+
+    let output = run_shelly_test(&dir);
+    assert!(!output.status.success());
+    assert!(stdout(&output).contains("PASS tests/first_test.shelly"));
+    assert!(stdout(&output).contains("FAIL tests/second_test.shelly"));
+}
+
+#[test]
+fn test_assertions_accept_successful_values_variables_and_collections() {
+    let dir = test_dir();
+    write_manifest(&dir);
+    write_test(
+        &dir,
+        "tests/assertions_test.shelly",
+        r#"
+$value = "ready"
+$items = ["one", "two"]
+assertEqual $value "ready"
+assertTrue true
+assertFalse false
+assertContains $items "two"
+"#,
+    );
+
+    let output = run_shelly_test(&dir);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stdout(&output).contains("PASS tests/assertions_test.shelly"));
+}
+
+#[test]
+fn test_assertions_report_expected_actual_and_stop_later_code() {
+    let dir = test_dir();
+    write_manifest(&dir);
+    write_test(
+        &dir,
+        "tests/assertions_test.shelly",
+        r#"
+assertEqual "actual" "expected"
+shellout "MUST_NOT_RUN"
+"#,
+    );
+
+    let output = run_shelly_test(&dir);
+    assert!(!output.status.success());
+    let combined = format!("{}{}", stdout(&output), stderr(&output));
+    assert!(combined.contains("expected"));
+    assert!(combined.contains("actual"));
+    assert!(!combined.contains("MUST_NOT_RUN"));
+}
+
+#[test]
+fn test_assert_false_reports_failure() {
+    let dir = test_dir();
+    write_manifest(&dir);
+    write_test(&dir, "tests/assertions_test.shelly", "assertFalse true\n");
+
+    let output = run_shelly_test(&dir);
+    assert!(!output.status.success());
+    let combined = format!("{}{}", stdout(&output), stderr(&output));
+    assert!(combined.contains("assertFalse") || combined.contains("false"));
+}
+
+#[test]
+fn test_assert_contains_reports_failure() {
+    let dir = test_dir();
+    write_manifest(&dir);
+    write_test(
+        &dir,
+        "tests/assertions_test.shelly",
+        "assertContains [\"one\"] \"missing\"\n",
+    );
+
+    let output = run_shelly_test(&dir);
+    assert!(!output.status.success());
+    let combined = format!("{}{}", stdout(&output), stderr(&output));
+    assert!(combined.contains("missing"));
+}
+
+#[test]
+fn check_rejects_assertions_with_wrong_argument_counts() {
+    for source in [
+        "assertEqual 1\n",
+        "assertTrue true extra\n",
+        "assertFalse\n",
+        "assertContains [1] \"x\" extra\n",
+    ] {
+        let output = check_script(source);
+        assert!(
+            !output.status.success(),
+            "accepted invalid assertion: {source:?}"
+        );
+    }
+}
+
+#[test]
+fn test_command_discovers_a_failing_assertion() {
+    let dir = test_dir();
+    write_manifest(&dir);
+    write_test(&dir, "tests/assertion_test.shelly", "assertFalse true\n");
+
+    let output = run_shelly_test(&dir);
+    assert!(!output.status.success());
+    assert!(stdout(&output).contains("FAIL tests/assertion_test.shelly"));
+}
+
+#[test]
+fn run_executes_manifest_entry_from_current_directory() {
+    let dir = test_dir();
+    write_manifest_with_entry(&dir, "main.shelly");
+    fs::write(dir.join("main.shelly"), "shellout \"from-entry\\n\"\n").unwrap();
+
+    let output = run_shelly_run(&dir, &[]);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "from-entry\n\n");
+}
+
+#[test]
+fn run_forwards_all_arguments_after_double_dash_unchanged() {
+    let dir = test_dir();
+    write_manifest_with_entry(&dir, "main.shelly");
+    fs::write(
+        dir.join("main.shelly"),
+        "args -> $all\nfor $item in $all\n    shellout $item\nend\n",
+    )
+    .unwrap();
+
+    let output = run_shelly_run(&dir, &["--", "--flag", "value with spaces", "-"]);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "--flag\nvalue with spaces\n-\n");
+}
+
+#[test]
+fn check_without_path_validates_configured_entry_without_executing_it() {
+    let dir = test_dir();
+    write_manifest_with_entry(&dir, "main.shelly");
+    fs::write(
+        dir.join("main.shelly"),
+        "shellout \"MUST_NOT_EXECUTE\"\nmissing_instruction\n",
+    )
+    .unwrap();
+
+    let output = run_shelly_check(&dir, &[]);
+    assert!(!output.status.success());
+    assert_eq!(stdout(&output), "");
+    assert!(stderr(&output).contains("line 2"));
+    assert!(stderr(&output).contains("missing_instruction"));
+}
+
+#[test]
+fn check_without_path_emits_configured_entry_diagnostics_as_json() {
+    let dir = test_dir();
+    write_manifest_with_entry(&dir, "main.shelly");
+    fs::write(dir.join("main.shelly"), "break\n").unwrap();
+
+    let output = run_shelly_check(&dir, &["--format", "json"]);
+    assert!(!output.status.success());
+    assert_eq!(stderr(&output), "");
+    let diagnostics = stdout(&output);
+    assert!(diagnostics.starts_with('['));
+    assert!(diagnostics.contains("\"file\""));
+    assert!(diagnostics.contains("\"line\":1"));
+    assert!(diagnostics.contains("break outside loop"));
+}
+
+#[test]
+fn check_without_path_rejects_missing_or_invalid_manifest_entry() {
+    let missing = test_dir();
+    let output = run_shelly_check(&missing, &[]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("Shelly.toml"));
+
+    let cases = [
+        ("[project]\nname = \"test\"\nversion = \"0.1.0\"\n", "entry"),
+        ("not valid toml", "manifest"),
+        (
+            "[project]\nname = \"test\"\nversion = \"0.1.0\"\nentry = \"missing.shelly\"\n",
+            "missing.shelly",
+        ),
+    ];
+
+    for (manifest, expected) in cases {
+        let dir = test_dir();
+        fs::write(dir.join("Shelly.toml"), manifest).unwrap();
+        let output = run_shelly_check(&dir, &[]);
+        assert!(!output.status.success(), "accepted manifest: {manifest:?}");
+        assert!(
+            stderr(&output).contains(expected),
+            "stderr: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
+fn check_explicit_path_remains_compatible_with_configured_projects() {
+    let dir = test_dir();
+    write_manifest_with_entry(&dir, "main.shelly");
+    fs::write(dir.join("main.shelly"), "break\n").unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["check", "main.shelly"])
+        .current_dir(&dir)
+        .output()
+        .expect("run shelly check");
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("break outside loop"));
+}
+
+#[test]
+fn run_requires_a_manifest() {
+    let dir = test_dir();
+    let output = run_shelly_run(&dir, &[]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("Shelly.toml"));
+}
+
+#[test]
+fn run_rejects_invalid_or_missing_manifest_entry() {
+    for entry in ["", "missing.shelly"] {
+        let dir = test_dir();
+        write_manifest_with_entry(&dir, entry);
+        if entry.is_empty() {
+            fs::write(
+                dir.join("Shelly.toml"),
+                "[project]\nname=\"test\"\nversion=\"0.1.0\"\n",
+            )
+            .unwrap();
+        }
+        let output = run_shelly_run(&dir, &[]);
+        assert!(!output.status.success(), "accepted entry {entry:?}");
+        assert!(
+            stderr(&output).contains("entry"),
+            "stderr: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
+fn run_rejects_manifest_entry_file_that_is_missing() {
+    let dir = test_dir();
+    write_manifest_with_entry(&dir, "main.shelly");
+    let output = run_shelly_run(&dir, &[]);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("main.shelly"));
+}
+
+#[test]
+fn direct_script_execution_remains_unchanged() {
+    let output = run_script("shellout \"direct\\n\"\n");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "direct\n\n");
+}
+
+fn run_shelly_check(dir: &std::path::Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .arg("check")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .expect("run shelly check")
+}
+
+fn run_shelly_run(dir: &std::path::Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .arg("run")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .expect("run shelly run")
+}
+
+fn write_manifest_with_entry(dir: &std::path::Path, entry: &str) {
+    fs::write(
+        dir.join("Shelly.toml"),
+        format!("[project]\nname = \"test\"\nversion = \"0.1.0\"\nentry = \"{entry}\"\n"),
+    )
+    .unwrap();
+}
+
+fn run_shelly_test(dir: &std::path::Path) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .arg("test")
+        .current_dir(dir)
+        .output()
+        .expect("run shelly test")
+}
+
+fn write_manifest(dir: &std::path::Path) {
+    write_manifest_with(dir, "");
+}
+
+fn write_manifest_with(dir: &std::path::Path, extra: &str) {
+    fs::write(
+        dir.join("Shelly.toml"),
+        format!(
+            "[project]\\nname = \\\"test\\\"\\nversion = \\\"0.1.0\\\"\\nentry = \\\"main.shelly\\\"\\n{extra}"
+        ),
+    )
+    .expect("write manifest");
+}
+
+fn write_test(dir: &std::path::Path, path: &str, source: &str) {
+    let path = dir.join(path);
+    fs::create_dir_all(path.parent().expect("test parent")).expect("create test parent");
+    fs::write(path, source).expect("write test");
 }
 
 fn write_script(source: &str) -> std::path::PathBuf {

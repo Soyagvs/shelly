@@ -9,7 +9,7 @@ Use a `log` block when you want a structured trace of a script section without h
 ```shelly
 log "deploy"
     shellout "starting"
-    command "printf running"
+    command printf running
 end
 ```
 
@@ -86,7 +86,7 @@ log "deploy"
     shellout "deploy start"
 
     log "deploy-tests"
-        command "npm test"
+        command npm test
     end
 
     shellout "deploy end"
@@ -100,7 +100,7 @@ The outer log records a nested `log: deploy-tests` marker. The nested block writ
 ```shelly
 log "build"
     shellout "running tests"
-    command "false"
+    command false
 end
 ```
 
@@ -111,7 +111,7 @@ To handle the error and keep logging the recovery path, combine `log` with `try`
 ```shelly
 try -> $error
     log "build"
-        command "false"
+        command false
     end
 catch
     log "build-error"

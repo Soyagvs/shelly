@@ -29,7 +29,7 @@ shellout "hello $name"
 $name = "Ada"
 $count = 1 + 2 * 3
 $names = ["Ana", "Luis"]
-command "pwd" -> $cwd
+command pwd -> $cwd
 ```
 
 `=` assigns a value directly. `->` binds the result of an operation into a variable.

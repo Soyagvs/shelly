@@ -10,7 +10,7 @@ Shelly has built-in commands for output, input, prompts, and system shell execut
 shellout "hello"
 ask "Name? " -> $name
 choose "Color?" ["red", "blue"] -> $color
-command "pwd" -> $cwd
+command pwd -> $cwd
 arg 1 -> $name
 hasArg "--dry-run" -> $dryrun
 args -> $all
@@ -22,13 +22,16 @@ args -> $all
 - `shellin` reads one stdin line into a variable.
 - `ask` prints a prompt, reads one line, and stores it with `->`.
 - `choose` prints a numbered menu, accepts a number or exact option text, and stores the selected value; see [choose.md](choose.md).
-- `command` runs a system command.
+- `command <program> <args...>` runs a program directly, without shell parsing. Bare words, quoted argument atoms, and variables each become argv arguments. Add `timeout SECONDS` to set a per-process deadline; see [Timeouts](timeouts.md).
+- `shell "..."` explicitly runs text through the system shell; use it for pipelines and redirections. Shell syntax is platform dependent.
 - `arg N -> $var`, `hasArg VALUE -> $var`, and `args -> $var` read arguments passed after the script path.
 - `log "identifier"` records structured action markers for a block without silencing normal output; see [logging.md](logging.md).
-- Failed system commands are ordinary errors and can be handled with `try` / `catch`.
-- `command "..."` streams output directly.
-- `command "..." -> $var` captures stdout into a variable and still fails on non-zero exit.
-- `command "..." -> $stdout, $stderr, $code` captures stdout, stderr, and the numeric exit code without failing on non-zero exit; when the operating system provides no code, Shelly stores `1`.
+- Failed system commands are ordinary structured errors and can be handled with `try` / `catch`; inspect the error dictionary's `kind`, `message`, and process fields there.
+- `command <program> <args...>` streams output directly.
+- `command <program> <args...> -> $var` captures stdout into a variable and still fails on non-zero exit.
+- `command <program> <args...> -> $stdout, $stderr, $code` captures stdout, stderr, and the numeric exit code without failing on non-zero exit; when the operating system provides no code, Shelly stores `1`.
+- Output captures may be one variable or three variables; `shell` uses the same capture forms.
+- The old `command "..."` syntax was removed; use `shell "..."` when you need shell text.
 - `exists "path" -> $var` and `contains $value "thing" -> $var` capture predicate results as booleans (`true` or `false`).
 - `create`, `copy`, `move`, `rename`, `remove`, `read`, `write`, `append`, `isFile`, `isDir`, `size`, `tempFile`, `tempDir`, and `files` cover common file automation; see [files.md](files.md).
 - `command` is the bridge to OS tools such as `mv`, `cp`, `git`, or `curl`.
@@ -105,7 +108,7 @@ See [helpers.md](helpers.md) for all helper commands.
 ```shelly
 log "build"
     shellout "starting build"
-    command "printf ok"
+    command printf ok
 end
 ```
 
@@ -114,15 +117,17 @@ end
 ## System commands
 
 ```shelly
-command "printf hello"
-command "pwd" -> $cwd
-command "printf 'oops\n' >&2; exit 7" -> $out, $err, $code
+command printf hello
+command pwd -> $cwd
+command printf "hello world" -> $out
+command printf "%s\\n" $cwd -> $out, $err, $code
+shell "printf 'oops\\n' >&2; exit 7" -> $out, $err, $code
 
 shellout "current directory: $cwd"
 shellout "command finished with code $code and stderr: $err"
 ```
 
-`command "..."` streams stdout/stderr and fails the script on a non-zero exit. `command "..." -> $stdout` captures stdout, trims trailing newlines, and also fails on a non-zero exit. Use `command "..." -> $stdout, $stderr, $code` when the script should inspect failure itself; stdout and stderr are captured with trailing newlines trimmed, and `$code` is the process exit code or `1` when no code is available.
+`command <program> <args...>` executes directly, so arguments are not interpreted as shell syntax. Quoted atoms remain one argument and variables are evaluated as arguments. Add `timeout SECONDS` after the arguments to bound that process; see [Timeouts](timeouts.md). It streams stdout/stderr and fails the script on a non-zero exit; catch that failure as a structured error with `kind`, `message`, and process fields (`program`, `args`, `code`, `stdout`, and `stderr`). A one-variable capture trims trailing newlines and also fails on a non-zero exit. Use three captures when the script should inspect failure itself; stdout and stderr are trimmed, and `$code` is the process exit code or `1` when no code is available. Use `shell "..."` for pipelines or redirections; it is shell/platform dependent.
 
 For portable file work, prefer Shelly path commands such as `write "file" $text`, `append "file" $text`, `read "file" -> $text`, `size "file" -> $bytes`, and `copy "from" "to"`; see [files.md](files.md). Use `command` when you need an OS-specific tool.
 

@@ -92,3 +92,9 @@ require("shelly-icons").setup_mini_icons()
 ```
 
 Adjust the `dir` path if the repository lives somewhere else.
+
+## Shelly LSP
+
+The repository also provides the Shelly LSP v1 server. Build or install the `shelly-lsp` executable and put it on `PATH`. The runtime plugin automatically attaches it to file-backed `.shelly` buffers; no Neovim configuration is required. If the executable is unavailable, Neovim emits one actionable warning.
+
+See the [Shelly LSP guide](../../docs/lsp.md) for the supported workspace/static scope. It provides diagnostics (including module diagnostics with unsaved-buffer overrides), completion, hover, definition, references, document/workspace symbols, and conservative rename. Dynamic or ambiguous navigation/rename may be refused; formatting is not supported. LSP positions use UTF-16 implicitly, and the server does not execute scripts.

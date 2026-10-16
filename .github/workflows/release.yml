@@ -19,16 +19,20 @@ jobs:
         include:
           - label: linux-x86_64
             os: ubuntu-latest
-            archive: shelly-linux-x86_64.tar.gz
+            target: linux-x86_64
+            archive: tar.gz
           - label: macos-x86_64
             os: macos-13
-            archive: shelly-macos-x86_64.tar.gz
+            target: macos-x86_64
+            archive: tar.gz
           - label: macos-arm64
             os: macos-latest
-            archive: shelly-macos-arm64.tar.gz
+            target: macos-arm64
+            archive: tar.gz
           - label: windows-x86_64
             os: windows-latest
-            archive: shelly-windows-x86_64.zip
+            target: windows-x86_64
+            archive: zip
 
     steps:
       - name: Checkout
@@ -40,16 +44,28 @@ jobs:
       - name: Build release binary
         run: cargo build --release --locked
 
-      - name: Package Unix binary
+      - name: Package Unix binaries
         if: runner.os != 'Windows'
-        run: tar -C target/release -czf "${{ matrix.archive }}" shelly
+        run: |
+          archive="shelly-${{ matrix.target }}-${GITHUB_REF_NAME}.${{ matrix.archive }}"
+          tar -C target/release -czf "$archive" shelly shelly-lsp
+          sha256sum "$archive" > "$archive.sha256"
 
-      - name: Package Windows binary
+      - name: Package Windows binaries
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path target/release/shelly.exe -DestinationPath "${{ matrix.archive }}"
+        run: |
+          $archive = "shelly-${{ matrix.target }}-$env:GITHUB_REF_NAME.${{ matrix.archive }}"
+          Compress-Archive -Path target/release/shelly.exe,target/release/shelly-lsp.exe -DestinationPath $archive
+          (Get-FileHash $archive -Algorithm SHA256).Hash.ToLower() + "  $archive" | Set-Content "$archive.sha256"
 
-      - name: Upload binary to GitHub Release
+      - name: Verify package contents
+        if: runner.os != 'Windows'
+        run: scripts/release-verify.sh "shelly-${{ matrix.target }}-${GITHUB_REF_NAME}.${{ matrix.archive }}" "$GITHUB_REF_NAME" "${{ matrix.target }}"
+
+      - name: Upload binaries and checksums to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.archive }}
+          files: |
+            shelly-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.archive }}
+            shelly-${{ matrix.target }}-${{ github.ref_name }}.${{ matrix.archive }}.sha256

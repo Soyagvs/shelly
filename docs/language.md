@@ -26,7 +26,8 @@ text block
 - Commas separate normal argument lists.
 - Blocks close with `end`.
 - List indexes start at `1`.
-- `command` runs system commands; `command "..." -> $out, $err, $code` captures stdout, stderr, and exit code when you need to handle failures yourself.
+- `command <program> <args...>` runs directly without shell parsing; use bare words, quoted argument atoms, or variables as argv arguments. `command ... -> $out` captures stdout, while three captures (`$out, $err, $code`) also capture stderr and exit code.
+- `shell "..."` is the explicit, shell/platform-dependent escape hatch for pipelines and redirections. The old `command "..."` syntax was removed.
 - `arg`, `hasArg`, and `args` read command-line arguments passed after the script path.
 - `"..."` is for one-line text; triple backticks are for multiline text.
 - `choose "Question" ["A", "B"] -> $choice` prints an interactive menu and stores the chosen value.
@@ -65,17 +66,25 @@ text block
 
 ## Check and run
 
-Validate syntax without executing the script:
+With no path, `shelly check` reads `Shelly.toml`, resolves `[project].entry`, and validates the manifest entry without running it or executing its commands. Checking also walks every reachable `import` and `include`, so missing dependencies, transitive-file errors, and import/include cycles are reported without executing any file:
+
+```sh
+shelly check
+```
+
+You can validate an explicit script path instead:
 
 ```sh
 shelly check path/to/script.shelly
 ```
 
-Editor integrations can request JSON diagnostics:
+Editor integrations can request JSON diagnostics for an explicit path:
 
 ```sh
 shelly check --format json path/to/script.shelly
 ```
+
+JSON output is always an array of diagnostic objects with `file`, `line`, `column`, `severity`, and `message` fields. A successful check prints `[]`; diagnostics produce a failing check status. This validates the existing module declarations only—`check` introduces no new Shelly syntax.
 
 Run a script:
 

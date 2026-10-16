@@ -1,0 +1,21 @@
+name: shelly-lsp
+description: Language server for the Shelly programming language
+homepage: https://github.com/Soyagvs/shelly
+licenses:
+  - GPL-3.0-or-later
+languages:
+  - Shelly
+categories:
+  - LSP
+source:
+  id: github
+  repo: Soyagvs/shelly
+  asset:
+    - target: linux_x64
+      file: shelly-linux-x86_64-${version}.tar.gz
+    - target: darwin_x64
+      file: shelly-macos-x86_64-${version}.tar.gz
+    - target: darwin_arm64
+      file: shelly-macos-arm64-${version}.tar.gz
+bin:
+  shelly-lsp: shelly-lsp

@@ -51,6 +51,18 @@ shellout $color
 
 Use `import` for reusable modules. Use `include` when you intentionally want the whole file to run.
 
+## Module graph checking
+
+`shelly check` validates the complete `import`/`include` graph reachable from the checked script without executing the script or any dependency. It parses and checks each reachable file, then reports:
+
+- missing or invalid dependencies, including paths that cannot be read;
+- diagnostics from transitive dependencies, not only direct imports/includes; and
+- import/include cycles, with the dependency chain that forms the cycle.
+
+Graph checking does not add or change Shelly syntax: existing `import` and `include` statements are the only dependency declarations.
+
+Use `--format json` for machine-readable diagnostics. The command prints a JSON array; each diagnostic is an object with `file`, `line`, `column`, `severity`, and `message` fields. An empty array means the graph passed, while any diagnostic still makes `check` fail.
+
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
