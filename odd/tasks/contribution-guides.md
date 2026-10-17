@@ -21,3 +21,4 @@ Feature: give contributors clear, accurate, and independently usable CONTRIBUTIN
 - Shelly guide was validated with formatting, full tests, sample execution, and targeted CLI/LSP/release packaging tests.
 - VS Code guide was validated with npm validation, build, and ten tests; Neovim guide was validated with a headless syntax load.
 - Independent cross-repository review confirmed all guide links/anchors and documented commands; diff checks passed in all repositories.
+- Published to all three `main` branches. Editor repositories rebased cleanly over concurrent remote badge updates before publication.
