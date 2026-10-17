@@ -1,8 +1,6 @@
 name: Update release badges
 
 on:
-  release:
-    types: [published]
   schedule:
     - cron: '15 0 * * *'
   workflow_dispatch:
@@ -22,22 +20,7 @@ jobs:
       - name: Update badge payloads
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          release_json=$(mktemp)
-          if gh api "repos/${GITHUB_REPOSITORY}/releases/latest" > "$release_json" 2>/dev/null; then
-            tag=$(jq -r '.tag_name' "$release_json")
-            downloads=$(jq '[.assets[]?.download_count] | add // 0' "$release_json")
-          else
-            tag=unreleased
-            downloads=0
-          fi
-
-          jq --arg message "$tag" '.message = $message' .github/badges/release.json > release.json.tmp
-          mv release.json.tmp .github/badges/release.json
-          jq --arg message "$downloads" '.message = $message' .github/badges/downloads.json > downloads.json.tmp
-          mv downloads.json.tmp .github/badges/downloads.json
+        run: scripts/update-release-badges.sh
       - name: Commit changed badge payloads
         run: |
           set -euo pipefail
