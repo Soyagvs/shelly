@@ -305,7 +305,7 @@ args -> $all
 
 ### Editor help: see mistakes while you type
 
-Shelly's **language server** is `shelly-lsp`, a small server that reads your open `.shelly` file and reports diagnostics without running the script. The verified shared capabilities are diagnostics, completion, hover, definition, references, document symbols, workspace symbols, and conservative rename. You need the `shelly-lsp` executable on your `PATH`; installing only Shelly is not enough.
+Shelly's **language server** is `shelly-lsp`, a small server that reads your open `.shelly` file and reports diagnostics without running the script. The verified shared capabilities are: diagnostics, completion, hover, definition, references, document symbols, workspace symbols, and conservative rename. You need the `shelly-lsp` executable on your `PATH`; installing only Shelly is not enough.
 
 For the quickest setup, follow the [editor support quickstart](docs/editor-support.md), which links directly to setup instructions for both [VS Code](https://github.com/Soyagvs/shelly-vscode) and [Neovim](https://github.com/Soyagvs/shelly-nvim). The [LSP guide](docs/lsp.md) is the technical reference. Mason setup is not documented as an available installation path yet: the registry package has not been published upstream.
 
