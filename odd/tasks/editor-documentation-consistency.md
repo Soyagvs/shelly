@@ -16,7 +16,7 @@ Align public documentation across Shelly, shelly-nvim, and shelly-vscode without
 - [x] Align Neovim integration documentation with verified LSP capabilities.
 - [x] Align VS Code integration documentation with verified LSP capabilities while retaining the v3.1 grammar claim.
 - [x] Verify links and release/version references.
-- [ ] Commit and push the documentation-only work on `main` (outside this documentation-only edit).
+- [x] Commit and push the documentation-only work on `main`.
 
 ## Evidence
 
@@ -24,3 +24,5 @@ Align public documentation across Shelly, shelly-nvim, and shelly-vscode without
 - Shared LSP capabilities are documented as diagnostics, completion, hover, definition, references, document/workspace symbols, and conservative rename.
 - The VS Code grammar remains described as Shelly v3.1; no v3.5 grammar claim was added.
 - README and editor-support quickstart link directly to both editor integrations.
+- Published commits: Shelly `637e9a7`, shelly-nvim `23ca9bb`, and shelly-vscode `3961fee`.
+- `git diff --check` passed in every repository; only generated `.codegraph/` remains untracked.
