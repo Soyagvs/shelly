@@ -26,3 +26,4 @@ Align public documentation across Shelly, shelly-nvim, and shelly-vscode without
 - README and editor-support quickstart link directly to both editor integrations.
 - Published commits: Shelly `637e9a7`, shelly-nvim `23ca9bb`, and shelly-vscode `3961fee`.
 - `git diff --check` passed in every repository; only generated `.codegraph/` remains untracked.
+- Follow-up normalization commits `3cd23b8` (Neovim) and `50c7519` (VS Code) make the shared capability sentence identical across the three public integration documents.
