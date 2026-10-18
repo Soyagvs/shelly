@@ -8,7 +8,7 @@ The Shelly corrector is the `shelly-lsp` program. Your editor sends it the open 
 
 You need `shelly-lsp` installed and available as `shelly-lsp` in your terminal. Release archives include it alongside `shelly`; installing the main `shelly` command alone is not enough.
 
-> **Easy setup:** use the steps below. [LSP reference](lsp.md) explains the protocol and the complete feature scope. Mason is not an installation option yet; the Shelly package has not been published to the upstream Mason registry.
+> **Easy setup:** use the steps below for [VS Code](https://github.com/Soyagvs/shelly-vscode) or [Neovim](https://github.com/Soyagvs/shelly-nvim). [LSP reference](lsp.md) explains the protocol and the complete feature scope. Mason is not an installation option yet; the Shelly package has not been published to the upstream Mason registry.
 
 ## VS Code
 
@@ -41,8 +41,8 @@ If nothing appears:
 
 ## What to expect—and what not to expect
 
-The corrector performs static, workspace-aware analysis. It supports diagnostics, completion, hover, definition and references, document/workspace symbols, and conservative rename. Unsaved edits are included in diagnostics. Dynamic or ambiguous targets may not be resolved, and rename may refuse unsafe changes. Formatting is not supported in LSP v1, so this setup does not add a formatter.
+The language server performs static, workspace-aware analysis. The verified shared capabilities are diagnostics, completion, hover, definition, references, document symbols, workspace symbols, and conservative rename. Unsaved edits are included in diagnostics. Dynamic or ambiguous targets may not be resolved, and rename may refuse unsafe changes. Formatting is not supported in LSP v1, so this setup does not add a formatter.
 
 The LSP accepts `files` patterns including recursive `**` syntax (for example, `files "**/*.shelly" -> $items`) without reporting a syntax diagnostic. The LSP does not expand globs or inspect the filesystem; expansion happens when Shelly runs the script. The same accepted syntax is transported by the VS Code and Neovim integrations.
 
-For the full technical scope, see [Shelly LSP](lsp.md).
+For the full technical scope, see [Shelly LSP](lsp.md). For integration details, see the [Shelly VS Code extension](https://github.com/Soyagvs/shelly-vscode) or [Shelly Neovim plugin](https://github.com/Soyagvs/shelly-nvim).

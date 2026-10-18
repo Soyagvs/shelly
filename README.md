@@ -62,8 +62,6 @@ Lists, dictionaries, nested values, JSON helpers, and modules.
 
 ## ⚡ Get started
 
-**Latest release metadata prepared in this README: `v3.5.0` · publication pending
-
 <details open>
 <summary><strong>Linux / macOS</strong></summary>
 
@@ -307,15 +305,15 @@ args -> $all
 
 ### Editor help: see mistakes while you type
 
-Shelly's **corrector** is `shelly-lsp`, a small language server that reads your open `.shelly` file and reports likely mistakes without running the script. It can also provide completion, hover information, navigation, symbols, and safe rename. You need the `shelly-lsp` executable on your `PATH`; installing only Shelly is not enough.
+Shelly's **language server** is `shelly-lsp`, a small server that reads your open `.shelly` file and reports diagnostics without running the script. The verified shared capabilities are diagnostics, completion, hover, definition, references, document symbols, workspace symbols, and conservative rename. You need the `shelly-lsp` executable on your `PATH`; installing only Shelly is not enough.
 
-For the quickest setup, follow the [editor support quickstart](docs/editor-support.md). It covers [VS Code](https://github.com/Soyagvs/shelly-vscode) and Neovim in plain language. The [LSP guide](docs/lsp.md) is the technical reference. Mason setup is not documented as an available installation path yet: the registry package has not been published upstream.
+For the quickest setup, follow the [editor support quickstart](docs/editor-support.md), which links directly to setup instructions for both [VS Code](https://github.com/Soyagvs/shelly-vscode) and [Neovim](https://github.com/Soyagvs/shelly-nvim). The [LSP guide](docs/lsp.md) is the technical reference. Mason setup is not documented as an available installation path yet: the registry package has not been published upstream.
 
 | Editor / resource | Integration |
 | :--- | :--- |
-| **VS Code** | [Shelly VS Code extension](https://github.com/Soyagvs/shelly-vscode) — diagnostics and editing support |
-| **Neovim** | [Shelly Neovim plugin](https://github.com/Soyagvs/shelly-nvim) |
-| **LSP** | [Shelly LSP v1](docs/lsp.md) — static workspace analysis, diagnostics, navigation, symbols, completion, hover, and safe rename |
+| **VS Code** | [Shelly VS Code extension](https://github.com/Soyagvs/shelly-vscode) — shared LSP capabilities |
+| **Neovim** | [Shelly Neovim plugin](https://github.com/Soyagvs/shelly-nvim) — shared LSP capabilities |
+| **LSP** | [Shelly LSP v1](docs/lsp.md) — diagnostics, completion, hover, definition, references, document/workspace symbols, and conservative rename |
 | **File icons** | [Icon setup guide](docs/file-icons.md) |
 | **Artwork** | [Shelly SVG](shelly.svg) |
 
@@ -325,7 +323,7 @@ For the quickest setup, follow the [editor support quickstart](docs/editor-suppo
 
 For time and date, use the [Time and date route](docs/index.md#time-and-date): it connects `now`, `timestamp`, `today`, and [`formatDate`](docs/date-formatting.md) without duplicating their complete references.
 
-For editor language features, see the [Shelly LSP guide](docs/lsp.md) and the [Shelly Neovim plugin](https://github.com/Soyagvs/shelly-nvim).
+For editor language features, see the [Shelly LSP guide](docs/lsp.md), [Shelly VS Code extension](https://github.com/Soyagvs/shelly-vscode), and [Shelly Neovim plugin](https://github.com/Soyagvs/shelly-nvim).
 
 <details>
 <summary><strong>Language basics</strong></summary>
