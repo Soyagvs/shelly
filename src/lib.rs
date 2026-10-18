@@ -1429,18 +1429,41 @@ impl Interpreter {
         if let Some(rest) = line.strip_prefix("include ") {
             return self.include_file(rest.trim(), line_no);
         }
+        if let Some(rest) = line.strip_prefix("set ") {
+            return self.mutate_collection_command(rest.trim(), CollectionMutation::Set);
+        }
+        if let Some(rest) = line.strip_prefix("delete ") {
+            return self.mutate_collection_command(rest.trim(), CollectionMutation::Delete);
+        }
         if let Some(rest) = line.strip_prefix("append ") {
             let rest = rest.trim();
-            if rest.trim_start().starts_with('"') || !rest.contains(',') {
-                if let Ok((path_text, _)) = split_path_expr_tail(rest, "append") {
-                    if matches!(self.eval_expr_value(path_text), Ok(Value::List(_))) {
-                        return self.push_list_item(rest, true);
-                    }
-                }
-                self.log_action(&format!("append: {}", rest));
-                return self.append_file_command(rest);
+            if rest.contains(',') {
+                return Err("append uses whitespace-separated arguments; comma-separated mutation syntax is unsupported".to_string());
             }
-            return self.push_list_item(rest, true);
+            if let Some((path_text, _)) = rest.split_once(char::is_whitespace) {
+                let is_collection_variable = parse_identifier(path_text)
+                    .map(|(kind, _, extra)| {
+                        if kind != IdentKind::Variable || !extra.trim().is_empty() {
+                            return false;
+                        }
+                        match self.eval_expr_value(path_text) {
+                            Err(_) => true,
+                            Ok(Value::Scalar(raw)) => !self.resolve_user_path(&raw).is_file(),
+                            Ok(_) => false,
+                        }
+                    })
+                    .unwrap_or(false);
+                if !path_text.starts_with('"')
+                    && (is_collection_variable
+                        || path_text.contains('.')
+                        || path_text.contains('[')
+                        || matches!(self.eval_expr_value(path_text), Ok(Value::List(_))))
+                {
+                    return self.mutate_collection_command(rest, CollectionMutation::Append);
+                }
+            }
+            self.log_action(&format!("append: {}", rest));
+            return self.append_file_command(rest);
         }
         if let Some(rest) = line.strip_prefix("prepend ") {
             return self.push_list_item(rest.trim(), false);
@@ -1591,6 +1614,9 @@ impl Interpreter {
         }
         if let Some(rest) = line.strip_prefix("exists ") {
             return self.capture_predicate(rest.trim(), |this, args| this.eval_exists(args));
+        }
+        if let Some(rest) = line.strip_prefix("matches ") {
+            return self.capture_predicate(rest.trim(), |this, args| this.eval_matches(args));
         }
         if let Some((name, rest)) = split_command_name(line) {
             if matches!(
@@ -2447,18 +2473,87 @@ impl Interpreter {
         Ok(())
     }
 
-    fn push_list_item(&mut self, rest: &str, append: bool) -> Result<(), String> {
-        let args = split_commas(rest)?;
-        let verb = if append { "append" } else { "prepend" };
-        if args.len() != 2 {
-            return Err(format!("{verb} requires exactly two arguments"));
+    fn mutate_collection_command(
+        &mut self,
+        text: &str,
+        mutation: CollectionMutation,
+    ) -> Result<(), String> {
+        if text.contains(',') {
+            return Err(format!(
+                "{} uses whitespace-separated arguments; comma-separated mutation syntax is unsupported",
+                mutation.name()
+            ));
         }
-        let (kind, name, extra) = parse_identifier(args[0])
+        let (path_text, value_text) = if mutation == CollectionMutation::Delete {
+            if text.split_whitespace().count() != 1 {
+                return Err("delete requires exactly one argument".to_string());
+            }
+            (text, None)
+        } else {
+            let (path, value) = text
+                .trim()
+                .split_once(char::is_whitespace)
+                .ok_or_else(|| format!("{} requires exactly two arguments", mutation.name()))?;
+            if value.trim().is_empty() {
+                return Err(format!(
+                    "{} requires exactly two arguments",
+                    mutation.name()
+                ));
+            }
+            (path, Some(value))
+        };
+        if mutation == CollectionMutation::Append
+            && parse_identifier(path_text.trim())
+                .map(|(kind, _, extra)| kind == IdentKind::Variable && extra.trim().is_empty())
+                .unwrap_or(false)
+        {
+            let (_, name, _) = parse_identifier(path_text.trim()).unwrap();
+            let value = self.eval_value_kind(value_text.unwrap().trim())?;
+            if matches!(value, Value::List(_)) {
+                return Err("nested lists are not supported yet".to_string());
+            }
+            let target = self
+                .vars
+                .get_mut(&name)
+                .ok_or_else(|| format!("undefined variable ${name}"))?;
+            return match target {
+                Value::List(values) => {
+                    values.push(value);
+                    Ok(())
+                }
+                _ => Err("mutation target must be a list".to_string()),
+            };
+        }
+        let (kind, name, segments) = parse_collection_path(path_text.trim())?;
+        if kind != IdentKind::Variable {
+            return Err("mutation target must be a variable collection".to_string());
+        }
+        let value = value_text
+            .map(|text| self.eval_value_kind(text.trim()))
+            .transpose()?;
+        let target = self
+            .vars
+            .get_mut(&name)
+            .ok_or_else(|| format!("undefined variable ${name}"))?;
+        apply_collection_mutation(target, &segments, mutation, value, &format!("${name}"))
+    }
+
+    fn push_list_item(&mut self, rest: &str, append: bool) -> Result<(), String> {
+        let verb = if append { "append" } else { "prepend" };
+        if rest.contains(',') {
+            return Err(format!(
+                "{verb} uses whitespace-separated arguments; comma-separated mutation syntax is unsupported"
+            ));
+        }
+        let (path_text, value_text) = rest
+            .split_once(char::is_whitespace)
+            .ok_or_else(|| format!("{verb} requires exactly two arguments"))?;
+        let (kind, name, extra) = parse_identifier(path_text)
             .map_err(|_| "mutation target must be a variable list".to_string())?;
         if kind != IdentKind::Variable || !extra.trim().is_empty() {
             return Err("mutation target must be a variable list".to_string());
         }
-        let value = match self.eval_value_kind(args[1])? {
+        let value = match self.eval_value_kind(value_text.trim())? {
             Value::Scalar(value) => Value::Scalar(value),
             Value::List(_) | Value::Dict(_) => {
                 return Err("nested lists are not supported yet".to_string());
@@ -2682,6 +2777,19 @@ impl Interpreter {
             _ => unreachable!(),
         };
         Err(message)
+    }
+
+    fn eval_matches(&self, args: &str) -> Result<bool, String> {
+        let (value_text, pattern) = split_matches_args(args)?;
+        let regex = regex::Regex::new(&pattern)
+            .map_err(|error| format!("invalid regex /{pattern}/: {error}"))?;
+        match self.eval_expr_value(value_text)? {
+            Value::Scalar(value) => Ok(regex.is_match(&value)),
+            Value::List(values) => Ok(values
+                .iter()
+                .any(|value| regex.is_match(&format_value(value)))),
+            Value::Dict(_) => Err("matches does not support dictionary values".to_string()),
+        }
     }
 
     fn eval_contains(&self, args: &str) -> Result<bool, String> {
@@ -3033,6 +3141,9 @@ impl Interpreter {
         if let Some(args) = condition.strip_prefix("contains ") {
             return self.eval_contains(args.trim());
         }
+        if let Some(args) = condition.strip_prefix("matches ") {
+            return self.eval_matches(args.trim());
+        }
         if condition == "contains" {
             return Err("contains requires a value and search value".to_string());
         }
@@ -3114,7 +3225,7 @@ impl Interpreter {
             return Ok(Value::Scalar(self.eval_string(text)?));
         }
         if text.starts_with('$') {
-            return Ok(Value::Scalar(self.eval_expr(text)?));
+            return self.eval_expr_value(text);
         }
         if text == "true" || text == "false" {
             return Ok(Value::Scalar(text.to_string()));
@@ -3565,6 +3676,145 @@ fn access_prefix_len(text: &str) -> Result<usize, String> {
         }
     }
     Ok(index)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CollectionMutation {
+    Set,
+    Append,
+    Delete,
+}
+impl CollectionMutation {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Set => "set",
+            Self::Append => "append",
+            Self::Delete => "delete",
+        }
+    }
+}
+
+#[derive(Clone)]
+enum CollectionSegment {
+    Key(String),
+    Index(String),
+}
+
+fn parse_collection_path(
+    text: &str,
+) -> Result<(IdentKind, String, Vec<CollectionSegment>), String> {
+    let (kind, name, mut rest) = parse_identifier(text)?;
+    let mut segments = Vec::new();
+    while !rest.trim().is_empty() {
+        rest = rest.trim_start();
+        if let Some(tail) = rest.strip_prefix('.') {
+            let end = tail
+                .find(|c: char| c == '.' || c == '[')
+                .unwrap_or(tail.len());
+            let key = &tail[..end];
+            if !is_simple_key(key) {
+                return Err("invalid collection path key".to_string());
+            }
+            segments.push(CollectionSegment::Key(key.to_string()));
+            rest = &tail[end..];
+        } else if rest.starts_with('[') {
+            let end = matching_bracket_end(rest)?;
+            let inner = rest[1..end].trim();
+            if inner.starts_with('"') {
+                segments.push(CollectionSegment::Key(parse_string_literal(inner)?));
+            } else {
+                segments.push(CollectionSegment::Index(inner.to_string()));
+            }
+            rest = &rest[end + 1..];
+        } else {
+            return Err("malformed collection path".to_string());
+        }
+    }
+    if segments.is_empty() {
+        return Err("collection path requires a nested segment".to_string());
+    }
+    Ok((kind, name, segments))
+}
+
+fn apply_collection_mutation(
+    target: &mut Value,
+    segments: &[CollectionSegment],
+    mutation: CollectionMutation,
+    value: Option<Value>,
+    base: &str,
+) -> Result<(), String> {
+    let (last, parents) = segments.split_last().unwrap();
+    let mut current = target;
+    for segment in parents {
+        current = match segment {
+            CollectionSegment::Key(key) => match current {
+                Value::Dict(map) => map
+                    .get_mut(key)
+                    .ok_or_else(|| format!("missing key '{key}' in {base}"))?,
+                _ => return Err(format!("cannot access key on non-dictionary value {base}")),
+            },
+            CollectionSegment::Index(raw) => match current {
+                Value::List(items) => {
+                    let i = strict_collection_index(raw, items.len(), base)?;
+                    &mut items[i]
+                }
+                _ => return Err(format!("cannot index non-list value {base}")),
+            },
+        };
+    }
+    match (last, mutation, current) {
+        (CollectionSegment::Key(key), CollectionMutation::Set, Value::Dict(map)) => {
+            map.insert(key.clone(), value.unwrap());
+            Ok(())
+        }
+        (CollectionSegment::Key(key), CollectionMutation::Append, Value::Dict(map)) => {
+            match map.get_mut(key) {
+                Some(Value::List(items)) => {
+                    items.push(value.unwrap());
+                    Ok(())
+                }
+                Some(_) => Err("append target must be a list".to_string()),
+                None => Err(format!("missing key '{key}' in {base}")),
+            }
+        }
+        (CollectionSegment::Key(key), CollectionMutation::Delete, Value::Dict(map)) => map
+            .remove(key)
+            .map(|_| ())
+            .ok_or_else(|| format!("missing key '{key}' in {base}")),
+        (CollectionSegment::Index(raw), CollectionMutation::Set, Value::List(items)) => {
+            let i = strict_collection_index(raw, items.len(), base)?;
+            items[i] = value.unwrap();
+            Ok(())
+        }
+        (CollectionSegment::Index(raw), CollectionMutation::Delete, Value::List(items)) => {
+            let i = strict_collection_index(raw, items.len(), base)?;
+            items.remove(i);
+            Ok(())
+        }
+        (CollectionSegment::Index(raw), CollectionMutation::Append, Value::List(items)) => {
+            let i = strict_collection_index(raw, items.len(), base)?;
+            match &mut items[i] {
+                Value::List(nested) => {
+                    nested.push(value.unwrap());
+                    Ok(())
+                }
+                _ => Err("append target must be a list".to_string()),
+            }
+        }
+        _ => Err("mutation target has the wrong collection type".to_string()),
+    }
+}
+
+fn strict_collection_index(raw: &str, len: usize, base: &str) -> Result<usize, String> {
+    let index = raw
+        .parse::<usize>()
+        .map_err(|_| "list index must be a positive integer".to_string())?;
+    if index == 0 || index > len {
+        return Err(format!(
+            "list index {index} out of range for {base} (length {len})"
+        ));
+    }
+    Ok(index - 1)
 }
 
 fn replace_nested_dict_value(
@@ -4443,6 +4693,8 @@ fn validate_condition_form(condition: &str) -> Result<(), String> {
     } else if let Some(args) = condition.strip_prefix("contains ") {
         split_predicate_two_args(args)
             .ok_or_else(|| "contains requires a value and search value".to_string())?;
+    } else if let Some(args) = condition.strip_prefix("matches ") {
+        split_matches_args(args).map(|_| ())?;
     } else if condition == "contains" {
         return Err("contains requires a value and search value".to_string());
     }
@@ -5016,9 +5268,6 @@ fn parse_files_capture(text: &str) -> Result<(&str, String), String> {
 }
 
 fn glob_files(base_dir: &std::path::Path, pattern: &str) -> Result<Vec<String>, String> {
-    if pattern.split('/').any(|segment| segment == "**") {
-        return Err("files does not support recursive ** patterns yet".to_string());
-    }
     let segments: Vec<&str> = pattern
         .split('/')
         .filter(|segment| !segment.is_empty())
@@ -5041,6 +5290,31 @@ fn collect_glob_matches(
     let Some((segment, rest)) = segments.split_first() else {
         return Ok(());
     };
+    if *segment == "**" {
+        // First consume zero directory segments, then recurse into real directories.
+        collect_glob_matches(dir, rest, prefix.clone(), matches)?;
+        let entries = match fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(_) => return Ok(()),
+        };
+        for entry in entries {
+            let entry =
+                entry.map_err(|error| format!("could not read directory entry: {error}"))?;
+            let file_type = entry
+                .file_type()
+                .map_err(|error| format!("could not inspect directory entry: {error}"))?;
+            if !file_type.is_dir() {
+                continue;
+            }
+            collect_glob_matches(
+                &entry.path(),
+                segments,
+                join_relative(&prefix, &entry.file_name().to_string_lossy()),
+                matches,
+            )?;
+        }
+        return Ok(());
+    }
     if segment.contains('*') {
         let entries = match fs::read_dir(dir) {
             Ok(entries) => entries,
@@ -5058,7 +5332,11 @@ fn collect_glob_matches(
                 if entry.path().is_file() {
                     matches.push(next_prefix);
                 }
-            } else if entry.path().is_dir() {
+            } else if entry
+                .file_type()
+                .map(|file_type| file_type.is_dir())
+                .unwrap_or(false)
+            {
                 collect_glob_matches(&entry.path(), rest, next_prefix, matches)?;
             }
         }
@@ -5071,7 +5349,12 @@ fn collect_glob_matches(
         if path.is_file() {
             matches.push(next_prefix);
         }
-    } else if path.is_dir() {
+    } else if path.is_dir()
+        && !path
+            .symlink_metadata()
+            .map(|metadata| metadata.file_type().is_symlink())
+            .unwrap_or(false)
+    {
         collect_glob_matches(&path, rest, next_prefix, matches)?;
     }
     Ok(())
@@ -5138,6 +5421,73 @@ fn split_capture_arrow(text: &str) -> Option<(&str, &str)> {
     None
 }
 
+fn split_matches_args(args: &str) -> Result<(&str, String), String> {
+    let args = args.trim();
+    let Some((value, literal)) = args.split_once(char::is_whitespace) else {
+        return Err("matches requires a value and /pattern/".to_string());
+    };
+    let literal = literal.trim();
+    if !literal.starts_with('/') {
+        return Err("matches requires a slash-delimited /pattern/".to_string());
+    }
+    let bytes = literal.as_bytes();
+    let mut escaped = false;
+    for i in 1..bytes.len() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if bytes[i] == b'\\' {
+            escaped = true;
+            continue;
+        }
+        if bytes[i] == b'/' {
+            if !literal[i + 1..].trim().is_empty() {
+                return Err("unexpected text after regex literal".to_string());
+            }
+            return Ok((value, literal[1..i].to_string()));
+        }
+    }
+    Err("unterminated regex literal; expected closing '/'".to_string())
+}
+
+fn mask_regex_literals(text: &str) -> String {
+    let mut out = text.as_bytes().to_vec();
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    let mut escaped = false;
+    while i < bytes.len() {
+        if bytes[i] == b'/' && !escaped {
+            let start = i;
+            i += 1;
+            let mut e = false;
+            while i < bytes.len() {
+                if !e && bytes[i] == b'/' {
+                    i += 1;
+                    break;
+                }
+                e = !e && bytes[i] == b'\\';
+                if e && i + 1 < bytes.len() {
+                    i += 1;
+                    e = false;
+                } else {
+                    i += 1;
+                }
+            }
+            for byte in &mut out[start..i] {
+                if *byte != b' ' {
+                    *byte = b' ';
+                }
+            }
+            escaped = false;
+            continue;
+        }
+        escaped = bytes[i] == b'\\' && !escaped;
+        i += 1;
+    }
+    String::from_utf8(out).expect("mask preserves UTF-8")
+}
+
 fn split_predicate_two_args(args: &str) -> Option<(&str, &str)> {
     let mut bracket_depth = 0usize;
     let mut in_string = false;
@@ -5171,6 +5521,8 @@ fn split_predicate_two_args(args: &str) -> Option<(&str, &str)> {
 }
 
 fn validate_condition_parentheses(condition: &str) -> Result<(), String> {
+    let scan = mask_regex_literals(condition);
+    let condition = scan.as_str();
     let mut paren_depth = 0usize;
     let mut bracket_depth = 0usize;
     let mut in_string = false;
@@ -5221,11 +5573,13 @@ fn strip_grouped_condition(condition: &str) -> Result<Option<&str>, String> {
     if !condition.starts_with('(') {
         return Ok(None);
     }
+    let scan = mask_regex_literals(condition);
+    let condition_scan = scan.as_str();
     let mut paren_depth = 0usize;
     let mut bracket_depth = 0usize;
     let mut in_string = false;
     let mut escaped = false;
-    for (index, ch) in condition.char_indices() {
+    for (index, ch) in condition_scan.char_indices() {
         if in_string {
             if escaped {
                 escaped = false;
@@ -5264,12 +5618,14 @@ fn strip_grouped_condition(condition: &str) -> Result<Option<&str>, String> {
 }
 
 fn split_condition_keyword<'a>(condition: &'a str, keyword: &str) -> Option<(&'a str, &'a str)> {
+    let scan = mask_regex_literals(condition);
+    let condition_scan = scan.as_str();
     let mut bracket_depth = 0usize;
     let mut paren_depth = 0usize;
     let mut in_string = false;
     let mut escaped = false;
 
-    for (index, ch) in condition.char_indices() {
+    for (index, ch) in condition_scan.char_indices() {
         if in_string {
             if escaped {
                 escaped = false;
@@ -5288,10 +5644,10 @@ fn split_condition_keyword<'a>(condition: &'a str, keyword: &str) -> Option<(&'a
             '(' if bracket_depth == 0 => paren_depth += 1,
             ')' if bracket_depth == 0 => paren_depth = paren_depth.saturating_sub(1),
             _ if bracket_depth == 0 && paren_depth == 0 => {
-                let tail = &condition[index..];
+                let tail = &condition_scan[index..];
                 if tail.starts_with(keyword) {
-                    let before = condition[..index].chars().next_back();
-                    let after = condition[index + keyword.len()..].chars().next();
+                    let before = condition_scan[..index].chars().next_back();
+                    let after = condition_scan[index + keyword.len()..].chars().next();
                     let before_ok = before.is_none_or(char::is_whitespace);
                     let after_ok = after.is_none_or(char::is_whitespace);
                     if before_ok && after_ok {
@@ -5310,12 +5666,14 @@ fn split_condition_keyword<'a>(condition: &'a str, keyword: &str) -> Option<(&'a
 }
 
 fn split_condition_operator(condition: &str) -> Option<(&str, &str, &str)> {
+    let scan = mask_regex_literals(condition);
+    let condition_scan = scan.as_str();
     let mut bracket_depth = 0usize;
     let mut paren_depth = 0usize;
     let mut in_string = false;
     let mut escaped = false;
 
-    for (index, ch) in condition.char_indices() {
+    for (index, ch) in condition_scan.char_indices() {
         if in_string {
             if escaped {
                 escaped = false;
@@ -5334,7 +5692,7 @@ fn split_condition_operator(condition: &str) -> Option<(&str, &str, &str)> {
             '(' if bracket_depth == 0 => paren_depth += 1,
             ')' if bracket_depth == 0 => paren_depth = paren_depth.saturating_sub(1),
             _ if bracket_depth == 0 && paren_depth == 0 => {
-                let tail = &condition[index..];
+                let tail = &condition_scan[index..];
                 for operator in ["==", "!=", ">=", "<=", ">", "<"] {
                     if tail.starts_with(operator) {
                         let right_start = index + operator.len();
@@ -5547,15 +5905,55 @@ fn validate_case_value(value: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn split_when_values(values: &str) -> Result<Vec<&str>, String> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let bytes = values.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'"' if index == 0 || bytes[index - 1] != b'\\' => in_string = !in_string,
+            b'[' | b'{' | b'(' if !in_string => depth += 1,
+            b']' | b'}' | b')' if !in_string => depth -= 1,
+            b',' if !in_string && depth == 0 => {
+                return Err(
+                    "comma-separated when alternatives are unsupported; use `or`".to_string(),
+                );
+            }
+            b'o' if !in_string
+                && depth == 0
+                && values[index..].starts_with("or")
+                && (index == 0 || bytes[index - 1].is_ascii_whitespace())
+                && (index + 2 == bytes.len() || bytes[index + 2].is_ascii_whitespace()) =>
+            {
+                if values[start..index].trim().is_empty() {
+                    return Err("when value required".to_string());
+                }
+                parts.push(values[start..index].trim());
+                start = index + 2;
+                index += 1;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    if in_string || depth != 0 {
+        return Err("when value required".to_string());
+    }
+    if values[start..].trim().is_empty() {
+        return Err("when value required".to_string());
+    }
+    parts.push(values[start..].trim());
+    Ok(parts)
+}
+
 fn validate_when_values(values: &str) -> Result<(), String> {
     if values.trim().is_empty() {
         return Err("when value required".to_string());
     }
-    let parts = split_commas(values).map_err(|_| "when value required".to_string())?;
-    if parts.is_empty() || parts.iter().any(|value| value.trim().is_empty()) {
-        return Err("when value required".to_string());
-    }
-    Ok(())
+    split_when_values(values).map(|_| ())
 }
 
 fn collect_block(
@@ -5629,9 +6027,9 @@ fn collect_case_block(
                 validate_when_values(values.trim())
                     .map_err(|error| format!("line {line_no}: {error}"))?;
                 branches.push((
-                    split_commas(values.trim())?
+                    split_when_values(values.trim())?
                         .into_iter()
-                        .map(|value| value.trim().to_string())
+                        .map(|value| value.to_string())
                         .collect(),
                     Vec::new(),
                 ));

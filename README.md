@@ -62,7 +62,7 @@ Lists, dictionaries, nested values, JSON helpers, and modules.
 
 ## ⚡ Get started
 
-**Latest release metadata prepared in this README: `v3.4.3` · publication pending
+**Latest release metadata prepared in this README: `v3.5.0` · publication pending
 
 <details open>
 <summary><strong>Linux / macOS</strong></summary>

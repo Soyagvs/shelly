@@ -4,6 +4,117 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn case_when_alternatives_use_or_and_reject_commas() {
+    let valid = run_script("case \"b\"\nwhen \"a\" or \"b\"\n    shellout \"matched\"\nend\n");
+    assert!(valid.status.success(), "stderr: {}", stderr(&valid));
+    assert_eq!(stdout(&valid), "matched\n");
+
+    for source in [
+        "case \"b\"\nwhen \"a\", \"b\"\nend\n",
+        "case \"b\"\nwhen \"a\", \"b\"\nend\n",
+    ] {
+        for output in [run_script(source), check_script(source)] {
+            assert!(!output.status.success(), "accepted comma case alternatives");
+            assert!(
+                stderr(&output).contains("or"),
+                "stderr: {}",
+                stderr(&output)
+            );
+        }
+    }
+}
+
+#[test]
+fn nested_collection_mutation_v1_supports_set_append_delete() {
+    let output = run_script(
+        r#"
+$items = [{"name": "a", "tags": ["x"]}, {"name": "b", "tags": ["y"]}]
+set $items[1].tags[1] "z"
+append $items[2].tags "q"
+set $items[1].extra {"ok": true}
+delete $items[1].tags[1]
+shellout $items
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output).trim(),
+        "[{extra: {ok: true}, name: a, tags: []}, {name: b, tags: [y, q]}]"
+    );
+}
+
+#[test]
+fn collection_mutation_rejects_comma_syntax() {
+    for source in [
+        "set $items[1] , \"x\"\n",
+        "append $items , \"x\"\n",
+        "delete $items[1], \"x\"\n",
+    ] {
+        let output = run_script(&format!("$items = [\"a\"]\n{source}"));
+        assert!(
+            !output.status.success(),
+            "accepted comma mutation: {source}"
+        );
+        assert!(
+            stderr(&output).contains("whitespace-separated"),
+            "stderr: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
+fn prepend_rejects_comma_syntax() {
+    let output = run_script("$items = [\"a\"]\nprepend $items, \"x\"\n");
+    assert!(!output.status.success(), "accepted comma prepend");
+    assert!(
+        stderr(&output).contains("whitespace-separated"),
+        "stderr: {}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn root_collection_mutation_uses_whitespace_arguments() {
+    let output = run_script("$items = []\nappend $items \"x\"\nshellout $items\n");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output).trim(), "[x]");
+}
+
+#[test]
+fn nested_collection_mutation_rejects_missing_or_invalid_paths() {
+    for source in [
+        "set $items[0], \"x\"\n",
+        "append $items.missing \"x\"\n",
+        "delete $items[1].missing\n",
+    ] {
+        let output = run_script(&format!("$items = [[\"a\"]]\n{source}"));
+        assert!(
+            !output.status.success(),
+            "accepted invalid mutation: {source}"
+        );
+    }
+}
+
+#[test]
+fn nested_collection_assignment_copies_values() {
+    let output = run_script(
+        r#"
+$source = {"nested": ["a"]}
+$copy = $source
+append $copy.nested "b"
+shellout $source
+shellout $copy
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output).lines().collect::<Vec<_>>(),
+        ["{nested: [a]}", "{nested: [a, b]}"]
+    );
+}
+
+#[test]
 fn init_in_current_directory_creates_the_approved_scaffold() {
     let dir = test_dir();
     let output = Command::new(env!("CARGO_BIN_EXE_shelly"))
@@ -1407,7 +1518,7 @@ case "none"
         shellout "bad"
 end
 case "b"
-    when "a", "b", "c"
+    when "a" or "b" or "c"
         shellout "multi"
 end
 case "same"
@@ -1464,7 +1575,7 @@ fn check_accepts_valid_case_syntax() {
     let output = check_script(
         r#"
 case "a"
-    when "a", "b"
+    when "a" or "b"
         shellout "ok"
     else
         shellout "fallback"
@@ -2249,6 +2360,31 @@ end
 }
 
 #[test]
+fn files_supports_recursive_glob_without_symlink_traversal() {
+    let dir = test_dir();
+    fs::create_dir_all(dir.join("src/test/unit")).expect("create nested dirs");
+    fs::write(dir.join("root.shelly"), "root").expect("write root");
+    fs::write(dir.join("src/test_one.shelly"), "one").expect("write one");
+    fs::write(dir.join("src/test/unit/test_two.shelly"), "two").expect("write two");
+    fs::write(dir.join("src/test/unit/nope.txt"), "nope").expect("write txt");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(dir.join("src/test"), dir.join("linked")).expect("symlink");
+    fs::write(
+        dir.join("script.shelly"),
+        "files \"**/*.shelly\" -> $items\nshellout $items\nfiles \"src/**/test_*.shelly\" -> $nested\nshellout $nested\n",
+    )
+    .expect("write script");
+
+    let output = run_script_path(dir.join("script.shelly"));
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "[root.shelly, script.shelly, src/test/unit/test_two.shelly, src/test_one.shelly]\n[src/test/unit/test_two.shelly, src/test_one.shelly]\n"
+    );
+}
+
+#[test]
 fn files_supports_subdirectory_segment_glob() {
     let dir = test_dir();
     fs::create_dir_all(dir.join("dir")).expect("create dir");
@@ -2269,7 +2405,7 @@ fn files_supports_subdirectory_segment_glob() {
 
 #[test]
 fn check_accepts_files_and_rejects_invalid_files_syntax() {
-    let valid = check_script("files \"*.txt\" -> $items\n");
+    let valid = check_script("files \"**/*.shelly\" -> $items\n");
     assert!(valid.status.success(), "stderr: {}", stderr(&valid));
 
     for (source, expected) in [
@@ -2533,7 +2669,7 @@ fn size_fails_for_directory_and_append_preserves_list_append() {
     let output = run_script(
         r#"
 $items = ["one"]
-append $items, "two"
+append $items "two"
 shellout $items
 "#,
     );
@@ -3025,15 +3161,15 @@ fn list_mutations_append_prepend_remove_replace_and_persist() {
     let output = run_script(
         r#"
 $names = ["Ana", "Luis"]
-append $names, "Mora"
-prepend $names, "Iris"
+append $names "Mora"
+prepend $names "Iris"
 $names[2] = "Ada"
 remove $names[last]
 remove $names[first]
 shellout $names[..]
 $empty = []
-append $empty, "tail"
-prepend $empty, "head"
+append $empty "tail"
+prepend $empty "head"
 shellout "$empty[1]|$empty[last]"
 $remove = ["first", "middle", "last"]
 remove $remove[first]
@@ -3065,11 +3201,11 @@ fn list_mutations_accept_scalar_values() {
 $value = "Zoe"
 $AGE = 37
 $items = []
-append $items, "Ana"
-append $items, 2 + 3
-append $items, true
-append $items, $value
-prepend $items, $AGE
+append $items "Ana"
+append $items 2 + 3
+append $items true
+append $items $value
+prepend $items $AGE
 $items[last] = false
 $items[2] = $value
 $items[first] = 1 + 1
@@ -3085,12 +3221,12 @@ shellout $items[..]
 fn list_mutation_errors_are_clear() {
     for (source, expected) in [
         (
-            "$NAMES = [\"Ana\"]\nappend $NAMES, \"Luis\"\n",
-            "mutation target must be a variable list",
+            "$NAMES = [\"Ana\"]\nappend $NAMES \"Luis\"\n",
+            "collection path requires a nested segment",
         ),
-        ("append $missing, \"Luis\"\n", "undefined variable $missing"),
+        ("append $missing \"Luis\"\n", "undefined variable $missing"),
         (
-            "$name = \"Ana\"\nappend $name, \"Luis\"\n",
+            "$name = \"Ana\"\nappend $name \"Luis\"\n",
             "mutation target must be a list",
         ),
         (
@@ -3120,11 +3256,7 @@ fn list_mutation_errors_are_clear() {
             "mutation index must select exactly one item",
         ),
         (
-            "$names = [\"Ana\"]\nappend $names \"Luis\"\n",
-            "append requires exactly two arguments",
-        ),
-        (
-            "$names = [\"Ana\"]\nappend $names, [\"nested\"]\n",
+            "$names = [\"Ana\"]\nappend $names [\"nested\"]\n",
             "nested lists are not supported yet",
         ),
     ] {
@@ -3745,6 +3877,48 @@ fn runtime_rejects_script_argument_index_expressions_that_are_not_positive_integ
             stderr(&output)
         );
     }
+}
+
+#[test]
+fn regex_literals_do_not_confuse_condition_scanning() {
+    let output = run_script(
+        r#"
+$name = "aandb(or)=x/y"
+if matches $name /and|or|\(|\)|==|\//
+    shellout "matched"
+else
+    shellout "missed"
+end
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "matched\n");
+}
+
+#[test]
+fn regex_predicate_supports_runtime_capture_composition_and_checking() {
+    let output = run_script(
+        r#"
+$name = "abc123"
+matches $name /^[a-z]+\d+$/ -> $valid
+assertTrue $valid
+if matches $name /^[a-z]+\d+$/ and not matches $name /xyz/
+    shellout "composed"
+end
+if matches $name /abc\/123/
+    shellout "slash"
+end
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "composed\n");
+
+    let valid = check_script("if matches \"abc123\" /^[a-z]+\\d+$/\nend\n");
+    assert!(valid.status.success(), "stderr: {}", stderr(&valid));
+    let invalid = run_script("if matches \"abc\" /[/\nend\n");
+    assert!(!invalid.status.success());
+    let invalid_check = check_script("if matches \"abc\" /unterminated\nend\n");
+    assert!(!invalid_check.status.success());
 }
 
 fn run_script(source: &str) -> std::process::Output {

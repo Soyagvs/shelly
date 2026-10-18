@@ -17,7 +17,7 @@ Feature: extend Shelly file automation with file type checks, temporary paths, s
 - Keep existing `write "file" $text` behavior; it already exists and overwrites content.
 - `append "file" $text` creates parent directories and appends text without deleting existing content.
 - File append appends the evaluated text plus one trailing newline.
-- Preserve existing list `append` behavior: `append $list, "value"` remains list mutation.
+- Preserve existing list `append` behavior: `append $list "value"` remains list mutation; command arguments are whitespace-separated.
 - Single-path file helpers also accept scalar path variables, so `tempFile -> $path` can be used with `write $path`, `append $path`, `read $path -> $text`, `size $path -> $bytes`, `isFile $path -> $ok`, and `remove $path`.
 - Resolve relative file paths from the current Shelly script directory.
 
@@ -40,9 +40,10 @@ Feature: extend Shelly file automation with file type checks, temporary paths, s
 - Preserved `write "file" $text` and documented it alongside `append`.
 - Added variable path support for single-path file helpers, including temp paths.
 - Preserved list append/remove dispatch:
-  - `append $list, "value"`
+  - `append $list "value"`
   - `remove $list[first]`
 - Added checker validation and tests for helper syntax.
+- Reconciled the historical comma-form append examples above to current whitespace command syntax; the recorded implementation decisions remain unchanged.
 - Verification passed:
   - `cargo fmt --check`
   - `cargo test file_helper_commands_check_file_dir_temp_size_and_append --test cli_smoke`

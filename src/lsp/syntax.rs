@@ -33,6 +33,7 @@ pub struct ParseResult {
 enum T {
     I(Range<usize>),
     S(String, Range<usize>),
+    R,
     P(char),
     N,
 }
@@ -40,10 +41,12 @@ fn lex(s: &str) -> Vec<T> {
     let b = s.as_bytes();
     let mut v = vec![];
     let mut i = 0;
+    let mut in_matches = false;
     while i < b.len() {
         let c = b[i] as char;
         if c == '\n' {
             v.push(T::N);
+            in_matches = false;
             i += 1
         } else if c.is_ascii_whitespace() {
             i += 1
@@ -59,6 +62,39 @@ fn lex(s: &str) -> Vec<T> {
             }
             v.push(T::S(s[st..i].to_string(), st..i));
             i += 1
+        } else if c == '/' && in_matches {
+            let st = i;
+            i += 1;
+            let mut escaped = false;
+            let mut class = false;
+            let mut complete = false;
+            while i < b.len() {
+                let ch = b[i] as char;
+                if escaped {
+                    escaped = false;
+                } else if ch == '\\' {
+                    escaped = true;
+                } else if ch == '[' {
+                    class = true;
+                } else if ch == ']' {
+                    class = false;
+                } else if ch == '/' && !class {
+                    complete = true;
+                    i += 1;
+                    break;
+                } else if ch == '\n' {
+                    break;
+                }
+                i += 1;
+            }
+            if complete {
+                v.push(T::R);
+            } else {
+                i = st;
+                v.push(T::P('/'));
+                i += 1;
+                in_matches = false;
+            }
         } else if c.is_alphabetic() || c == '_' || b[i] >= 128 {
             let st = i;
             i += c.len_utf8();
@@ -69,6 +105,9 @@ fn lex(s: &str) -> Vec<T> {
                 } else {
                     break;
                 }
+            }
+            if &s[st..i] == "matches" {
+                in_matches = true;
             }
             v.push(T::I(st..i))
         } else {

@@ -8,7 +8,9 @@
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
 
-Shelly has built-in commands for output, input, prompts, and system shell execution.
+Shelly has built-in commands for output, input, prompts, collection mutation, and system shell execution.
+
+Collection mutation uses `set PATH VALUE`, `append PATH VALUE`, `delete PATH`, and top-level scalar-list `prepend $list VALUE`. Command arguments are whitespace-separated; comma-separated command syntax is unsupported. Structural commas remain valid in literals and capture destinations. Paths may combine dot keys, bracket-string keys, and one-based list indexes; see [lists.md](lists.md) and [dictionaries.md](dictionaries.md). Nested `prepend`, `insert`, slices, and range replacement remain deferred. These commands are distinct from file `append` and `remove`.
 
 ```shelly
 shellout "hello"

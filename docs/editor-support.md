@@ -43,4 +43,6 @@ If nothing appears:
 
 The corrector performs static, workspace-aware analysis. It supports diagnostics, completion, hover, definition and references, document/workspace symbols, and conservative rename. Unsaved edits are included in diagnostics. Dynamic or ambiguous targets may not be resolved, and rename may refuse unsafe changes. Formatting is not supported in LSP v1, so this setup does not add a formatter.
 
+The LSP accepts `files` patterns including recursive `**` syntax (for example, `files "**/*.shelly" -> $items`) without reporting a syntax diagnostic. The LSP does not expand globs or inspect the filesystem; expansion happens when Shelly runs the script. The same accepted syntax is transported by the VS Code and Neovim integrations.
+
 For the full technical scope, see [Shelly LSP](lsp.md).

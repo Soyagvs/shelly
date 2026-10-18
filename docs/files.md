@@ -37,12 +37,16 @@ remove "out/"
 - `remove "path"` succeeds when the path is missing. It deletes files. It deletes directories recursively only when the input path ends with `/`; a directory path without trailing `/` fails with a safety error.
 - `read "file" -> $text` reads UTF-8 text from a file into a variable. Missing paths and directories fail.
 - `write "file" $text` writes a string expression to a file, creates parent directories, and overwrites existing file content. Directories fail.
-- `append "file" $text` creates parent directories when needed, appends the evaluated text, and adds one trailing newline for log-friendly output. It does not overwrite existing content. Directories fail. File append also accepts a variable path like `append $path $text`. List append is still `append $list, $value`; the comma form selects list mutation.
+- `append "file" $text` creates parent directories when needed, appends the evaluated text, and adds one trailing newline for log-friendly output. It does not overwrite existing content. Directories fail. File append also accepts a variable path like `append $path $text`. List append uses the same whitespace-separated form: `append $list $value`.
 - `isFile "path" -> $ok` stores `true` when the path exists and is a file, otherwise `false`. Missing paths do not fail.
 - `isDir "path" -> $ok` stores `true` when the path exists and is a directory, otherwise `false`. Missing paths do not fail.
 - `size "file" -> $bytes` stores the file size in bytes. Missing paths and directories fail.
 - `tempFile -> $path` creates an empty temporary file and stores its absolute path.
 - `tempDir -> $path` creates a temporary directory and stores its absolute path.
+
+## Commas in the language
+
+Commas are reserved for structural contexts such as data literals, function signatures, selectors, and multi-capture destinations (`-> $out, $err, $code`). They are not command argument separators or `when` alternative separators.
 
 ## Script-relative paths
 
@@ -76,15 +80,17 @@ files "*.txt" -> $items
 
 ## Patterns
 
-This first version supports simple, single-segment `*` wildcards:
+Patterns support literal segments, single-segment `*`, and recursive `**`:
 
 ```shelly
 files "*.txt" -> $textfiles
 files "dir/*.txt" -> $dirtextfiles
+files "**/*.shelly" -> $all_shelly_files
+files "src/**/test_*.shelly" -> $tests
 files "README.md" -> $readme
 ```
 
-`*` matches within one path segment. Recursive `**` patterns are not supported yet.
+`*` matches only within one path segment. `**` matches zero or more directory segments, so `**/*.shelly` includes files in the current directory and every descendant. Recursive traversal does not follow symlinked directories. Matches are files only; directories are never returned. Unreadable or absent paths produce no match, and results are sorted by normalized relative path.
 
 ## Print the list
 

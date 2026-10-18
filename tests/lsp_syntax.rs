@@ -79,6 +79,29 @@ real()
 }
 
 #[test]
+fn regex_literals_after_matches_hide_interior_identifiers() {
+    let source = "matches $value /foo_identifier [a-z]+\\/bar/\nlet visible = value\n";
+    let symbols = names(source);
+
+    assert!(!symbols.iter().any(|(name, _, _)| name == "foo_identifier"));
+    assert!(!symbols.iter().any(|(name, _, _)| name == "bar"));
+    assert!(symbols.iter().any(|(name, _, _)| name == "visible"));
+}
+
+#[test]
+fn unterminated_regex_is_not_a_complete_literal() {
+    let source = "matches $value /unterminated_identifier\nlet visible = value\n";
+    let symbols = names(source);
+
+    assert!(
+        symbols
+            .iter()
+            .any(|(name, _, _)| name == "unterminated_identifier")
+    );
+    assert!(symbols.iter().any(|(name, _, _)| name == "visible"));
+}
+
+#[test]
 fn spans_are_byte_offsets_for_non_ascii_source() {
     let source = "let café = цена\nцена\n";
     let parsed = parse(source);

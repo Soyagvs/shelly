@@ -8,7 +8,7 @@ Feature: add `case` / `when` / `else` control flow for exact value dispatch.
 case VALUE
     when VALUE
         ...
-    when VALUE, VALUE, VALUE
+    when VALUE or VALUE or VALUE
         ...
     else
         ...
@@ -19,8 +19,8 @@ end
 
 - Use `case`, not `switch`.
 - `case VALUE` evaluates one value.
-- `when VALUE` compares exact equality against the case value.
-- `when VALUE, VALUE` matches if any listed value equals the case value.
+- `when VALUE` compares exact equality against the case value; alternatives use repeated `or`.
+- `when VALUE or VALUE` matches if either value equals the case value.
 - `else` is optional.
 - First match wins.
 - No fallthrough and no `break` needed.
@@ -39,4 +39,4 @@ end
 
 - `cargo fmt --check` passed.
 - `cargo test` passed: 143 tests, including case runtime/checker coverage.
-- Added malformed-form coverage for missing case value, when outside case, duplicate else, when after else, empty when, missing end, and no when.
+- Added malformed-form coverage for missing case value, when outside case, duplicate else, when after else, empty when, missing end, no when, and obsolete comma-separated alternatives.

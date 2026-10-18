@@ -16,6 +16,8 @@ Predicates are built-in boolean checks. Use them directly in `if` / `elif` condi
 | `contains $string "substring"` | `true` when the string includes the substring. |
 | `exists "path" -> $var` | Stores `true` or `false` in `$var`. |
 | `contains $value "thing" -> $var` | Stores `true` or `false` in `$var`. |
+| `matches $value /pattern/` | Rust-regex substring match; lists match if any rendered element matches. |
+| `matches $value /pattern/ -> $var` | Captures the regex result. |
 
 ## File and directory checks
 
@@ -67,6 +69,18 @@ if $hasreadme and $mentionsshell
     shellout "ready"
 end
 ```
+
+## Regular-expression matching
+
+`matches` uses standard Rust `regex` syntax and substring semantics. Use `^` and `$` for anchors. Character classes and ranges (`[a-z]`, `\\d`), quantifiers (`+`, `*`, `?`, `{2,4}`), and inline flags such as `(?i)` are supported. Escape regex symbols with `\\`; escape a slash as `\\/`.
+
+```shelly
+if matches $name /(?i)^[a-z]+$/
+    shellout "letters only"
+end
+```
+
+Numeric ranges are regex text, not numeric comparisons. Rust regex intentionally does not support backreferences, look-around, or other non-regular constructs. Dictionary values are rejected; lists test each rendered element.
 
 ## Compose predicates
 

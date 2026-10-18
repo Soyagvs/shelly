@@ -218,6 +218,14 @@ fn document_and_workspace_symbols_return_utf16_ranges() {
 }
 
 #[test]
+fn recursive_file_glob_is_accepted_without_diagnostics() {
+    let mut l = Lsp::start();
+    l.initialize();
+    let notification = l.open("file:///globs.shelly", "files \"**/*.shelly\" -> $items\n");
+    assert_eq!(notification["params"]["diagnostics"], json!([]));
+}
+
+#[test]
 fn module_project_diagnostics_use_open_buffer_override() {
     let mut l = Lsp::start();
     l.initialize();

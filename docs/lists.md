@@ -1,5 +1,7 @@
 # Lists
 
+Nested collections can be mutated with `set PATH VALUE`, `append PATH VALUE`, and `delete PATH`; top-level scalar lists also support `prepend $list VALUE`. Arguments are whitespace-separated, so comma-separated mutation syntax is unsupported. List indexes are one-based and must already exist: `set $data.items[2] "x"` replaces an element, `append $data.items "x"` adds one, and `delete $data.items[1]` compacts the list. Lists never auto-expand; zero, negative, non-integer, and out-of-range indexes fail. Collection assignment copies values rather than creating aliases. Nested `prepend`, `insert`, slices, and range replacement remain deferred.
+
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
@@ -68,8 +70,8 @@ end
 
 ```shelly
 $queue = []
-append $queue, "Luis"
-prepend $queue, "Ana"
+append $queue "Luis"
+prepend $queue "Ana"
 $queue[2] = "Mora"
 remove $queue[first]
 

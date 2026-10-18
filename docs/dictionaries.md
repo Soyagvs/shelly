@@ -1,5 +1,7 @@
 # Dictionaries
 
+Nested collection mutation uses `set PATH VALUE`, `append PATH VALUE`, and `delete PATH`. Dot paths address simple keys (`$config.server.port`); bracket-string paths address arbitrary keys (`$config["server-name"]`). Intermediate segments must already exist and have the required collection type. `set` may create or replace only the terminal dictionary key; `delete` is strict and requires an existing key. Collection assignment copies values, with no implicit aliases. `insert`, `prepend`, slices, and range replacement remain unsupported.
+
 Dictionaries store keyed values.
 
 ```shelly

@@ -41,7 +41,7 @@ Use `case` for exact value dispatch without fallthrough. The first matching `whe
 $mode = "prod"
 
 case $mode
-    when "dev", "test"
+    when "dev" or "test"
         shellout "non-production"
     when "prod"
         shellout "production"
@@ -70,7 +70,8 @@ Rules:
 
 - `case VALUE` requires a value.
 - `when VALUE` requires at least one value.
-- `when VALUE, VALUE` matches if any listed value equals the `case` value.
+- `when VALUE or VALUE` matches if either alternative equals the `case` value; repeat `or` for more alternatives.
+- Comma-separated `when` alternatives are unsupported and produce an error under both `run` and `check`.
 - `else` may appear once and must come after all `when` branches.
 - `when` outside `case`, duplicate `else`, `when` after `else`, missing `end`, and `case` with no `when` are errors.
 

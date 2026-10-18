@@ -25,7 +25,7 @@ text block
 - Lowercase `$name` stores a mutable variable.
 - Uppercase `$NAME` stores an immutable constant; mixed-case names are rejected.
 - `->` binds an operation result into a variable.
-- Commas separate normal argument lists.
+- Commands use whitespace-separated arguments. Commas remain valid only in structural contexts such as data literals, function signatures, selectors, and multi-capture destinations.
 - Blocks close with `end`.
 - List indexes start at `1`.
 - `command <program> <args...>` runs directly without shell parsing; use bare words, quoted argument atoms, or variables as argv arguments. `command ... -> $out` captures stdout, while three captures (`$out, $err, $code`) also capture stderr and exit code.
@@ -38,7 +38,7 @@ text block
 - Standard helpers transform text, lists, values, path strings, time, and random numbers; see [helpers.md](helpers.md) and the [date formatting guide](date-formatting.md).
 - File commands (`create`, `copy`, `move`, `rename`, `remove`, `read`, `write`, `append`, `isFile`, `isDir`, `size`, `tempFile`, `tempDir`) and `files "pattern" -> $items` use script-relative paths where applicable.
 - `and`, `or`, `not`, and condition parentheses compose conditions; priority is `not`, then `and`, then `or`.
-- `case VALUE` / `when VALUE` / optional `else` dispatches exact value matches; see [conditionals.md](conditionals.md).
+- `case VALUE` with `when VALUE or VALUE` / optional `else` dispatches exact value matches. Comma-separated `when` alternatives are invalid; see [conditionals.md](conditionals.md).
 - `defer ... end` registers cleanup for scope exit; see [deferred cleanup](defer.md).
 
 ## Reference
