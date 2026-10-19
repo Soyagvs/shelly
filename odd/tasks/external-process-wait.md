@@ -24,9 +24,9 @@ Add a Shelly construct that keeps the interpreter alive while an external proces
 ## Delivery
 - Strategy: ask-on-risk.
 - Revised forecast: approximately 500 authored changed lines; future commit planning must select review slices because this exceeds the preferred review budget.
-- Shelly work-unit commit: `f367ebb79d0a136887c2b3615a02d552a9f78828` — `feat: add process watch command` on `feat/process-watch`.
-- Neovim companion commit: `7b0ffd8cabda495d24e8789cc1cf0bf73dd28ce2` — `feat: highlight process watch commands` on `feat/process-watch-support`.
-- VS Code companion commit: `937acedce631d18d120e8154df0a4f0e8007fd85` — `feat: support process watch commands` on `feat/process-watch-support`.
+- Shelly work-unit commit: `f367ebb79d0a136887c2b3615a02d552a9f78828` — `feat: add process watch command`, now on `main`.
+- Neovim companion commit: `7b0ffd8cabda495d24e8789cc1cf0bf73dd28ce2` — `feat: highlight process watch commands`, now on `main`.
+- VS Code companion commit: `937acedce631d18d120e8154df0a4f0e8007fd85` — `feat: support process watch commands`, now on `main`.
 
 ## Tasks
 - [x] EPW-1 — Implement and test sequential external-process waiting.
@@ -47,4 +47,4 @@ Add a Shelly construct that keeps the interpreter alive while an external proces
 - Native review preflight and assessment were unavailable for all three repositories because the verified package-local Gentle AI binary is missing; independent verification was run instead.
 
 ## Next step
-All focused feature branches were pushed to their respective `origin` remotes. Pull-request creation and merge remain user decisions.
+All changes were fast-forwarded and pushed to `main` in their respective repositories. Temporary feature branches were deleted locally and remotely.
