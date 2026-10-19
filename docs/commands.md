@@ -41,6 +41,18 @@ args -> $all
 - `exists "path" -> $var` and `contains $value "thing" -> $var` capture predicate results as booleans (`true` or `false`).
 - `create`, `copy`, `move`, `rename`, `remove`, `read`, `write`, `append`, `isFile`, `isDir`, `size`, `tempFile`, `tempDir`, and `files` cover common file automation; see [files.md](files.md).
 - `command` is the bridge to OS tools such as `mv`, `cp`, `git`, or `curl`.
+
+## External process waiting
+
+`watch <program> <args...> -> $line` starts one external process and runs its block once for each stdout line, in order:
+
+```shelly
+watch printf "one\\ntwo\\n" -> $line
+    shellout $line
+end
+```
+
+The child is waited for after stdout reaches EOF, and the block finishes when the child exits. Stderr is not converted into events. A read, handler, spawn, or non-zero-exit error stops the watcher and cleans up the child; the error can be handled with `try` / `catch`. The `$line` binding is restored after the block. `wait` with no arguments blocks indefinitely until normal process interruption (Ctrl+C); it does not create a child or scheduler.
 - Standard helpers such as `trim`, `join`, `toNumber`, `basename`, `now`, and `randomInt` transform values without shelling out; see [helpers.md](helpers.md).
 
 ## Output

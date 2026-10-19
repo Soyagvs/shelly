@@ -4,6 +4,21 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn watch_streams_stdout_lines_to_sequential_handler() {
+    let output = run_script(
+        "watch printf \"one\\ntwo\\n\" -> $line\n    shellout $line\nend\n",
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "one\ntwo\n");
+}
+
+#[test]
+fn wait_requires_no_arguments() {
+    let output = check_script("wait extra\n");
+    assert!(!output.status.success());
+}
+
+#[test]
 fn case_when_alternatives_use_or_and_reject_commas() {
     let valid = run_script("case \"b\"\nwhen \"a\" or \"b\"\n    shellout \"matched\"\nend\n");
     assert!(valid.status.success(), "stderr: {}", stderr(&valid));

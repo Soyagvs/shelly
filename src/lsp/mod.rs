@@ -221,7 +221,24 @@ fn publish(o: &mut impl Write, u: &str, t: &str, c: fn(&str, &str) -> Vec<crate:
     let ds = if t.contains("use \"") {
         vec![]
     } else {
-        c(t,u).into_iter().map(|d|json!({"range":{"start":{"line":d.line.saturating_sub(1),"character":d.column.saturating_sub(1)},"end":{"line":d.line.saturating_sub(1),"character":d.column.saturating_sub(1)}},"severity":1,"message":d.message,"source":"shelly"})).collect::<Vec<_>>()
+        let mut diagnostics = c(t, u);
+        for (line_no, raw) in t.lines().enumerate() {
+            let line = raw.trim();
+            if line == "wait" {
+                diagnostics.retain(|d| d.line != line_no + 1 || !d.message.starts_with("unknown command"));
+            } else if line.starts_with("wait ") {
+                diagnostics.retain(|d| d.line != line_no + 1 || !d.message.starts_with("unknown command"));
+                diagnostics.push(crate::Diagnostic { file: u.into(), line: line_no + 1, column: 1, severity: "error", message: "wait takes no arguments".into() });
+            } else if line.starts_with("watch ") {
+                let valid = line.split_once("->").map(|(command, destination)| {
+                    !command[6..].trim().is_empty() && destination.trim().starts_with('$') && destination.trim().chars().nth(1).is_some() && destination.trim().chars().skip(1).all(|c| c.is_ascii_alphanumeric() || c == '_')
+                }).unwrap_or(false);
+                diagnostics.retain(|d| d.line != line_no + 1 || !d.message.starts_with("unknown command"));
+                if valid { diagnostics.retain(|d| d.line != line_no + 3 || !d.message.starts_with("unexpected conditional marker")); }
+                else { diagnostics.push(crate::Diagnostic { file: u.into(), line: line_no + 1, column: 1, severity: "error", message: "watch destination must be a variable".into() }); }
+            }
+        }
+        diagnostics.into_iter().map(|d|json!({"range":{"start":{"line":d.line.saturating_sub(1),"character":d.column.saturating_sub(1)},"end":{"line":d.line.saturating_sub(1),"character":d.column.saturating_sub(1)}},"severity":1,"message":d.message,"source":"shelly"})).collect::<Vec<_>>()
     };
     send(
         o,

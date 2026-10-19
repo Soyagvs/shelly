@@ -40,6 +40,8 @@ text block
 - `and`, `or`, `not`, and condition parentheses compose conditions; priority is `not`, then `and`, then `or`.
 - `case VALUE` with `when VALUE or VALUE` / optional `else` dispatches exact value matches. Comma-separated `when` alternatives are invalid; see [conditionals.md](conditionals.md).
 - `defer ... end` registers cleanup for scope exit; see [deferred cleanup](defer.md).
+- `watch <program> <args...> -> $line ... end` streams stdout line events serially until the child exits; stderr is not exposed as events.
+- Bare `wait` blocks until normal process interruption; it takes no arguments.
 
 ## Reference
 

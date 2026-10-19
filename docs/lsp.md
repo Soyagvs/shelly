@@ -28,4 +28,4 @@ Module diagnostics use the workspace files as a baseline, but an open, unsaved b
 
 Rename and navigation are deliberately conservative: dynamic or ambiguous targets may be refused rather than guessed. Rename can likewise return an error when safety cannot be established. Formatting is not supported in v1; the server is not a formatter.
 
-The server tracks `didOpen`, `didChange`, and `didClose` documents and supports the normal `initialize`/`shutdown` lifecycle. See the [Language Guide](language.md) for syntax and [Project structure](project-structure.md) for workspace organization.
+The server tracks `didOpen`, `didChange`, and `didClose` documents and supports the normal `initialize`/`shutdown` lifecycle. Diagnostics recognize `watch <program> <args...> -> $line ... end` and bare `wait`; invalid wait arguments and malformed watch destinations are reported. `watch` streams stdout line events serially until the child exits and does not expose stderr events. See the [Language Guide](language.md) for syntax and [Project structure](project-structure.md) for workspace organization.

@@ -45,4 +45,6 @@ The language server performs static, workspace-aware analysis. The verified shar
 
 The LSP accepts `files` patterns including recursive `**` syntax (for example, `files "**/*.shelly" -> $items`) without reporting a syntax diagnostic. The LSP does not expand globs or inspect the filesystem; expansion happens when Shelly runs the script. The same accepted syntax is transported by the VS Code and Neovim integrations.
 
+The editor also recognizes `watch <program> <args...> -> $line ... end`, which reports stdout lines serially until the child exits. Bare `wait` blocks until normal process interruption and takes no arguments. `watch` does not expose stderr events. These constructs provide diagnostics for malformed destinations or arguments; the LSP does not provide semantic tokens or other unimplemented capabilities.
+
 For the full technical scope, see [Shelly LSP](lsp.md). For integration details, see the [Shelly VS Code extension](https://github.com/Soyagvs/shelly-vscode) or [Shelly Neovim plugin](https://github.com/Soyagvs/shelly-nvim).
