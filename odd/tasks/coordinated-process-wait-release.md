@@ -28,11 +28,13 @@ Repair Shelly CI and publish synchronized releases for the watch/wait feature: S
 - [x] CPR-4 — Create the coordinated-release skill and refresh discovery.
   - Outcome: created a reusable gated release workflow skill and indexed it.
   - Evidence: registry refresh indexed 15 skills; frontmatter, headings, mandatory gates, and exact registry path passed structural validation.
-- [ ] CPR-5 — Commit/push release preparation, tag each exact release commit, publish GitHub releases, and verify remote assets.
-  - Route: parent-controlled irreversible delivery after all gates.
+- [x] CPR-5 — Commit/push release preparation, tag each exact release commit, publish GitHub releases, and verify remote assets.
+  - Shelly: `e4e927bf03084e084f904b6c51754fa7eacd8b9f`, tag `v3.6.0`, CI and binary-release workflow passed; archives and checksums published. The Linux archive was independently verified to contain both `shelly` and `shelly-lsp`.
+  - Neovim: `d37a98f8e6088c52a57ffa5a15ffbe1dab6f556b`, tag/release `v0.1.3` published.
+  - VS Code: `770a742ebe4bafde5c1bee63d7878bea32c962bf`, tag/release `v0.1.2` published with `shelly-language-oficial-0.1.2.vsix` attached.
 
 ## Verification evidence
 - Pending.
 
 ## Next step
-Prepare every repository and the reusable release skill before creating any tags or releases.
+Coordinated releases are published and verified. Future releases must load `skills/shelly-coordinated-release/SKILL.md` before any release action.
