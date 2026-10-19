@@ -47,4 +47,4 @@ Add a Shelly construct that keeps the interpreter alive while an external proces
 - Native review preflight and assessment were unavailable for all three repositories because the verified package-local Gentle AI binary is missing; independent verification was run instead.
 
 ## Next step
-Source changes are committed in focused work units. Commit the delivery evidence and push all feature branches.
+All focused feature branches were pushed to their respective `origin` remotes. Pull-request creation and merge remain user decisions.
