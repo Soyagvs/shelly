@@ -221,35 +221,44 @@ fn document_and_workspace_symbols_return_utf16_ranges() {
 fn watch_and_wait_forms_are_diagnosed_without_extra_capabilities() {
     let mut l = Lsp::start();
     l.initialize();
-    let valid = l.open("file:///wait-valid.shelly", "watch printf output -> $line\nshellout $line\nend\nwait\n");
+    let valid = l.open(
+        "file:///wait-valid.shelly",
+        "watch printf output -> $line\nshellout $line\nend\nwait\n",
+    );
     assert_eq!(valid["params"]["diagnostics"], json!([]));
 
     let invalid_wait = l.open("file:///wait-invalid.shelly", "wait now\n");
-    assert!(invalid_wait["params"]["diagnostics"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|d| d["message"].as_str().unwrap().contains("wait")));
+    assert!(
+        invalid_wait["params"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["message"].as_str().unwrap().contains("wait"))
+    );
 
     let invalid_watch = l.open(
         "file:///watch-invalid.shelly",
         "watch printf output -> line\nend\n",
     );
-    assert!(invalid_watch["params"]["diagnostics"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|d| d["message"].as_str().unwrap().contains("watch")));
+    assert!(
+        invalid_watch["params"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["message"].as_str().unwrap().contains("watch"))
+    );
 
     let empty_destination = l.open(
         "file:///watch-empty-destination.shelly",
         "watch printf output -> $\nend\n",
     );
-    assert!(empty_destination["params"]["diagnostics"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|d| d["message"] == "watch destination must be a variable"));
+    assert!(
+        empty_destination["params"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["message"] == "watch destination must be a variable")
+    );
 }
 
 #[test]

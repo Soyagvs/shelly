@@ -1008,36 +1008,67 @@ impl Interpreter {
                 return Err(format!("line {line_no}: timeout value required"));
             }
             if line == "wait" {
-                loop { thread::park(); }
+                loop {
+                    thread::park();
+                }
             }
             if line.starts_with("wait ") {
                 return Err(format!("line {line_no}: wait takes no arguments"));
             }
             if let Some(rest) = line.strip_prefix("watch ") {
-                let (command_text, handler_text) = rest.split_once("->")
-                    .ok_or_else(|| "watch syntax is watch <program> <args...> -> $line".to_string())?;
+                let (command_text, handler_text) = rest.split_once("->").ok_or_else(|| {
+                    "watch syntax is watch <program> <args...> -> $line".to_string()
+                })?;
                 let (program, args, tail) = self.parse_command_atoms(command_text.trim())?;
-                if !tail.trim().is_empty() { return Err("watch syntax is watch <program> <args...> -> $line".to_string()); }
+                if !tail.trim().is_empty() {
+                    return Err("watch syntax is watch <program> <args...> -> $line".to_string());
+                }
                 let destinations = parse_command_capture_destinations(handler_text.trim())?;
-                if destinations.len() != 1 { return Err("watch requires exactly one line destination".to_string()); }
+                if destinations.len() != 1 {
+                    return Err("watch requires exactly one line destination".to_string());
+                }
                 let (body, next_index) = collect_block(lines, index, "watch")?;
-                let mut child = Command::new(&program).args(&args).stdout(Stdio::piped()).stderr(Stdio::null()).spawn()
+                let mut child = Command::new(&program)
+                    .args(&args)
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::null())
+                    .spawn()
                     .map_err(|error| format!("failed to run watch command: {error}"))?;
-                let previous = self.vars.insert(destinations[0].clone(), Value::Scalar(String::new()));
+                let previous = self
+                    .vars
+                    .insert(destinations[0].clone(), Value::Scalar(String::new()));
                 let result = (|| {
-                    let stdout = child.stdout.take().ok_or_else(|| "watch command stdout unavailable".to_string())?;
+                    let stdout = child
+                        .stdout
+                        .take()
+                        .ok_or_else(|| "watch command stdout unavailable".to_string())?;
                     for line_result in io::BufReader::new(stdout).lines() {
-                        let event = line_result.map_err(|error| format!("failed to read watch output: {error}"))?;
-                        self.vars.insert(destinations[0].clone(), Value::Scalar(event));
+                        let event = line_result
+                            .map_err(|error| format!("failed to read watch output: {error}"))?;
+                        self.vars
+                            .insert(destinations[0].clone(), Value::Scalar(event));
                         self.run_lines(&body)?;
                     }
-                    let status = child.wait().map_err(|error| format!("failed to wait for watch command: {error}"))?;
-                    if !status.success() { return Err(format!("watch command exited with status {status}")); }
+                    let status = child
+                        .wait()
+                        .map_err(|error| format!("failed to wait for watch command: {error}"))?;
+                    if !status.success() {
+                        return Err(format!("watch command exited with status {status}"));
+                    }
                     Ok(())
                 })();
-                if result.is_err() { let _ = child.kill(); }
+                if result.is_err() {
+                    let _ = child.kill();
+                }
                 let _ = child.wait();
-                match previous { Some(value) => { self.vars.insert(destinations[0].clone(), value); }, None => { self.vars.remove(&destinations[0]); } }
+                match previous {
+                    Some(value) => {
+                        self.vars.insert(destinations[0].clone(), value);
+                    }
+                    None => {
+                        self.vars.remove(&destinations[0]);
+                    }
+                }
                 result.map_err(|error: String| line_error(line_no, error))?;
                 index = next_index;
                 continue;

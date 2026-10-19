@@ -5,9 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn watch_streams_stdout_lines_to_sequential_handler() {
-    let output = run_script(
-        "watch printf \"one\\ntwo\\n\" -> $line\n    shellout $line\nend\n",
-    );
+    let output = run_script("watch printf \"one\\ntwo\\n\" -> $line\n    shellout $line\nend\n");
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert_eq!(stdout(&output), "one\ntwo\n");
 }
