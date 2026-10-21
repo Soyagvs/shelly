@@ -24,14 +24,15 @@ This is the canonical map of Shelly's documentation. Follow the sections in orde
 ## Use the standard library
 
 - [Standard helpers](helpers.md) — text, lists, conversion, paths, commands, random, and values. See also the [time and date helpers](helpers.md#time).
-- [Files](files.md) · [Logging](logging.md) · [Timeouts](timeouts.md)
+- [Files](files.md) · [HTTP requests](http.md) · [Logging](logging.md) · [Timeouts](timeouts.md)
 - [Date formatting](date-formatting.md) — `formatDate`, tokens, UTC input, and failures.
 - [Choose menus](choose.md) · [Commands and input](commands.md)
 
 ## Automate and customize
 
 - [Editor support quickstart](editor-support.md)
-- [LSP reference](lsp.md)
+- [Formatting](formatting.md) — safe `shelly fmt` and `fmt --check` workflows.
+- [LSP reference](lsp.md) — watcher refresh, overlays, formatting, and constrained code actions.
 - [File icons](file-icons.md)
 
 <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />

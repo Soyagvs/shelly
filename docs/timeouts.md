@@ -43,4 +43,4 @@ catch
 end
 ```
 
-Use `try`/`catch` when a timeout is expected and recoverable; see [Error handling](errors.md). For command syntax and capture behavior, see [Commands and input](commands.md).
+Use `try`/`catch` when a timeout is expected and recoverable; see [Error handling](errors.md). For command syntax and capture behavior, see [Commands and input](commands.md). HTTP requests also have a per-request timeout (30 seconds by default, up to 120 seconds); see [HTTP requests](http.md).

@@ -24,7 +24,7 @@ Shell scripts are useful, but they can become difficult to read and maintain. **
 
 - **Readable by design:** clear syntax for scripts that grow with your work.
 - **Built for automation:** run commands, capture output and status, and work with files.
-- **Structured and reusable:** use lists, dictionaries, JSON helpers, and modules.
+- **Structured and reusable:** use lists, dictionaries, JSON helpers, HTTP requests, and modules.
 
 ## ⚡ Get started
 
@@ -57,7 +57,7 @@ See [Project structure](docs/project-structure.md) for an overview of the genera
 
 ## 📚 Documentation
 
-Start with the [documentation index](docs/index.md) for the recommended reading path, or jump to the [Language Guide](docs/language.md).
+Start with the [documentation index](docs/index.md) for the recommended reading path, or jump to the [Language Guide](docs/language.md) and [HTTP requests](docs/http.md).
 
 ---
 

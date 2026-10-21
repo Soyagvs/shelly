@@ -57,7 +57,14 @@ impl Lsp {
         self.recv()
     }
     fn initialize(&mut self) {
-        self.request(1, "initialize", json!({"capabilities":{}}));
+        self.initialize_with_root(None);
+    }
+    fn initialize_with_root(&mut self, root: Option<&str>) {
+        let mut params = json!({"capabilities":{}});
+        if let Some(uri) = root {
+            params["rootUri"] = json!(uri);
+        }
+        self.request(1, "initialize", params);
         self.send(json!({"jsonrpc":"2.0","method":"initialized","params":{}}));
     }
     fn open(&mut self, uri: &str, text: &str) -> Value {
@@ -76,6 +83,9 @@ fn doc(uri: &str) -> Value {
 }
 fn pos(line: u64, character: u64) -> Value {
     json!({"line":line,"character":character})
+}
+fn file_uri(path: &std::path::Path) -> String {
+    format!("file://{}", path.to_string_lossy())
 }
 
 #[test]
@@ -159,7 +169,7 @@ fn definition_and_references_resolve_same_file_and_imported_export() {
     l.initialize();
     let uri = "file:///main.shl";
     l.open("file:///lib.shl", "export fn café() {}\n");
-    l.open(uri, "use \"lib.shl\"\ncafé()\ncafé()\n");
+    l.open(uri, "import \"lib.shl\"\ncafé()\ncafé()\ncafé()\n");
     let d = l.request(
         2,
         "textDocument/definition",
@@ -175,7 +185,57 @@ fn definition_and_references_resolve_same_file_and_imported_export() {
         "textDocument/references",
         json!({"textDocument":doc(uri),"position":pos(2,2),"context":{"includeDeclaration":true}}),
     );
-    assert_eq!(refs["result"].as_array().unwrap().len(), 3);
+    assert_eq!(refs["result"].as_array().unwrap().len(), 4);
+}
+
+#[test]
+fn nested_sibling_imports_resolve_protocol_locations_and_cross_file_overlay_rename() {
+    let root = std::env::temp_dir().join(format!("shelly-lsp-protocol-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+    let defs = root.join("lib");
+    let app = root.join("app");
+    std::fs::create_dir_all(&defs).unwrap();
+    std::fs::create_dir_all(&app).unwrap();
+    let def = defs.join("defs.shl");
+    let main = app.join("main.shl");
+    std::fs::write(&def, "export fn shared() {}\n").unwrap();
+    std::fs::write(&main, "import \"../lib/defs.shl\"\nshared()\n").unwrap();
+    let def_uri = file_uri(&def);
+    let main_uri = file_uri(&main);
+    let mut l = Lsp::start();
+    l.initialize_with_root(Some(&file_uri(&root)));
+    // Keep the consumer open as an overlay while the definition remains disk-backed.
+    l.open(&main_uri, "import \"../lib/defs.shl\"\nshared()\nshared()\nshared()\n");
+
+    let definition = l.request(2, "textDocument/definition", json!({
+        "textDocument":doc(&main_uri), "position":pos(1,2)
+    }));
+    assert_eq!(definition["result"], json!([{
+        "uri": def_uri,
+        "range":{"start":{"line":0,"character":11},"end":{"line":0,"character":18}}
+    }]));
+    let references = l.request(3, "textDocument/references", json!({
+        "textDocument":doc(&main_uri), "position":pos(2,2),
+        "context":{"includeDeclaration":true}
+    }));
+    let refs = references["result"].as_array().unwrap();
+    assert_eq!(refs.len(), 4);
+    for expected in [
+        json!({"uri":main_uri,"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":6}}}),
+        json!({"uri":main_uri,"range":{"start":{"line":2,"character":0},"end":{"line":2,"character":6}}}),
+        json!({"uri":main_uri,"range":{"start":{"line":3,"character":0},"end":{"line":3,"character":6}}}),
+        json!({"uri":def_uri,"range":{"start":{"line":0,"character":10},"end":{"line":0,"character":16}}}),
+    ] { assert!(refs.iter().any(|actual| actual == &expected), "missing reference: {expected}"); }
+    let rename = l.request(4, "textDocument/rename", json!({
+        "textDocument":doc(&main_uri), "position":pos(1,2), "newName":"renamed"
+    }));
+    assert_eq!(rename["result"]["changes"][&main_uri], json!([
+        {"range":{"start":{"line":1,"character":0},"end":{"line":1,"character":6}},"newText":"renamed"},
+        {"range":{"start":{"line":2,"character":0},"end":{"line":2,"character":6}},"newText":"renamed"},
+        {"range":{"start":{"line":3,"character":0},"end":{"line":3,"character":6}},"newText":"renamed"}
+    ]));
+    assert_eq!(rename["result"]["changes"][&def_uri], json!([
+        {"range":{"start":{"line":0,"character":10},"end":{"line":0,"character":16}},"newText":"renamed"}
+    ]));
 }
 
 #[test]
@@ -215,6 +275,45 @@ fn document_and_workspace_symbols_return_utf16_ranges() {
     assert_eq!(d["result"][0]["range"]["start"], pos(0, 3));
     let w = l.request(3, "workspace/symbol", json!({"query":"café"}));
     assert_eq!(w["result"][0]["location"]["uri"], uri);
+}
+
+#[test]
+fn formatting_requests_cover_changed_noop_malformed_and_utf16_ranges() {
+    let mut l = Lsp::start();
+    l.initialize();
+
+    let changed_uri = "file:///format-changed.shl";
+    l.open(changed_uri, " if true\n shellout \"🌍\"\nend\n");
+    let changed = l.request(2, "textDocument/formatting", json!({"textDocument":doc(changed_uri),"options":{}}));
+    assert_eq!(changed["result"][0]["newText"], "if true\n    shellout \"🌍\"\nend\n");
+    assert_eq!(changed["result"][0]["range"], json!({"start":pos(0,0),"end":pos(3,0)}));
+
+    let clean_uri = "file:///format-clean.shl";
+    l.open(clean_uri, "shellout \"ok\"\n");
+    let clean = l.request(3, "textDocument/formatting", json!({"textDocument":doc(clean_uri),"options":{}}));
+    assert_eq!(clean["result"], json!([]));
+
+    let malformed_uri = "file:///format-malformed.shl";
+    l.open(malformed_uri, "if true\n");
+    let malformed = l.request(4, "textDocument/formatting", json!({"textDocument":doc(malformed_uri),"options":{}}));
+    assert_eq!(malformed["result"], json!([]));
+}
+
+#[test]
+fn safe_code_actions_offer_legacy_import_fix_and_format_edit() {
+    let mut l = Lsp::start();
+    l.initialize();
+    let uri = "file:///actions.shl";
+    l.open(uri, "use \"lib.shl\"\n shellout \"ok\"\n");
+    let actions = l.request(2, "textDocument/codeAction", json!({
+        "textDocument":doc(uri), "range":{"start":pos(0,0),"end":pos(1,0)}, "context":{"diagnostics":[]}
+    }));
+    let actions = actions["result"].as_array().unwrap();
+    assert_eq!(actions.len(), 2);
+    assert_eq!(actions[0]["title"], "Replace legacy use with import");
+    assert_eq!(actions[0]["edit"]["changes"][uri][0]["newText"], "import");
+    assert_eq!(actions[1]["title"], "Format document");
+    assert_eq!(actions[1]["kind"], "source.format");
 }
 
 #[test]
@@ -270,10 +369,18 @@ fn recursive_file_glob_is_accepted_without_diagnostics() {
 }
 
 #[test]
+fn unsupported_use_directive_is_diagnosed() {
+    let mut l = Lsp::start();
+    l.initialize();
+    let notification = l.open("file:///unsupported-use.shl", "use \"lib.shl\"\n");
+    assert!(!notification["params"]["diagnostics"].as_array().unwrap().is_empty());
+}
+
+#[test]
 fn module_project_diagnostics_use_open_buffer_override() {
     let mut l = Lsp::start();
     l.initialize();
     l.open("file:///lib.shl", "export fn good() {}\n");
-    let notification = l.open("file:///main.shl", "use \"lib.shl\"\ngood()\n");
+    let notification = l.open("file:///main.shl", "import \"lib.shl\"\n");
     assert_eq!(notification["params"]["diagnostics"], json!([]));
 }

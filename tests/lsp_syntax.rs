@@ -10,7 +10,7 @@ fn names(source: &str) -> Vec<(String, SymbolKind, std::ops::Range<usize>)> {
 
 #[test]
 fn records_declarations_references_imports_and_calls_with_byte_spans() {
-    let source = "let total = price\nconst tax = 2\nfn add(amount) { total + amount }\nuse \"math.shl\"\ninclude \"parts.shl\"\nadd(total)\n";
+    let source = "let total = price\nconst tax = 2\nfn add(amount) { total + amount }\nimport \"math.shl\"\ninclude \"parts.shl\"\nadd(total)\n";
     let symbols = names(source);
 
     assert!(symbols.iter().any(|(name, kind, span)| name == "total"
@@ -30,16 +30,23 @@ fn records_declarations_references_imports_and_calls_with_byte_spans() {
         && *span == (12..17)));
     assert!(symbols.iter().any(|(name, kind, span)| *name == "math.shl"
         && *kind == SymbolKind::Import
-        && *span == (71..79)));
+        && *span == (74..82)));
     assert!(symbols.iter().any(|(name, kind, span)| *name == "parts.shl"
         && *kind == SymbolKind::Include
-        && *span == (90..99)));
+        && *span == (93..102)));
     assert!(symbols.iter().any(|(name, kind, span)| *name == "add"
         && *kind == SymbolKind::Call
-        && *span == (101..104)));
+        && *span == (104..107)));
     assert!(symbols.iter().any(|(name, kind, span)| *name == "total"
         && *kind == SymbolKind::Reference
-        && *span == (105..110)));
+        && *span == (108..113)));
+}
+
+#[test]
+fn use_is_not_resolved_as_an_import() {
+    let parsed = parse("use \"math.shl\"\n");
+    assert!(parsed.modules.is_empty());
+    assert!(!parsed.symbols.iter().any(|s| s.name == "math.shl"));
 }
 
 #[test]

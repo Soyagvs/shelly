@@ -10,6 +10,9 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod comments;
+#[doc(hidden)]
+pub mod http;
+pub mod formatter;
 pub mod lsp;
 mod parser;
 mod shell;
@@ -61,6 +64,7 @@ pub fn cli_main() {
         Some(command) if command == "test" => run_tests(args),
         Some(command) if command == "run" => run_project(args),
         Some(command) if command == "update" => update::run(args),
+        Some(command) if command == "fmt" => format_command(args),
         Some(command) if command == "check" => {
             let mut format = CheckFormat::Text;
             let next = args.next();
@@ -146,6 +150,20 @@ fn load_manifest(cwd: &Path) -> Result<Manifest, String> {
         }
     }
     Ok(manifest)
+}
+
+fn format_command(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<(), String> {
+    let first = args.next();
+    let (check, path) = if first.as_deref() == Some(std::ffi::OsStr::new("--check")) {
+        (true, args.next().map(PathBuf::from))
+    } else { (false, first.map(PathBuf::from)) };
+    if args.next().is_some() || path.is_none() {
+        return Err("Usage: shelly fmt [--check] <path>".to_string());
+    }
+    let path = path.unwrap();
+    let clean = formatter::format_file(&path, check)?;
+    if check && !clean { return Err("formatting differs (run 'shelly fmt <path>')".to_string()); }
+    Ok(())
 }
 
 fn check_project(format: CheckFormat) -> Result<(), String> {
@@ -652,7 +670,27 @@ fn encode_string_literal(input: &str) -> String {
     out
 }
 
+fn lexical_path(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => { out.pop(); }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
 pub(crate) fn check_source(source: &str, file: &str) -> Vec<Diagnostic> {
+    check_source_with_loader(source, file, &|path| fs::read_to_string(path).ok())
+}
+
+pub(crate) fn check_source_with_files(source: &str, file: &str, files: &HashMap<PathBuf, String>) -> Vec<Diagnostic> {
+    check_source_with_loader(source, file, &|path| files.get(path).cloned().or_else(|| fs::read_to_string(path).ok()))
+}
+
+fn check_source_with_loader(source: &str, file: &str, loader: &dyn Fn(&Path) -> Option<String>) -> Vec<Diagnostic> {
     let source = match normalize_multiline_strings(source) {
         Ok(source) => source,
         Err(error) => {
@@ -682,7 +720,8 @@ pub(crate) fn check_source(source: &str, file: &str) -> Vec<Diagnostic> {
             let mut checker = Checker::new(file.to_string());
             checker.check_lines(&lines);
             let mut diagnostics = checker.diagnostics;
-            if let Ok(path) = Path::new(file).canonicalize() {
+            let path = lexical_path(Path::new(file));
+            {
                 let mut stack = vec![path.clone()];
                 let mut visited = HashSet::new();
                 visited.insert(path);
@@ -692,6 +731,7 @@ pub(crate) fn check_source(source: &str, file: &str) -> Vec<Diagnostic> {
                     &mut stack,
                     &mut visited,
                     &mut diagnostics,
+                    loader,
                 );
             }
             diagnostics
@@ -712,6 +752,7 @@ fn check_module_graph(
     stack: &mut Vec<PathBuf>,
     visited: &mut HashSet<PathBuf>,
     diagnostics: &mut Vec<Diagnostic>,
+    loader: &dyn Fn(&Path) -> Option<String>,
 ) {
     for (line_no, raw) in lines {
         let line = raw.trim();
@@ -755,19 +796,7 @@ fn check_module_graph(
             Some(parent) => parent.join(&requested),
             None => PathBuf::from(&requested),
         };
-        let dependency = match dependency.canonicalize() {
-            Ok(path) => path,
-            Err(error) => {
-                diagnostics.push(Diagnostic {
-                    file: current_file.display().to_string(),
-                    line: *line_no,
-                    column: 1,
-                    severity: "error",
-                    message: format!("could not resolve {kind} dependency '{requested}': {error}"),
-                });
-                continue;
-            }
-        };
+        let dependency = lexical_path(&dependency);
         if let Some(index) = stack.iter().position(|path| path == &dependency) {
             let chain = stack[index..]
                 .iter()
@@ -785,16 +814,16 @@ fn check_module_graph(
             continue;
         }
         let already_visited = !visited.insert(dependency.clone());
-        let dependency_source = match fs::read_to_string(&dependency) {
-            Ok(source) => source,
-            Err(error) => {
+        let dependency_source = match loader(&dependency) {
+            Some(source) => source,
+            None => {
                 diagnostics.push(Diagnostic {
                     file: current_file.display().to_string(),
                     line: *line_no,
                     column: 1,
                     severity: "error",
                     message: format!(
-                        "could not read {kind} dependency '{}': {error}",
+                        "could not read {kind} dependency '{}'",
                         dependency.display()
                     ),
                 });
@@ -834,7 +863,7 @@ fn check_module_graph(
         diagnostics.extend(checker.diagnostics);
         if !already_visited {
             stack.push(dependency.clone());
-            check_module_graph(&dependency_lines, &dependency, stack, visited, diagnostics);
+            check_module_graph(&dependency_lines, &dependency, stack, visited, diagnostics, loader);
             stack.pop();
         }
     }
@@ -1610,6 +1639,9 @@ impl Interpreter {
         if line.starts_with('$') {
             return self.assignment(line, line_no);
         }
+        if let Some(rest) = line.strip_prefix("http ") {
+            return self.run_http(rest.trim());
+        }
         if let Some(rest) = line.strip_prefix("shellout") {
             let value = self.eval_expr(rest.trim())?;
             self.log_action(&format!("shellout: {value}"));
@@ -1902,6 +1934,17 @@ impl Interpreter {
             }
         }
         Err(format!("unknown command or invalid syntax: {line}"))
+    }
+
+    fn run_http(&mut self, text: &str) -> Result<(), String> {
+        let (method, args, tail) = self.parse_command_atoms(text)?;
+        if !matches!(method.as_str(), "GET"|"POST"|"PUT"|"PATCH"|"DELETE"|"HEAD"|"OPTIONS") { return Err("http method must be GET, POST, PUT, PATCH, DELETE, HEAD, or OPTIONS".into()); }
+        let url = args.first().ok_or("http requires METHOD URL")?.clone();
+        let mut headers=None; let mut body=None; let mut timeout=None; let mut max_bytes=None; let mut seen=HashSet::new(); let mut i=1;
+        while i < args.len() { let option=args[i].as_str(); if !seen.insert(option) { return Err(format!("http option repeated: {option}")); } match option { "headers" => {i+=1; headers=Some(self.eval_expr_value(args.get(i).ok_or("headers requires a dictionary")?)?);}, "body" => {i+=1; body=Some(self.eval_string(args.get(i).ok_or("body requires text")?)?);}, "timeout" => {i+=1; timeout=Some(self.eval_expr(args.get(i).ok_or("timeout requires a number")?)?.parse().map_err(|_|"timeout must be a number")?);}, "maxBytes" => {i+=1; max_bytes=Some(self.eval_expr(args.get(i).ok_or("maxBytes requires an integer")?)?.parse().map_err(|_|"maxBytes must be an integer")?);}, other => return Err(format!("unexpected http option: {other}")),} i+=1; }
+        let dest=tail.trim().strip_prefix("->").ok_or("http requires exactly one capture: -> $response")?;
+        let names=parse_command_capture_destinations(dest.trim())?; if names.len()!=1{return Err("http requires exactly one capture".into());}
+        match http::request(&method,&url,headers,body,timeout,max_bytes) { Ok(value)=>{self.vars.insert(names[0].clone(),value);Ok(())}, Err((message,fields))=>{self.pending_process_error=Some(fields);Err(message)} }
     }
 
     fn parse_command_atoms<'a>(
@@ -3963,6 +4006,7 @@ enum BlockKind {
     Log,
     Timeout,
     Defer,
+    Watch,
 }
 
 impl Checker {
@@ -4002,6 +4046,7 @@ impl Checker {
                 BlockKind::Log => "log",
                 BlockKind::Timeout => "timeout",
                 BlockKind::Defer => "defer",
+                BlockKind::Watch => "watch",
             };
             if matches!(
                 kind,
@@ -4030,7 +4075,9 @@ impl Checker {
             .strip_prefix("export fn ")
             .or_else(|| line.strip_prefix("fn "))
         {
-            parse_function_signature(rest.trim())?;
+            let rest = rest.trim();
+            if rest.ends_with("{}") { parse_function_signature(&format!("{} {{", rest.trim_end_matches("{}")))?; return Ok(()); }
+            parse_function_signature(rest)?;
             self.blocks.push(BlockKind::Function);
             return Ok(());
         }
@@ -4102,6 +4149,22 @@ impl Checker {
         }
         if line == "timeout" {
             return Err("timeout value required".to_string());
+        }
+        if line == "wait" { return Ok(()); }
+        if line.starts_with("wait ") { return Err("wait takes no arguments".to_string()); }
+        if let Some(rest) = line.strip_prefix("watch ") {
+            let (command_text, handler_text) = rest.split_once("->").ok_or("watch syntax is watch <program> <args...> -> $line")?;
+            let (_, _, tail) = validate_command_atoms(command_text.trim())?;
+            if !tail.trim().is_empty() { return Err("watch syntax is watch <program> <args...> -> $line".to_string()); }
+            if !handler_text.trim().starts_with('$') || handler_text.trim() == "$" {
+                return Err("watch destination must be a variable".to_string());
+            }
+            let destinations = parse_command_capture_destinations(handler_text.trim()).map_err(|e| {
+                if e.contains("destination") { e } else { format!("watch {e}") }
+            })?;
+            if destinations.len() != 1 { return Err("watch requires exactly one line destination".to_string()); }
+            self.blocks.push(BlockKind::Watch);
+            return Ok(())
         }
         if let Some(rest) = line.strip_prefix("while ") {
             validate_condition_form(rest.trim())?;
@@ -4325,6 +4388,16 @@ fn validate_assignment_form(line: &str) -> Result<(), String> {
 }
 
 fn validate_statement_form(line: &str) -> Result<(), String> {
+    if let Some(rest) = line.strip_prefix("http ") {
+        let (method, args, tail) = validate_command_atoms(rest.trim())?;
+        if !matches!(method.as_str(), "GET"|"POST"|"PUT"|"PATCH"|"DELETE"|"HEAD"|"OPTIONS") { return Err("http method must be GET, POST, PUT, PATCH, DELETE, HEAD, or OPTIONS".into()); }
+        if args.is_empty() { return Err("http requires METHOD URL".into()); }
+        let mut seen=HashSet::new(); let mut i=1;
+        while i < args.len() { let option=&args[i]; if !matches!(option.as_str(), "headers"|"body"|"timeout"|"maxBytes") { return Err(format!("unexpected http option: {option}")); } if !seen.insert(option) { return Err(format!("http option repeated: {option}")); } let value=args.get(i+1).ok_or_else(|| format!("{option} requires a value"))?; match option.as_str() { "headers" if value != "$" && !value.starts_with('{') => return Err("headers must be a dictionary".into()), "body" if value != "$" && !value.starts_with('"') => return Err("body must be text".into()), "timeout" if value != "$" && value.parse::<f64>().is_err() => return Err("timeout must be a number".into()), "maxBytes" if value != "$" && value.parse::<usize>().is_err() => return Err("maxBytes must be an integer".into()), _ => {} } i+=2; }
+        let destination=tail.trim().strip_prefix("->").ok_or("http requires exactly one capture: -> $response")?;
+        if parse_command_capture_destinations(destination.trim())?.len()!=1 { return Err("http requires exactly one capture".into()); }
+        return Ok(())
+    }
     if line.starts_with('$') {
         return validate_assignment_form(line);
     }

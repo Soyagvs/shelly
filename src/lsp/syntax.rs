@@ -149,9 +149,9 @@ pub fn parse(s: &str) -> ParseResult {
         } else {
             crate::lsp::symbols::Scope::Function
         };
-        if matches!(word, Some("use") | Some("include")) {
+        if matches!(word, Some("import") | Some("include")) {
             if let Some(T::S(x, span)) = t.get(i + 1) {
-                let kind = if word == Some("use") {
+                let kind = if word == Some("import") {
                     ModuleKind::Import
                 } else {
                     ModuleKind::Include

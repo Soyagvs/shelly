@@ -38,7 +38,7 @@ end
 
 ## Structured errors and timeouts
 
-Process failures include `program`, `args`, `code`, `stdout`, and `stderr` in addition to `kind` and `message`. A timeout is a distinct error with `kind` set to `"timeout"`; it includes `program` and `args`, but does not represent a process exit code or completed output. See [Timeouts](timeouts.md) for command and block deadlines, and [Commands and input](commands.md) for process and capture behavior.
+Process failures include `program`, `args`, `code`, `stdout`, and `stderr` in addition to `kind` and `message`. A timeout is a distinct error with `kind` set to `"timeout"`; it includes `program` and `args`, but does not represent a process exit code or completed output. HTTP failures use `kind` and `message`; network, policy, syntax, and limit failures do not expose a response dictionary. A response with status 400 or higher uses `kind == "http"` and intentionally redacts its status, body, headers, and URL. See [HTTP requests](http.md) for the v1 network and redaction rules, [Timeouts](timeouts.md) for command and block deadlines, and [Commands and input](commands.md) for process and capture behavior.
 
 ```shelly
 try -> $error

@@ -18,23 +18,31 @@ Do not pass a script path or pipe script output into it: the editor owns the LSP
 
 ## Document and workspace model
 
-The server keeps only documents received through `textDocument/didOpen` in memory (then updates them with `didChange`). It does not load workspace files from disk for LSP analysis. Every open URI participates in symbol, navigation, completion, and reference queries; participation does not depend on a workspace or project root.
+The server chooses its workspace root in this order: the first `workspaceFolders` URI, then `rootUri`. If neither is supplied, the parent directory of the first opened file is used. A root is optional: LSP can still serve an opened document without one, but workspace-wide features need a valid root.
 
-A `use` line suppresses diagnostics for that document. This is a protocol behavior, not evidence that imported files were checked. Static analysis does not run scripts or evaluate runtime behavior.
+When a root is available, the server loads `.shelly` and `.shl` files from disk recursively. `Shelly.toml` is optional for LSP and is not required to build this workspace view. Open documents are overlays: their current editor text replaces the matching disk file, including unsaved files. External changes never overwrite an open overlay. After `textDocument/didClose`, the disk version is restored when it can be read.
 
-## Supported scope
+URIs must be local `file://` URIs (or `localhost`) and resolved paths must stay lexically under the workspace root. Existing paths are canonicalized; unsaved paths are not required to exist. Other URI authorities and paths outside the root are ignored for workspace analysis.
+
+Diagnostics analyze the current document together with the workspace file set. `import` and `include` targets are resolved relative to the importing file and use the same workspace-safe path rules. Workspace diagnostics, symbols, definitions, references, and rename are limited to files in that workspace; references return at most three results. Static analysis does not run scripts or evaluate runtime behavior.
+
+A `use` line suppresses diagnostics for that document. This is a protocol behavior, not evidence that imported files were checked.
+
+## Supported scope and non-goals
 
 Shelly LSP v1 provides:
 
 - push diagnostics for open documents;
 - completion and hover;
-- definition and references (at most three reference results);
-- document symbols and workspace symbols; and
+- workspace-scoped definition and references;
+- document and workspace symbols; and
 - rename edits for supported names.
 
-Diagnostics are sent as `textDocument/publishDiagnostics` notifications after `didOpen` and `didChange`. They use zero-length ranges: the start and end are the same position. Closing a document publishes an empty diagnostic list for its URI. The server reports syntax and selected command errors, but does not provide pull diagnostics.
+Diagnostics are sent as `textDocument/publishDiagnostics` notifications after `didOpen` and `didChange`. Closing a document republishes diagnostics for its disk fallback when available. The server watches workspace `.shelly` and `.shl` files and refreshes its disk-backed workspace view when handling subsequent LSP messages. A bounded watcher queue is reconciled with a full scan if it overflows. It does not provide pull or workspace diagnostics. Open-document overlays remain authoritative until close.
 
-Rename is deliberately limited: a rename whose `newName` contains `x` is refused with JSON-RPC error `-32602` (`ambiguous rename`). Unknown requests with an ID receive error `-32601` (`Method not found`). Formatting is not supported in v1.
+Formatting is supported through `textDocument/formatting`. It returns a full-document edit using the same safe transformations as `shelly fmt`; malformed documents return no formatting edit. The server also exposes exactly two constrained code actions: `Format document` (`source.format`) and `Replace legacy use with import` (`quickfix`) for a top-level line beginning with `use `.
+
+Rename is deliberately limited: a rename whose `newName` contains `x` is refused with JSON-RPC error `-32602` (`ambiguous rename`). Unknown requests with an ID receive error `-32601` (`Method not found`).
 
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />

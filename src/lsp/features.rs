@@ -1,4 +1,5 @@
 use super::syntax::{SymbolKind, parse};
+use crate::formatter::format_source;
 use serde_json::{Value, json};
 
 pub fn utf16_pos(text: &str, byte: usize) -> (usize, usize) {
@@ -85,6 +86,42 @@ pub const HELPERS: &[HelperMetadata] = &[
 
 pub fn helper(name: &str) -> Option<&'static HelperMetadata> {
     HELPERS.iter().find(|h| h.name == name)
+}
+
+pub fn full_document_edit(_uri: &str, source: &str, formatted: &str) -> Option<Value> {
+    if source == formatted { return None; }
+    Some(json!({"range": range(source, 0, source.len()), "newText": formatted}))
+}
+
+pub fn formatting(d: &super::document::DocumentStore, params: &Value) -> Value {
+    let uri = params["textDocument"]["uri"].as_str().unwrap_or("");
+    let source = d.text(uri).unwrap_or("");
+    match format_source(source).ok().and_then(|formatted| full_document_edit(uri, source, &formatted)) {
+        Some(edit) => json!([edit]),
+        None => json!([]),
+    }
+}
+
+pub fn code_actions(d: &super::document::DocumentStore, params: &Value) -> Value {
+    let uri = params["textDocument"]["uri"].as_str().unwrap_or("");
+    let source = d.text(uri).unwrap_or("");
+    let Ok(formatted) = format_source(source) else { return json!([]); };
+    let mut actions = Vec::new();
+    for (line_no, line) in source.lines().enumerate() {
+        let leading = line.len() - line.trim_start().len();
+        let rest = &line[leading..];
+        if leading == 0 && rest.strip_prefix("use ").is_some() {
+            let start = line.find("use").unwrap();
+            let end = start + 3;
+            let line_start: usize = source.lines().take(line_no).map(|l| l.len() + 1).sum();
+            actions.push(json!({"title":"Replace legacy use with import","kind":"quickfix","edit":{"changes":{uri:[{"range":range(source, line_start + start, line_start + end),"newText":"import"}]}}}));
+            break;
+        }
+    }
+    if let Some(edit) = full_document_edit(uri, source, &formatted) {
+        actions.push(json!({"title":"Format document","kind":"source.format","edit":{"changes":{uri:[edit]}}}));
+    }
+    Value::Array(actions)
 }
 
 pub fn kind(k: SymbolKind) -> u8 {

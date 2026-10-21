@@ -1,6 +1,6 @@
 use super::syntax::{ParseResult, SymbolKind as SyntaxKind};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
@@ -119,16 +119,14 @@ impl SymbolIndex {
     }
     pub fn from_files(root: &Path) -> Result<Self, String> {
         let mut out = Self::default();
-        for x in std::fs::read_dir(root).map_err(|e| e.to_string())? {
-            let x = x.map_err(|e| e.to_string())?;
-            if x.path().extension().and_then(|s| s.to_str()) == Some("shl") {
-                let name = x.file_name().to_string_lossy().into_owned();
-                out.files.insert(
-                    name,
-                    super::syntax::parse(
-                        &std::fs::read_to_string(x.path()).map_err(|e| e.to_string())?,
-                    ),
-                );
+        let mut pending = vec![root.to_path_buf()];
+        while let Some(dir) = pending.pop() {
+            for entry in std::fs::read_dir(&dir).map_err(|e| e.to_string())? {
+                let path = entry.map_err(|e| e.to_string())?.path();
+                if path.is_dir() { pending.push(path); continue; }
+                if !matches!(path.extension().and_then(|s| s.to_str()), Some("shl" | "shelly")) { continue; }
+                let key = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().replace('\\', "/");
+                out.files.insert(key, super::syntax::parse(&std::fs::read_to_string(path).map_err(|e| e.to_string())?));
             }
         }
         Ok(out)
@@ -148,10 +146,9 @@ impl SymbolIndex {
             if (*kind == super::syntax::ModuleKind::Import) != exported {
                 return false;
             }
-            let q = self
-                .files
-                .get(target)
-                .or_else(|| self.files.get(&format!("{}", target)));
+            let source = self.files.iter().find(|(_, x)| std::ptr::eq(*x, p)).map(|(name, _)| PathBuf::from(name));
+            let key = source.as_deref().and_then(|source| source.parent().unwrap_or(Path::new(".")).join(target).to_str().map(|x| x.replace('\\', "/")));
+            let q = key.as_deref().and_then(|key| self.files.get(key)).or_else(|| self.files.get(target));
             q.map(|x| {
                 x.symbols
                     .iter()

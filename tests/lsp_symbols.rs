@@ -68,7 +68,7 @@ fn imports_expose_only_exported_functions_and_constants() {
         ),
         (
             "main.shl",
-            "use \"lib.shl\"\npublic_fn(PUBLIC)\nprivate_fn(PRIVATE)\n",
+            "import \"lib.shl\"\npublic_fn(PUBLIC)\nprivate_fn(PRIVATE)\n",
         ),
     ]);
     let symbols = SymbolIndex::from_files(&root).unwrap();

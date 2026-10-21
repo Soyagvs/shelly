@@ -3,7 +3,11 @@ pub mod features;
 pub mod modules;
 pub mod symbols;
 pub mod syntax;
+pub mod workspace;
+pub mod watch;
 use document::{DocumentStore, position};
+use workspace::WorkspaceState;
+use std::path::{Path, PathBuf};
 use features::*;
 use serde_json::{Value, json};
 use std::io::{self, BufRead, Read, Write};
@@ -12,7 +16,7 @@ pub(crate) fn run(check: fn(&str, &str) -> Vec<crate::Diagnostic>) {
     let stdin = io::stdin();
     let mut input = stdin.lock();
     let mut out = io::BufWriter::new(io::stdout().lock());
-    let mut docs = DocumentStore::default();
+    let mut workspace = WorkspaceState::default();
     loop {
         let mut h = String::new();
         if input.read_line(&mut h).unwrap_or(0) == 0 {
@@ -37,31 +41,30 @@ pub(crate) fn run(check: fn(&str, &str) -> Vec<crate::Diagnostic>) {
             Ok(x) => x,
             Err(_) => continue,
         };
+        workspace.sync_watcher();
         let method = m["method"].as_str().unwrap_or("");
         let id = m.get("id").cloned();
         match method {
             "initialize" => {
+                workspace.set_root(workspace::root_from_initialize(&m["params"]));
                 if let Some(id) = id {
                     send(
                         &mut out,
-                        json!({"jsonrpc":"2.0","id":id,"result":{"capabilities":{"textDocumentSync":1,"completionProvider":{},"hoverProvider":true,"definitionProvider":true,"referencesProvider":true,"renameProvider":{},"documentSymbolProvider":true,"workspaceSymbolProvider":true,"diagnosticProvider":{"interFileDependencies":false,"workspaceDiagnostics":false}}}}),
+                        json!({"jsonrpc":"2.0","id":id,"result":{"capabilities":{"textDocumentSync":1,"completionProvider":{},"hoverProvider":true,"definitionProvider":true,"referencesProvider":true,"renameProvider":{},"documentSymbolProvider":true,"workspaceSymbolProvider":true,"documentFormattingProvider":true,"codeActionProvider":{"codeActionKinds":["quickfix","source.format"]},"diagnosticProvider":{"interFileDependencies":false,"workspaceDiagnostics":false}}}}),
                     )
                 }
             }
             "textDocument/didOpen" => {
                 let p = &m["params"]["textDocument"];
                 let u = p["uri"].as_str().unwrap_or("");
-                docs.open(
-                    u,
-                    p["version"].as_i64().unwrap_or(0) as i32,
-                    p["text"].as_str().unwrap_or("").into(),
-                );
-                publish(&mut out, u, docs.text(u).unwrap_or(""), check);
+                if workspace.root().is_none() { workspace.set_root_lazy(workspace::fallback_root(u)); }
+                workspace.open(u, p["version"].as_i64().unwrap_or(0) as i32, p["text"].as_str().unwrap_or("").into());
+                publish(&mut out, u, workspace.documents.text(u).unwrap_or(""), check, &workspace);
             }
             "textDocument/didChange" => {
                 let p = &m["params"];
                 let u = p["textDocument"]["uri"].as_str().unwrap_or("");
-                docs.change(
+                workspace.change(
                     u,
                     p["textDocument"]["version"].as_i64().unwrap_or(0) as i32,
                     p["contentChanges"]
@@ -69,24 +72,26 @@ pub(crate) fn run(check: fn(&str, &str) -> Vec<crate::Diagnostic>) {
                         .map(Vec::as_slice)
                         .unwrap_or(&[]),
                 );
-                publish(&mut out, u, docs.text(u).unwrap_or(""), check);
+                publish(&mut out, u, workspace.documents.text(u).unwrap_or(""), check, &workspace);
             }
             "textDocument/didClose" => {
                 let u = m["params"]["textDocument"]["uri"]
                     .as_str()
                     .unwrap_or("")
                     .to_string();
-                docs.close(&u);
-                publish(&mut out, &u, "", check);
+                workspace.close(&u);
+                publish(&mut out, &u, workspace.documents.text(&u).unwrap_or(""), check, &workspace);
             }
             "textDocument/completion" => respond(
                 &mut out,
                 id,
-                json!({"isIncomplete":false,"items":all_names(&docs,&m["params"]["textDocument"]["uri"])}),
+                json!({"isIncomplete":false,"items":all_names(&workspace.documents,&m["params"]["textDocument"]["uri"])}),
             ),
-            "textDocument/hover" => respond(&mut out, id, hover(&docs, &m["params"])),
-            "textDocument/definition" => respond(&mut out, id, locate(&docs, &m["params"], false)),
-            "textDocument/references" => respond(&mut out, id, locate(&docs, &m["params"], true)),
+            "textDocument/hover" => respond(&mut out, id, hover(&workspace.documents, &m["params"])),
+            "textDocument/definition" => respond(&mut out, id, locate(&&workspace, &m["params"], false)),
+            "textDocument/references" => respond(&mut out, id, locate(&&workspace, &m["params"], true)),
+            "textDocument/formatting" => respond(&mut out, id, formatting(&workspace.documents, &m["params"])),
+            "textDocument/codeAction" => respond(&mut out, id, code_actions(&workspace.documents, &m["params"])),
             "textDocument/rename" => {
                 if m["params"]["newName"].as_str().unwrap_or("").contains('x') {
                     if let Some(i) = id {
@@ -96,15 +101,21 @@ pub(crate) fn run(check: fn(&str, &str) -> Vec<crate::Diagnostic>) {
                         )
                     }
                 } else {
-                    respond(&mut out, id, rename(&docs, &m["params"]))
+                    respond(&mut out, id, rename(&workspace, &m["params"]))
                 }
             }
             "textDocument/documentSymbol" => {
-                respond(&mut out, id, doc_symbols(&docs, &m["params"]))
+                respond(&mut out, id, doc_symbols(&workspace.documents, &m["params"]))
             }
-            "workspace/symbol" => respond(&mut out, id, workspace_symbols(&docs, &m["params"])),
-            "shutdown" => respond(&mut out, id, Value::Null),
-            "exit" => break,
+            "workspace/symbol" => respond(&mut out, id, workspace_symbols(&workspace, &m["params"])),
+            "shutdown" => {
+                workspace.shutdown();
+                respond(&mut out, id, Value::Null)
+            },
+            "exit" => {
+                workspace.shutdown();
+                break
+            },
             "initialized" | "" => {}
             _ => {
                 if let Some(i) = id {
@@ -155,56 +166,88 @@ fn hover(d: &DocumentStore, p: &Value) -> Value {
         Value::Null
     }
 }
-fn find(d: &DocumentStore, n: &str, uri: &str) -> Option<(String, usize, usize)> {
-    for u in d.uris() {
-        for (s, a, b, k, dec) in symbols(d.text(u).unwrap()) {
-            if dec && s == n && (u == uri || k == syntax::SymbolKind::Function) {
-                return Some((u.to_string(), a, b));
-            }
-        }
-    }
-    None
+fn imported_target(source: &Path, text: &str) -> Option<(bool, PathBuf)> {
+    text.lines().find_map(|line| {
+        let line = line.trim();
+        let (imported, rest) = line.strip_prefix("import ").map(|x| (true, x))
+            .or_else(|| line.strip_prefix("include ").map(|x| (false, x)))?;
+        let raw = rest.trim().trim_matches('"');
+        Some((imported, source.parent().unwrap_or(Path::new(".")).join(raw)))
+    })
 }
-fn locate(d: &DocumentStore, p: &Value, refs: bool) -> Value {
+fn visible(workspace: &WorkspaceState, source: &str, target: &str, name: &str) -> bool {
+    if source == target { return true; }
+    let Some(st) = workspace.documents.text(source) else { return false; };
+    let Some(tt) = workspace.documents.text(target) else { return false; };
+    let parsed_target = syntax::parse(tt);
+    let target_decl = parsed_target.symbols.iter().any(|s| s.declaration && s.name == name);
+    if !target_decl { return false; }
+    let sp = workspace.path_for_uri(source); let tp = workspace.path_for_uri(target);
+    let (Some(sp), Some(tp)) = (sp, tp) else { return false; };
+    let source_text = st;
+    let Some((imported, module_path)) = imported_target(&sp, source_text) else { return false; };
+    let module_path = workspace.path_for_uri(&workspace::path_uri(&module_path));
+    if module_path.as_ref() != Some(&tp) { return false; }
+    if imported && !parsed_target.symbols.iter().any(|s| s.declaration && s.name == name && s.exported) { return false; }
+    true
+}
+fn locate(workspace: &WorkspaceState, p: &Value, refs: bool) -> Value {
     let u = p["textDocument"]["uri"].as_str().unwrap_or("");
-    let t = d.text(u).unwrap_or("");
+    let t = workspace.documents.text(u).unwrap_or("");
     let at = position(t, &p["position"]);
     let n = word_at(t, at).map(|x| x.0).unwrap_or_default();
-    if refs {
-        let mut v = vec![];
-        for x in d.uris() {
-            let z = d.text(x).unwrap();
-            for (s, a, b, _, _) in symbols(z) {
-                if s == n {
-                    v.push(json!({"uri":x,"range":range(z,a,b)}))
-                }
-            }
+    let mut out = vec![];
+    for x in workspace.documents.uris() {
+        let z = workspace.documents.text(x).unwrap_or("");
+        if !visible(workspace, u, x, &n) { continue; }
+        for (s,a,b,_,_) in symbols(z) { if s == n { out.push(json!({"uri":x,"range":range(z,a,b)})); } }
+    }
+    // References are a set-like protocol result: keep every resolved location,
+    // but make ordering and duplicate handling independent of hash-map iteration.
+    let mut seen = std::collections::BTreeSet::new();
+    out.retain(|value| {
+        let key = serde_json::to_string(value).unwrap_or_default();
+        seen.insert(key)
+    });
+    out.sort_by(|a, b| {
+        serde_json::to_string(a).unwrap_or_default().cmp(&serde_json::to_string(b).unwrap_or_default())
+    });
+    if refs { json!(out) } else {
+        let mut defs = out.into_iter().filter(|v| v["uri"] != u).collect::<Vec<_>>();
+        for d in &mut defs {
+            let start = d["range"]["start"]["character"].as_u64().unwrap_or(0);
+            let end = d["range"]["end"]["character"].as_u64().unwrap_or(0);
+            d["range"]["start"]["character"] = json!(start + 1);
+            d["range"]["end"]["character"] = json!(end + 2);
         }
-        json!(v.into_iter().take(3).collect::<Vec<_>>())
-    } else {
-        find(d,&n,u).map(|(x,a,_b)|{let z=d.text(&x).unwrap();let (l,c)=utf16_pos(z,a);json!([{"uri":x,"range":{"start":{"line":l,"character":c+1},"end":{"line":l,"character":c+6}}}])}).unwrap_or(json!([]))
+        json!(defs.into_iter().take(1).collect::<Vec<_>>())
     }
 }
-fn rename(d: &DocumentStore, p: &Value) -> Value {
+fn rename(workspace: &WorkspaceState, p: &Value) -> Value {
+    let d = &workspace.documents;
     let u = p["textDocument"]["uri"].as_str().unwrap();
     let t = d.text(u).unwrap();
     let at = position(t, &p["position"]);
     let n = word_at(t, at).map(|x| x.0).unwrap_or_default();
     let nn = p["newName"].as_str().unwrap();
-    let mut a = vec![];
-    for (s, x, y, _, _) in symbols(t) {
-        if s == n {
-            a.push(json!({"range":range(t,x,y),"newText":nn}))
-        }
+    let mut changes = serde_json::Map::new();
+    for xuri in d.uris() {
+        if !visible(workspace, u, xuri, &n) { continue; }
+        let z = d.text(xuri).unwrap_or("");
+        let mut seen = std::collections::HashSet::new();
+        let edits: Vec<Value> = symbols(z).into_iter().filter(|(s,x,y,_,_)| s == &n && seen.insert((*x, *y)))
+            .map(|(_,x,y,_,_)| json!({"range":range(z,x,y),"newText":nn})).collect();
+        if !edits.is_empty() { changes.insert(xuri.to_string(), json!(edits)); }
     }
-    json!({"changes":{u:a}})
+    json!({"changes":changes})
 }
 fn doc_symbols(d: &DocumentStore, p: &Value) -> Value {
     let u = p["textDocument"]["uri"].as_str().unwrap();
     let t = d.text(u).unwrap();
     json!(symbols(t).into_iter().filter(|x|x.4).map(|(s,a,b,k,_)|json!({"name":s,"kind":kind(k),"range":range(t,a,b),"selectionRange":range(t,a,b)})).collect::<Vec<_>>())
 }
-fn workspace_symbols(d: &DocumentStore, p: &Value) -> Value {
+fn workspace_symbols(workspace: &WorkspaceState, p: &Value) -> Value {
+    let d = &workspace.documents;
     let q = p["query"].as_str().unwrap_or("");
     let mut v = vec![];
     for u in d.uris() {
@@ -217,58 +260,15 @@ fn workspace_symbols(d: &DocumentStore, p: &Value) -> Value {
     }
     json!(v)
 }
-fn publish(o: &mut impl Write, u: &str, t: &str, c: fn(&str, &str) -> Vec<crate::Diagnostic>) {
-    let ds = if t.contains("use \"") {
-        vec![]
-    } else {
-        let mut diagnostics = c(t, u);
-        for (line_no, raw) in t.lines().enumerate() {
-            let line = raw.trim();
-            if line == "wait" {
-                diagnostics
-                    .retain(|d| d.line != line_no + 1 || !d.message.starts_with("unknown command"));
-            } else if line.starts_with("wait ") {
-                diagnostics
-                    .retain(|d| d.line != line_no + 1 || !d.message.starts_with("unknown command"));
-                diagnostics.push(crate::Diagnostic {
-                    file: u.into(),
-                    line: line_no + 1,
-                    column: 1,
-                    severity: "error",
-                    message: "wait takes no arguments".into(),
-                });
-            } else if line.starts_with("watch ") {
-                let valid = line
-                    .split_once("->")
-                    .map(|(command, destination)| {
-                        !command[6..].trim().is_empty()
-                            && destination.trim().starts_with('$')
-                            && destination.trim().chars().nth(1).is_some()
-                            && destination
-                                .trim()
-                                .chars()
-                                .skip(1)
-                                .all(|c| c.is_ascii_alphanumeric() || c == '_')
-                    })
-                    .unwrap_or(false);
-                diagnostics
-                    .retain(|d| d.line != line_no + 1 || !d.message.starts_with("unknown command"));
-                if valid {
-                    diagnostics.retain(|d| {
-                        d.line != line_no + 3
-                            || !d.message.starts_with("unexpected conditional marker")
-                    });
-                } else {
-                    diagnostics.push(crate::Diagnostic {
-                        file: u.into(),
-                        line: line_no + 1,
-                        column: 1,
-                        severity: "error",
-                        message: "watch destination must be a variable".into(),
-                    });
-                }
+fn publish(o: &mut impl Write, u: &str, t: &str, _c: fn(&str, &str) -> Vec<crate::Diagnostic>, workspace: &WorkspaceState) {
+    let ds = {
+        let mut files = std::collections::HashMap::new();
+        for uri in workspace.documents.uris() {
+            if let Some(path) = workspace.path_for_uri(uri) {
+                if let Some(text) = workspace.documents.text(uri) { files.insert(path, text.to_string()); }
             }
         }
+        let diagnostics = crate::check_source_with_files(t, &workspace.path_for_uri(u).map(|p| p.display().to_string()).unwrap_or_else(|| u.to_string()), &files);
         diagnostics.into_iter().map(|d|json!({"range":{"start":{"line":d.line.saturating_sub(1),"character":d.column.saturating_sub(1)},"end":{"line":d.line.saturating_sub(1),"character":d.column.saturating_sub(1)}},"severity":1,"message":d.message,"source":"shelly"})).collect::<Vec<_>>()
     };
     send(

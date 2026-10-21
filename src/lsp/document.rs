@@ -3,13 +3,26 @@ use serde_json::Value;
 #[derive(Default)]
 pub struct DocumentStore {
     docs: std::collections::HashMap<String, (i32, String)>,
+    open: std::collections::HashSet<String>,
 }
 impl DocumentStore {
     pub fn open(&mut self, uri: &str, version: i32, text: String) {
         self.docs.insert(uri.into(), (version, text));
+        self.open.insert(uri.into());
+    }
+    pub fn set_disk(&mut self, uri: &str, text: String) {
+        if !self.open.contains(uri) { self.docs.insert(uri.into(), (0, text)); }
+    }
+    pub fn remove_disk(&mut self, uri: &str) {
+        if !self.open.contains(uri) { self.docs.remove(uri); }
     }
     pub fn close(&mut self, uri: &str) {
+        self.open.remove(uri);
         self.docs.remove(uri);
+    }
+    pub fn clear(&mut self) {
+        self.docs.clear();
+        self.open.clear();
     }
     pub fn change(&mut self, uri: &str, version: i32, changes: &[Value]) {
         if let Some((v, text)) = self.docs.get_mut(uri) {

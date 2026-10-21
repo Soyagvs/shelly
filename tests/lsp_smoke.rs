@@ -105,7 +105,7 @@ fn diagnostics_first_lsp_lifecycle_and_zero_based_ranges() {
 }
 
 #[test]
-fn lsp_v1_advertises_planned_language_capabilities_without_formatting() {
+fn lsp_v1_advertises_language_capabilities_including_formatting_and_code_actions() {
     let mut lsp = Lsp::start();
     lsp.send(json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}));
     let capabilities = &lsp.receive()["result"]["capabilities"];
@@ -123,13 +123,10 @@ fn lsp_v1_advertises_planned_language_capabilities_without_formatting() {
             "missing advertised capability: {capability}"
         );
     }
-    assert!(
-        capabilities.get("documentFormattingProvider").is_none()
-            || capabilities["documentFormattingProvider"] == false
-    );
-    assert!(
-        capabilities.get("workspaceFormattingProvider").is_none()
-            || capabilities["workspaceFormattingProvider"] == false
+    assert_eq!(capabilities["documentFormattingProvider"], true);
+    assert_eq!(
+        capabilities["codeActionProvider"]["codeActionKinds"],
+        json!(["quickfix", "source.format"])
     );
 }
 

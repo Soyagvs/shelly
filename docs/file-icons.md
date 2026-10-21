@@ -15,7 +15,7 @@ These assets describe `.shelly` files only; they do not assign icons to arbitrar
 
 ## Source artwork
 
-The source icon is [`../shelly.svg`](../shelly.svg). Generated installer assets live in [`../assets/icons`](../assets/icons).
+The source icon is [`../shelly.svg`](../shelly.svg). Generated installer assets live in the repository's `assets/icons/` directory.
 
 ## Linux desktop icons
 
