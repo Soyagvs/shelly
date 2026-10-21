@@ -1,14 +1,16 @@
 # Shelly documentation
 
-This is the canonical map of Shelly's documentation. Read it from top to bottom for a book-like tour, or use the cross-links to jump directly to a reference page.
+This is the canonical map of Shelly's documentation. Follow the sections in order for a book-like tour, or choose the route that matches your goal.
 
-## Getting started
+<img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 
-- [README](../README.md) — installation, first project, and quick overview.
-- [Language Guide](language.md) — syntax tour and core rules.
+## Start here
+
+- [README](../README.md) — installation, your first project, and a quick overview.
+- [Language Guide](language.md) — syntax and core rules.
 - [Project structure](project-structure.md) — generated files and directories.
 
-## Language fundamentals
+## Learn the language
 
 - [Comments](comments.md)
 - [Variables](variables.md) · [Constants](constants.md)
@@ -19,27 +21,17 @@ This is the canonical map of Shelly's documentation. Read it from top to bottom 
 - [Functions](functions.md) · [Modules](modules.md)
 - [Error handling](errors.md) · [Deferred cleanup](defer.md) · [Exit](exit.md)
 
-## Standard library
+## Use the standard library
 
-- [Standard helpers](helpers.md) — text, lists, conversion, paths, commands, random, and values.
+- [Standard helpers](helpers.md) — text, lists, conversion, paths, commands, random, and values. See also the [time and date helpers](helpers.md#time).
 - [Files](files.md) · [Logging](logging.md) · [Timeouts](timeouts.md)
-
-## Time and date
-
-- [Time and date helpers](helpers.md#time) — `now`, `timestamp`, and `today`.
 - [Date formatting](date-formatting.md) — `formatDate`, tokens, UTC input, and failures.
 - [Choose menus](choose.md) · [Commands and input](commands.md)
 
-## Automation and tooling
-
-- [Project structure](project-structure.md)
-- [Commands and input](commands.md) · [Files](files.md)
-- [Logging](logging.md) · [Modules](modules.md)
-
-## Editor support
+## Automate and customize
 
 - [Editor support quickstart](editor-support.md)
 - [LSP reference](lsp.md)
 - [File icons](file-icons.md)
 
-Each topic page links back here so the reference remains easy to navigate.
+<img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />

@@ -1,21 +1,23 @@
 # Standard helpers
 
-[Documentation index](index.md) · [Time and date](index.md#time-and-date)
+[Documentation index](index.md) · [Time and date](index.md#use-the-standard-library)
 
-Shelly standard helpers transform values and store the result with `-> $variable`. Helpers do not access the filesystem unless noted elsewhere; path helpers only parse path strings.
+Shelly standard helpers transform values and capture the result with `-> $variable`.
 
-## Rules
+<img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 
-- Every helper requires `-> $variable`.
-- Lists remain lists, booleans are `true` / `false`, and numbers are normalized scalar strings.
-- `split "" "," -> $items` returns an empty list `[]`.
-- `len` works on strings and lists.
-- `join`, `sort`, `reverse`, and `unique` require lists and fail clearly for scalars.
-- `pathJoin` requires at least two path parts.
-- `basename PATH EXT` strips the optional extension only when it matches the file name suffix.
-- `timestamp` is an alias for `now`.
-- `commandExists` checks whether a command can be found on `PATH`; `which` returns its path or an empty string.
-- `random` returns an unsigned integer string. `randomInt min max` is inclusive.
+## Rules and practical limits
+
+- Capture is universal: helpers use `HELPER arguments -> $variable`; missing, malformed, or wrong-arity arguments fail before assignment. The destination is unchanged on any failure.
+- Results are scalar strings unless shown as a list or dictionary. Transformations such as `split`, `sort`, `reverse`, `unique`, `keys`, and `values` produce new collections; they do not mutate the input.
+- Lists and dictionaries can be nested where JSON creates them, but scalar-only helpers reject collections, and ordinary list mutation/assignment has limited nesting support. Keep helper inputs to scalar lists unless a section says otherwise.
+- Strings and widths use Unicode characters. Integer arguments must fit Shelly's signed integer range; counts and widths are non-negative where stated.
+- `len` counts Unicode characters, list items, or dictionary entries.
+- `join`, `sort`, `reverse`, and `unique` require scalar lists and fail for scalars or nested items. `timestamp` is an alias for `now`.
+
+Path helpers parse path text only; they do not check the filesystem. `commandExists` and `which` are the exception: bare command names search the process `PATH`, while path-qualified names are checked as filesystem paths (`which` returns an empty string when absent).
+
+<img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 
 ## Text
 
@@ -34,8 +36,9 @@ padRight "ok" 4 "·" -> $padded
 
 | Helper | Behavior |
 | --- | --- |
-| `substring` | Uses one-based Unicode character positions and a positive length. |
-| `padLeft`, `padRight` | Accept exactly one Unicode fill character and only extend strings narrower than the requested width; existing text is never truncated. |
+| `substring` | Uses one-based Unicode character positions and a positive length; out-of-range starts produce an empty or shortened result. Other forms fail with an argument error. |
+| `padLeft`, `padRight` | Require a non-negative width and exactly one Unicode fill character; they only extend strings narrower than the requested width and never truncate. |
+| `split` | Rejects an empty separator (`split separator cannot be empty`). |
 | `formatDate` | Formats strict UTC timestamps; see the [date formatting guide](date-formatting.md). |
 
 For the complete `formatDate` token reference, input rules, and failure cases, see [date-formatting.md](date-formatting.md).
@@ -66,7 +69,7 @@ isList ["a"] -> $ok
 
 ## Paths
 
-Path helpers operate on strings only; they do not check whether a file exists.
+Path helpers operate on strings only; they do not check whether a file exists. `pathJoin` requires at least two parts. `basename` accepts one or two arguments and removes the optional extension only when it matches the filename suffix; `dirname`, `extension`, and `withoutExtension` each accept one path. Non-string path arguments and wrong arity are rejected.
 
 ```shelly
 pathJoin "dist" "app.zip" -> $path
@@ -91,7 +94,7 @@ timestamp -> $timestamp
 today -> $date
 ```
 
-`now` and `timestamp` return a UTC timestamp like `2025-01-31T12:34:56Z`. `today` returns a UTC date like `2025-01-31`. See the [Time and date route](index.md#time-and-date) for the complete reference.
+`now` and `timestamp` return a UTC timestamp like `2025-01-31T12:34:56Z`. `today` returns a UTC date like `2025-01-31`. See the [Time and date route](index.md#use-the-standard-library) for the complete reference.
 
 ## Commands
 
@@ -110,7 +113,7 @@ randomInt 1 6 -> $roll
 randomInt 5 5 -> $five
 ```
 
-`randomInt` arguments must be integers, and `min` must be less than or equal to `max`.
+`random` returns an unsigned integer string. `randomInt` returns an inclusive signed-integer value; both bounds must be integers in range, and `min` must be less than or equal to `max` (otherwise it fails).
 
 ## JSON and dictionary helpers
 
@@ -122,4 +125,4 @@ values $dict -> $values
 isDict $value -> $ok
 ```
 
-`len` works for strings, lists, and dictionaries. `join`, `sort`, `reverse`, and `unique` require scalar lists. JSON details are in [`json.md`](json.md).
+`len` works for strings, lists, and dictionaries. `join`, `sort`, `reverse`, and `unique` require scalar lists. `jsonParse` accepts JSON values supported by Shelly; JSON `null` becomes an empty scalar. JSON details are in [`json.md`](json.md).

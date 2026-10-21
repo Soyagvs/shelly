@@ -21,8 +21,8 @@ log "identifier"
 end
 ```
 
-- The identifier is required.
-- The identifier is evaluated like other Shelly string/value expressions, so variables and interpolation can provide the name.
+- An identifier expression is required; a missing expression (`log`) is rejected.
+- The identifier is evaluated like other Shelly string/value expressions, so variables and interpolation can provide the name. An explicit empty string (`log ""`) is accepted and sanitizes to the fallback name `log`.
 - Blocks close with `end` and can contain nested blocks, including nested `log` blocks.
 - `shelly check` validates `log` structure without running the block.
 
@@ -40,11 +40,13 @@ Sanitization keeps ASCII letters, digits, `_`, and `-`. Other characters become 
 
 Examples:
 
-| Identifier | File prefix |
+| Identifier | Filename |
 | --- | --- |
 | `deploy` | `deploy-YYYY-MM-DD.log` |
 | `team/release!*` | `team-release---YYYY-MM-DD.log` |
 | `🔥` | `--YYYY-MM-DD.log` |
+
+Here `🔥` sanitizes to `-`, then the date separator adds the second `-`. A missing identifier expression (`log`) is rejected before a filename is created; an explicit empty identifier (`log ""`) is accepted and uses the sanitizer's `log` fallback.
 
 ## Dynamic identifiers
 
@@ -66,16 +68,18 @@ Each line starts with a UTC timestamp. A block records lifecycle lines:
 2026-01-01T12:00:00Z --- deploy ---
 2026-01-01T12:00:00Z ENTER
 2026-01-01T12:00:00Z shellout: starting
-2026-01-01T12:00:00Z command: printf running
+2026-01-01T12:00:00Z command: printf ["running"]
 2026-01-01T12:00:00Z EXIT ok
 ```
 
-Shelly currently records selected action markers inside the block, including:
+Shelly currently records selected action markers inside the block:
 
 - `shellout: ...`
-- `command: ...`
-- file commands such as `create`, `copy`, `move`, `rename`, `remove`, `read`, `write`, and `append`
+- `command: PROGRAM [ARGS]`
+- file commands: `create`, `copy`, `move`, `rename`, `read`, `write`, path `remove`, and file `append`
 - nested `log: ...` entry markers in the outer log
+
+Collection mutations such as list or dictionary `append` and `remove` do not add action markers.
 
 If an ordinary error happens, the log records `ERROR <message>` and the script still fails normally. Control signals such as `exit`, `break`, `continue`, and `return` are not swallowed; when practical, the log records an `EXIT control ...` line before propagating the signal.
 
@@ -122,7 +126,7 @@ end
 
 ## What is not captured
 
-This first version does not capture full stdout or stderr from external commands. `shellout` and `command` output still goes to the terminal as usual.
+This first version does not capture full stdout or stderr from external commands. `shellout` and `command` output still goes to the terminal as usual. Logging levels are not configurable; the fixed markers above are recorded whenever their actions occur.
 
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />

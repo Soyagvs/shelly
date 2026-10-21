@@ -10,7 +10,9 @@ Add `timeout SECONDS` after a command's arguments to limit that process:
 command curl https://example.com timeout 10
 ```
 
-`SECONDS` must be a positive integer or fractional number. The deadline applies to that process only.
+`SECONDS` must be a finite, positive number; fractional values such as `0.5` are valid. Zero, negative, non-numeric, infinite, and non-finite values are rejected. The deadline applies to that process only.
+
+A command deadline covers both output modes: it bounds a streaming command and a command that captures stdout (or stdout, stderr, and the exit code). On timeout, the command is interrupted and raises `kind == "timeout"`; the timeout error includes `program` and `args`, but has no process exit code or completed-output fields.
 
 ## Inherited deadlines
 
@@ -18,18 +20,18 @@ Put `timeout SECONDS` before a block and close it with `end` to set a total dead
 
 ```shelly
 timeout 30
-    fetchData
+    call fetchData
     for $item in $items
         process $item
     end
 end
 ```
 
-The deadline is inherited through function calls and loops. A nested deadline may be shorter, but it cannot extend the deadline inherited from its parent.
+The deadline is inherited through `call`, functions, and loops. It is checked at statement boundaries and while waiting for processes; it is not an arbitrary interruption mechanism for every blocking operation. A nested `timeout` block uses the shorter of its deadline and the inherited block deadline. A command-level `timeout SECONDS` establishes its own effective command deadline and can override the inherited block deadline. A block timeout reports `kind == "timeout"` without process metadata; a process timeout reports `program` and `args` as well.
 
 ## Handling timeouts
 
-A timed-out operation raises a catchable error whose `kind` is `"timeout"`:
+A timed-out operation raises a catchable error whose `kind` is `"timeout"`. Process timeouts also include `program` and `args`; block timeouts do not, because no particular process is necessarily responsible:
 
 ```shelly
 try -> $error

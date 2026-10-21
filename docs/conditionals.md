@@ -19,27 +19,68 @@ else
 end
 ```
 
-## Rules
+## Rules and scope
 
-- `if condition` starts a conditional block.
-- `elif condition` adds an optional middle branch.
-- `else` adds one optional fallback branch.
-- `end` closes the block.
-- Conditions use truthiness, simple comparisons, predicates, and logical operators.
-- `not` binds before `and`; `and` binds before `or`.
-- Blocks do not create a new scope.
+- `if condition` starts a block; `elif` and `else` are optional; `end` closes it.
+- Conditions support comparisons, predicates, `not`, `and`, `or`, and parentheses.
+- Blocks do not create a scope. Assignments made in an `if`, `case`, or nested loop remain available afterward.
 - Nested `if`, `repeat`, `while`, `for`, and `try` blocks are supported.
-- Parentheses group condition expressions and can override logical precedence.
-- `case VALUE` compares one evaluated value against one or more exact `when` values.
-- `case` requires at least one `when`; `else` is optional and must be last.
+
+<p align="center"><img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" /></p>
+
+## Evaluation and comparisons
+
+Supported operators are `==`, `!=`, `>`, `>=`, `<`, and `<=`. Equality and inequality compare values exactly: there is no implicit case folding or substring matching. Ordered comparisons use numeric ordering when both values are integer numbers; otherwise they use lexicographic text ordering. Use `contains` for containment rather than `==`.
+
+`not` binds first, then `and`, then `or`. Operators short-circuit: `and` skips its right side after false, and `or` skips it after true. This can safely guard a later predicate or expression.
+
+```shelly
+if $count > 0 and $count < 10
+    shellout "small positive number"
+end
+
+if ($mode == "dev" or $mode == "test") and not $disabled
+    shellout "enabled non-production"
+end
+```
+
+Parentheses group expressions and may nest. **Invalid:** an unmatched `(` or `)`, an empty group, or malformed text inside a group. These forms produce an error rather than a condition result.
+
+## Predicates
+
+- `exists "path"` is true when the file or directory exists relative to the current script; missing paths are false.
+- `contains $value "thing"` checks a substring in a string, an exact rendered item in a list, or a key in a dictionary.
+- `matches $value /pattern/` performs a Rust-regex substring match. A list matches when any rendered element matches; dictionary values are unsupported. Use `^` and `$` for whole-value matching.
+
+```shelly
+if matches $name /(?i)^[a-z]+$/ and contains $names "Luis"
+    shellout "valid"
+end
+```
+
+A predicate may be captured with `-> $variable`; see [predicates.md](predicates.md). **Invalid:** missing predicate arguments, an unterminated `/pattern/`, or an invalid regular expression.
+
+<p align="center"><img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" /></p>
+
+## Truthiness
+
+Scalar values are false only when they are exactly `false`, exactly `0`, or the empty string `""`. Every other scalar string is true (including `"False"`, `"0"`, and whitespace). Non-empty lists and dictionaries are true; empty lists and dictionaries are false, including empty selector/filter results.
+
+```shelly
+$numbers = [1, 3, 5]
+if $numbers[>10]
+    shellout "has big numbers"
+else
+    shellout "no big numbers"
+end
+```
 
 ## Case blocks
 
-Use `case` for exact value dispatch without fallthrough. The first matching `when` branch runs; no `break` is needed. If no `when` matches and there is no `else`, nothing runs.
+`case VALUE` evaluates its value once. The first `when` whose value is exactly equal to it runs, with no fallthrough. `when VALUE or VALUE` supplies alternatives; each alternative is evaluated and compared exactly. `else` runs only when no `when` matches.
 
 ```shelly
 $mode = "prod"
-
 case $mode
     when "dev" or "test"
         shellout "non-production"
@@ -50,129 +91,10 @@ case $mode
 end
 ```
 
-`case` values and `when` values can be strings, numbers, booleans, constants, variables, or numeric expressions. Blocks do not create a new scope, and nested blocks work inside branches.
+`case` requires at least one `when`; `when` requires at least one value; `else` is optional, may appear once, and must be last. **Invalid:** `when` outside `case`, a missing `end`, `case` without `when`, duplicate `else`, `when` after `else`, comma-separated alternatives, or malformed values.
 
-```shelly
-$LIMIT = 3
-$count = 3
+<p align="center"><img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" /></p>
 
-case $count
-    when 1
-        shellout "one"
-    when $LIMIT
-        if true
-            shellout "at limit"
-        end
-end
-```
+## `check` versus runtime
 
-Rules:
-
-- `case VALUE` requires a value.
-- `when VALUE` requires at least one value.
-- `when VALUE or VALUE` matches if either alternative equals the `case` value; repeat `or` for more alternatives.
-- Comma-separated `when` alternatives are unsupported and produce an error under both `run` and `check`.
-- `else` may appear once and must come after all `when` branches.
-- `when` outside `case`, duplicate `else`, `when` after `else`, missing `end`, and `case` with no `when` are errors.
-
-## Comparisons
-
-```shelly
-if $count >= 3
-    shellout "enough"
-end
-```
-
-Supported comparison operators: `==`, `!=`, `>`, `>=`, `<`, and `<=`.
-
-## Logical operators
-
-Use `not`, `and`, and `or` to compose conditions. Priority is:
-
-1. `not`
-2. `and`
-3. `or`
-
-Use parentheses to group condition expressions when you need a different order or clearer logic. Groups can nest, and `not (condition)` is supported.
-
-### `not`
-
-```shelly
-if not false
-    shellout "true"
-end
-```
-
-### `and`
-
-```shelly
-if $count > 0 and $count < 10
-    shellout "small positive number"
-end
-```
-
-### `or`
-
-```shelly
-if $mode == "dev" or $mode == "test"
-    shellout "non-production"
-end
-```
-
-### Grouping
-
-```shelly
-if ($mode == "dev" or $mode == "test") and not $disabled
-    shellout "enabled non-production"
-end
-
-if not (exists "dist/app" and contains $mode "prod")
-    shellout "needs attention"
-end
-```
-
-### Combined predicates
-
-```shelly
-$names = ["Ana", "Luis"]
-
-if exists "README.md" and contains $names "Luis"
-    shellout "ready"
-end
-
-if not exists "dist/app" or contains $mode "dev"
-    shellout "build needed"
-end
-```
-
-## Predicates
-
-Use `exists "path"` to check for a file or directory relative to the current script file. Missing paths return false instead of erroring.
-
-Use `contains $value "thing"` for substring checks on strings and exact item checks on lists.
-
-See [predicates.md](predicates.md) for capture forms, composition examples, and predicate-specific notes.
-
-## Truthiness
-
-- `true` is true.
-- `false` is false.
-- `""` is false.
-- `0` is false.
-- Non-empty lists are true.
-- Empty lists are false, including empty selector/filter results.
-- Everything else is true.
-
-```shelly
-$numbers = [1, 3, 5]
-
-if $numbers[>10]
-    shellout "has big numbers"
-else
-    shellout "no big numbers"
-end
-```
-
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+`shelly check` validates conditional syntax, grouping, predicate forms, and block structure without running commands or evaluating filesystem state. It can report malformed expressions and structural errors, but it cannot prove a runtime path exists, a variable is defined at execution time, a regex matches, or a branch will be selected. `shelly run` evaluates conditions, short-circuits them, and reports runtime errors and results.

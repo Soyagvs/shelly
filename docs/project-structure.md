@@ -6,7 +6,13 @@
 
 ## Initialize a project
 
-The quickest path is to create and enter a directory, initialize it, then run the generated entry point:
+A single `.shelly` file is enough when you have one small script and do not need project metadata, tests, or a standard layout. Run it directly:
+
+```sh
+shelly hello.shelly
+```
+
+Use `shelly init` when you want a project starter layout, a `Shelly.toml` manifest, or the built-in test discovery. It creates a convenient starting point, but its folders are optional extension points—not a required architecture. You can begin with one file and add only the folders that make your project easier to understand:
 
 ```sh
 mkdir my-shelly-project
@@ -34,22 +40,31 @@ modules/
 domains/
 ```
 
-- `Shelly.toml` — project metadata and test discovery configuration.
+- `Shelly.toml` — the manifest: it names the project, identifies its entry script, and can configure test discovery. It is required by the manifest-based forms of `shelly run`, `shelly check`, and `shelly test`.
 - `main.shelly` — the user-facing entry point.
 - `README.md` — starter project documentation.
 - `.gitignore` — ignores generated files, including `logs/`.
-- `tests/` — project tests. Add recursively discovered `*_test.shelly` files here or in nested directories; run them with `shelly test`.
-- `consts/` — shared constants.
-- `functions/` — reusable functions.
-- `utils/` — general-purpose helper files.
-- `setup/` — startup files intended for `include`.
-- `scripts/` — additional runnable command entry points.
-- `modules/` — reusable non-domain modules.
-- `domains/` — code grouped by application domain.
+- `tests/` — scripts that verify behavior. Add recursively discovered `*_test.shelly` files here or in nested directories; run them with `shelly test`.
+- `consts/` — named values shared by several scripts.
+- `functions/` — reusable actions that scripts can call.
+- `utils/` — small helpers used in different parts of the project.
+- `setup/` — code that prepares the environment when a script starts.
+- `scripts/` — extra command entry points people can run directly.
+- `modules/` — reusable building blocks that do not belong to one business area.
+- `domains/` — code organized around a larger area of work, such as releases or documentation.
 
 Each scaffold directory contains a `.gitkeep` marker so the empty directory can be tracked. `logs/` is ignored and generated lazily beside the running script when logging needs it; `init` does not create it.
 
-Start with one script. Add folders only when names and reuse make the project easier to read.
+A natural growth path is: start with one script; extract repeated or reusable code into imported files; then use purpose-oriented folders and domain groupings when the project has several commands or areas of work. None of those later stages is required.
+
+Import and include paths are resolved relative to the file that contains the statement. For example, a file in `scripts/` uses `../consts/app.shelly` because `..` moves from `scripts/` back to the project root, where `consts/` is a sibling folder.
+
+## Which command should I use?
+
+- **Run one file directly:** `shelly path/to/script.shelly`. This is the simplest choice and does not need `Shelly.toml`.
+- **Run the project entry point:** `shelly run`. This reads `Shelly.toml` in the current directory and uses `[project].entry`.
+- **Check without executing:** `shelly check path/to/script.shelly` checks an explicitly named file and does not need a manifest. `shelly check` with no path reads `Shelly.toml` in the current directory.
+- **Run project tests:** `shelly test`. This uses the test settings in `Shelly.toml` in the current directory, so a manifest is required.
 
 ## Shelly.toml
 
@@ -101,18 +116,7 @@ shelly main.shelly --dry-run input.txt
 
 ## Tests
 
-Create a test such as `tests/name_test.shelly` after initialization:
-
-```shelly
-if $name != "Shelly"
-    exit 1
-end
-exit 0
-```
-
-Tests are ordinary Shelly scripts. `shelly test` recursively discovers `*_test.shelly` files, executes each in isolation, and prints a PASS/FAIL summary. The command exits non-zero if any test fails or cannot run.
-
-Use test-only assertions for concise checks:
+Create a self-contained test script at `tests/name_test.shelly` after initialization. It defines the values it uses, but it still runs inside the Shelly project and its `Shelly.toml` when invoked by `shelly test`:
 
 ```shelly
 $value = "ready"
@@ -123,15 +127,9 @@ assertFalse false
 assertContains $items "two"
 ```
 
-`assertEqual` compares values, `assertTrue` requires a truthy value, `assertFalse` requires a falsey value, and `assertContains` checks that a collection contains a value. Assertions stop execution on failure and are intended for tests. Use `if` or `try`/`catch` for normal or recoverable flow.
+Tests are ordinary Shelly scripts. `shelly test` recursively discovers `*_test.shelly` files, executes each in isolation, and prints a PASS/FAIL summary. The command exits non-zero if any test fails or cannot run. Assertions stop execution on failure and are intended for tests; use `if` or `try`/`catch` for normal or recoverable flow.
 
-```text
-hello.shelly
-```
-
-```shelly
-shellout "Hello from Shelly"
-```
+`assertEqual` compares values, `assertTrue` requires a truthy value, `assertFalse` requires a falsey value, and `assertContains` checks that a collection contains a value.
 
 ## Rules
 
@@ -294,7 +292,7 @@ call title("daily report") -> $heading
 shellout "$heading in $mode"
 ```
 
-`import` should be quiet: imported files expose exports and do not run private top-level code. `include` should be intentional: the target file runs in the current scope.
+In plain language, `import` brings reusable exported values or functions into a script without treating the imported file as startup code. Use `include` when you deliberately want the target file to run as part of the current script and share its scope. See [Modules](modules.md) for the detailed behavior and API rules.
 
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />

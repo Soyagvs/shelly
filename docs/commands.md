@@ -33,8 +33,8 @@ args -> $all
 - `arg N -> $var`, `hasArg VALUE -> $var`, and `args -> $var` read arguments passed after the script path.
 - `log "identifier"` records structured action markers for a block without silencing normal output; see [logging.md](logging.md).
 - Failed system commands are ordinary structured errors and can be handled with `try` / `catch`; inspect the error dictionary's `kind`, `message`, and process fields there.
-- `command <program> <args...>` streams output directly.
-- `command <program> <args...> -> $var` captures stdout into a variable and still fails on non-zero exit.
+- `command <program> <args...>` streams output directly. A non-zero direct command failure includes `program`, `args`, and `code` process fields, but no captured `stdout` or `stderr`.
+- `command <program> <args...> -> $var` captures stdout into a variable and still fails on non-zero exit; its process error also includes captured `stdout` and `stderr`.
 - `command <program> <args...> -> $stdout, $stderr, $code` captures stdout, stderr, and the numeric exit code without failing on non-zero exit; when the operating system provides no code, Shelly stores `1`.
 - Output captures may be one variable or three variables; `shell` uses the same capture forms.
 - The old `command "..."` syntax was removed; use `shell "..."` when you need shell text.
@@ -145,7 +145,7 @@ shellout "current directory: $cwd"
 shellout "command finished with code $code and stderr: $err"
 ```
 
-`command <program> <args...>` executes directly, so arguments are not interpreted as shell syntax. Quoted atoms remain one argument and variables are evaluated as arguments. Add `timeout SECONDS` after the arguments to bound that process; see [Timeouts](timeouts.md). It streams stdout/stderr and fails the script on a non-zero exit; catch that failure as a structured error with `kind`, `message`, and process fields (`program`, `args`, `code`, `stdout`, and `stderr`). A one-variable capture trims trailing newlines and also fails on a non-zero exit. Use three captures when the script should inspect failure itself; stdout and stderr are trimmed, and `$code` is the process exit code or `1` when no code is available. Use `shell "..."` for pipelines or redirections; it is shell/platform dependent.
+`command <program> <args...>` executes directly, so arguments are not interpreted as shell syntax. Quoted atoms remain one argument and variables are evaluated as arguments. Add `timeout SECONDS` after the arguments to bound that process; see [Timeouts](timeouts.md). Without capture it streams stdout/stderr and fails the script on a non-zero exit; its process error has `kind`, `message`, `program`, `args`, and `code`, but no captured output fields. A one-variable capture buffers stdout and stderr until process exit, trims trailing newlines, and also fails on a non-zero exit; that process error includes `stdout` and `stderr`. `shell "..."` uses the same capture behavior and reports shell failures with captured `stdout` and `stderr`. Successful captures and three-variable captures require stdout and stderr to be valid UTF-8. A one-variable capture on a non-zero command or shell failure uses lossy UTF-8 conversion for the captured output. Use three captures when the script should inspect failure itself; stdout and stderr are buffered until exit and trimmed, and `$code` is the process exit code or `1` when no code is available. Use `shell "..."` for pipelines or redirections; it is shell/platform dependent.
 
 For portable file work, prefer Shelly path commands such as `write "file" $text`, `append "file" $text`, `read "file" -> $text`, `size "file" -> $bytes`, and `copy "from" "to"`; see [files.md](files.md). Use `command` when you need an OS-specific tool.
 

@@ -6,7 +6,7 @@
 
 Shelly has first-class file commands for common script automation, plus `files` for collecting matching paths.
 
-All relative paths, including `./`, resolve from the current Shelly script file directory, not from the process current working directory. `import`, `include`, `exists`, and `files` use the same script-relative model.
+All relative paths, including `./`, resolve from the current Shelly script file directory, not from the process current working directory. `import`, `include`, `exists`, and `files` use the same script-relative model. This is not a sandbox: `..` is allowed and can escape the script directory, for example `write "../shared/out.txt" "hello"` writes in its parent directory.
 
 ## Path commands
 
@@ -43,6 +43,20 @@ remove "out/"
 - `size "file" -> $bytes` stores the file size in bytes. Missing paths and directories fail.
 - `tempFile -> $path` creates an empty temporary file and stores its absolute path.
 - `tempDir -> $path` creates a temporary directory and stores its absolute path.
+
+## Mutation and failure examples
+
+Path commands mutate the filesystem immediately. `write` overwrites, `append` preserves existing content and adds a trailing newline, `copy` and `move` create destination parents, and `remove "dir/"` deletes a directory recursively. Destination conflicts fail rather than overwrite:
+
+```shelly
+copy "report.txt" "archive/report.txt" # fails if the destination exists
+move "report.txt" "archive/report.txt" # fails if the destination exists
+rename "report.txt" "archive/report.txt" # fails: rename takes a plain name
+remove "archive"                    # fails: recursive removal needs "archive/"
+read "missing.txt" -> $text          # fails: the path is missing
+```
+
+`create`, `write`, and `append` create missing parent directories. `isFile` and `isDir` are the exceptions: missing paths simply produce `false`.
 
 ## Commas in the language
 
@@ -90,7 +104,7 @@ files "src/**/test_*.shelly" -> $tests
 files "README.md" -> $readme
 ```
 
-`*` matches only within one path segment. `**` matches zero or more directory segments, so `**/*.shelly` includes files in the current directory and every descendant. Recursive traversal does not follow symlinked directories. Matches are files only; directories are never returned. Unreadable or absent paths produce no match, and results are sorted by normalized relative path.
+`*` matches only within one path segment. `**` matches zero or more directory segments, so `**/*.shelly` includes files in the current directory and every descendant. Recursive traversal does not follow symlinked directories; a symlink to a directory is not traversed or returned. A symlink to a file may match a non-recursive pattern, but matches are files only and directories are never returned. Unreadable or absent paths produce no match. Results are sorted by normalized relative path: each returned string is normalized relative to the script directory (with `.` and `..` resolved and `/` separators), not an absolute path.
 
 ## Print the list
 

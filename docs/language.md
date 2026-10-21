@@ -1,6 +1,6 @@
 # Shelly language guide
 
-[Documentation index](index.md) · [Deferred cleanup](defer.md) · [Time and date](index.md#time-and-date)
+[Documentation index](index.md) · [Deferred cleanup](defer.md) · [Time and date](index.md#use-the-standard-library)
 
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
@@ -19,6 +19,28 @@ multiline
 text block
 ```
 ````
+
+## A practical automation
+
+This small script combines the usual pieces: positional input, a file predicate, a direct process call with captures, and a result check.
+
+````shelly
+arg 1 -> $path
+isFile $path -> $present
+
+if $present
+    command wc -l $path -> $out, $err, $code
+    if $code == 0
+        shellout "line count: $out"
+    else
+        shellout "could not inspect $path: $err"
+    end
+else
+    shellout "missing file: $path"
+end
+````
+
+See [commands.md](commands.md), [files.md](files.md), and [conditionals.md](conditionals.md) for the contracts behind this example.
 
 ## Core rules
 
@@ -42,6 +64,55 @@ text block
 - `defer ... end` registers cleanup for scope exit; see [deferred cleanup](defer.md).
 - `watch <program> <args...> -> $line ... end` streams stdout line events serially until the child exits; stderr is not exposed as events.
 - Bare `wait` blocks until normal process interruption; it takes no arguments.
+
+## A short control-flow progression
+
+Build up from a condition, to visiting each value, to moving repeated work into a function:
+
+````shelly
+$names = ["Ana", "Luis"]
+
+if $names[1] == "Ana"
+    shellout "first name matches"
+end
+
+for $name in $names
+    shellout "Hello $name"
+end
+
+fn announce($name) {
+    shellout "Welcome $name"
+}
+
+call announce($names[1])
+````
+
+See [conditionals.md](conditionals.md), [for.md](for.md), and [functions.md](functions.md) for variations.
+
+## Values at a glance
+
+Lists and dictionaries use one-based list access; JSON conversion lets a text payload become a Shelly value and back.
+
+````shelly
+$data = { users: [{ name: "Ada" }] }
+$name = $data.users[1].name
+jsonStringify $data -> $text
+jsonParse $text -> $same
+shellout $name
+````
+
+For the full collection and JSON contracts, see [lists.md](lists.md), [dictionaries.md](dictionaries.md), and [json.md](json.md).
+
+## Command versus shell
+
+Use `command` for argv execution. Use `shell` only when a shell feature such as a pipeline or redirection is required:
+
+````shelly
+command printf "%s\\n" "hello" -> $out
+shell "printf '%s\\n' hello | tr a-z A-Z" -> $out
+````
+
+The second form is shell/platform dependent; see [commands.md](commands.md).
 
 ## Reference
 
@@ -68,6 +139,14 @@ text block
 | For loops | [for.md](for.md) |
 | Modules | [modules.md](modules.md) |
 | Project structure | [project-structure.md](project-structure.md) |
+
+## Choose a route
+
+- **CLI and input:** [commands.md](commands.md)
+- **Files:** [files.md](files.md)
+- **Reusable code:** [modules.md](modules.md) and [functions.md](functions.md)
+- **Failures:** [errors.md](errors.md)
+- **Editor support:** [editor-support.md](editor-support.md)
 
 ## Check and run
 

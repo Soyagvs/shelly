@@ -16,7 +16,7 @@ You need `shelly-lsp` installed and available as `shelly-lsp` in your terminal. 
 2. Install Shelly from a release archive, and make sure the archive's directory is on your `PATH`.
 3. Restart VS Code, then open a `.shelly` file (or a folder containing one).
 
-The extension starts `shelly-lsp` for you. Type an obvious syntax mistake and look for a diagnostic underline or a problem in the **Problems** panel. Remove the mistake: the diagnostic should disappear.
+Follow the extension's setup, then open a `.shelly` file and type an obvious syntax mistake. Look for a diagnostic underline or a problem in the **Problems** panel. Remove the mistake: the diagnostic should disappear.
 
 If nothing appears:
 
@@ -30,7 +30,7 @@ If nothing appears:
 2. Install Shelly, including `shelly-lsp`, and put `shelly-lsp` on your `PATH`.
 3. Open a `.shelly` file in Neovim.
 
-The runtime plugin detects `.shelly` buffers and starts `shelly-lsp` automatically. No extra LSP configuration is required. You should see diagnostics for invalid Shelly syntax, and completion or hover when your Neovim setup displays them.
+Use the plugin's setup instructions, then open a `.shelly` file. You should see diagnostics for invalid Shelly syntax, and completion or hover when your Neovim setup displays them.
 
 If nothing appears:
 
@@ -41,9 +41,9 @@ If nothing appears:
 
 ## What to expect—and what not to expect
 
-The language server performs static, workspace-aware analysis. The verified shared capabilities are diagnostics, completion, hover, definition, references, document symbols, workspace symbols, and conservative rename. Unsaved edits are included in diagnostics. Dynamic or ambiguous targets may not be resolved, and rename may refuse unsafe changes. Formatting is not supported in LSP v1, so this setup does not add a formatter.
+The language server performs static, workspace-aware analysis for open workspace documents. Workspace files provide the baseline for module availability, but an open unsaved buffer overrides its corresponding file, so diagnostics and module analysis follow the editor's current contents. Dynamic or ambiguous targets may not be resolved, and rename may refuse unsafe changes. References are capped. See the [LSP reference](lsp.md) for the complete feature scope and limits, including reference results. Formatting is not supported in LSP v1, so this setup does not add a formatter.
 
-The LSP accepts `files` patterns including recursive `**` syntax (for example, `files "**/*.shelly" -> $items`) without reporting a syntax diagnostic. The LSP does not expand globs or inspect the filesystem; expansion happens when Shelly runs the script. The same accepted syntax is transported by the VS Code and Neovim integrations.
+The LSP accepts `files` patterns including recursive `**` syntax (for example, `files "**/*.shelly" -> $items`) without reporting a syntax diagnostic. The LSP does not expand globs or inspect the filesystem; expansion happens when Shelly runs the script.
 
 The editor also recognizes `watch <program> <args...> -> $line ... end`, which reports stdout lines serially until the child exits. Bare `wait` blocks until normal process interruption and takes no arguments. `watch` does not expose stderr events. These constructs provide diagnostics for malformed destinations or arguments; the LSP does not provide semantic tokens or other unimplemented capabilities.
 

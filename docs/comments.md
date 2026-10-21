@@ -4,11 +4,23 @@
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
 
-Comments are notes for readers. Shelly ignores them when they use matching `#` markers outside strings.
+Comments are notes for people reading a script. Shelly ignores them, so they help explain *why* something exists without changing what the script does.
 
 ```shelly
-# Say hello #
+# Greet the person running this script #
 shellout "hello"
+```
+
+## When to use comments
+
+Use a comment when the intent is not obvious from the code: explain a decision, a limitation, or a surprising requirement. Do not repeat what a clear instruction already says.
+
+```shelly
+# The API accepts dates only in UTC. #
+$DATE_FORMAT = "UTC"
+
+# Avoid: this only repeats the instruction. #
+shellout "ready"
 ```
 
 ## Rules
