@@ -11,10 +11,14 @@ impl DocumentStore {
         self.open.insert(uri.into());
     }
     pub fn set_disk(&mut self, uri: &str, text: String) {
-        if !self.open.contains(uri) { self.docs.insert(uri.into(), (0, text)); }
+        if !self.open.contains(uri) {
+            self.docs.insert(uri.into(), (0, text));
+        }
     }
     pub fn remove_disk(&mut self, uri: &str) {
-        if !self.open.contains(uri) { self.docs.remove(uri); }
+        if !self.open.contains(uri) {
+            self.docs.remove(uri);
+        }
     }
     pub fn close(&mut self, uri: &str) {
         self.open.remove(uri);

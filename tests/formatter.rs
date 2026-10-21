@@ -25,9 +25,13 @@ fn non_ascii_input_does_not_panic() {
 
 #[test]
 fn strings_comments_and_multiline_strings_are_preserved() {
-    let source = "  shellout \"a # b\" # trailing\n#\ncomment # text\n#\n```\n  literal # text\n```\n";
+    let source =
+        "  shellout \"a # b\" # trailing\n#\ncomment # text\n#\n```\n  literal # text\n```\n";
     let formatted = format_source(source).expect("format source");
-    assert_eq!(formatted, "shellout \"a # b\" #\n#\ncomment # text\n#\n```\n  literal # text\n```\n");
+    assert_eq!(
+        formatted,
+        "shellout \"a # b\" #\n#\ncomment # text\n#\n```\n  literal # text\n```\n"
+    );
 }
 
 #[test]
@@ -70,13 +74,25 @@ fn format_file_check_reports_clean_and_dirty_status() {
 fn fmt_cli_check_statuses_and_argument_order_are_exact() {
     let path = temp_script(" shellout \"x\"\n");
     let bin = env!("CARGO_BIN_EXE_shelly");
-    let dirty = Command::new(bin).args(["fmt", "--check", path.to_str().unwrap()]).output().unwrap();
+    let dirty = Command::new(bin)
+        .args(["fmt", "--check", path.to_str().unwrap()])
+        .output()
+        .unwrap();
     assert!(!dirty.status.success());
-    let clean = Command::new(bin).args(["fmt", path.to_str().unwrap()]).output().unwrap();
+    let clean = Command::new(bin)
+        .args(["fmt", path.to_str().unwrap()])
+        .output()
+        .unwrap();
     assert!(clean.status.success());
-    let checked = Command::new(bin).args(["fmt", "--check", path.to_str().unwrap()]).output().unwrap();
+    let checked = Command::new(bin)
+        .args(["fmt", "--check", path.to_str().unwrap()])
+        .output()
+        .unwrap();
     assert!(checked.status.success());
-    let wrong_order = Command::new(bin).args(["fmt", path.to_str().unwrap(), "--check"]).output().unwrap();
+    let wrong_order = Command::new(bin)
+        .args(["fmt", path.to_str().unwrap(), "--check"])
+        .output()
+        .unwrap();
     assert!(!wrong_order.status.success());
     assert!(String::from_utf8_lossy(&wrong_order.stderr).contains("Usage: shelly fmt"));
 }

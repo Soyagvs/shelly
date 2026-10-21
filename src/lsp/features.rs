@@ -89,14 +89,19 @@ pub fn helper(name: &str) -> Option<&'static HelperMetadata> {
 }
 
 pub fn full_document_edit(_uri: &str, source: &str, formatted: &str) -> Option<Value> {
-    if source == formatted { return None; }
+    if source == formatted {
+        return None;
+    }
     Some(json!({"range": range(source, 0, source.len()), "newText": formatted}))
 }
 
 pub fn formatting(d: &super::document::DocumentStore, params: &Value) -> Value {
     let uri = params["textDocument"]["uri"].as_str().unwrap_or("");
     let source = d.text(uri).unwrap_or("");
-    match format_source(source).ok().and_then(|formatted| full_document_edit(uri, source, &formatted)) {
+    match format_source(source)
+        .ok()
+        .and_then(|formatted| full_document_edit(uri, source, &formatted))
+    {
         Some(edit) => json!([edit]),
         None => json!([]),
     }
@@ -105,7 +110,9 @@ pub fn formatting(d: &super::document::DocumentStore, params: &Value) -> Value {
 pub fn code_actions(d: &super::document::DocumentStore, params: &Value) -> Value {
     let uri = params["textDocument"]["uri"].as_str().unwrap_or("");
     let source = d.text(uri).unwrap_or("");
-    let Ok(formatted) = format_source(source) else { return json!([]); };
+    let Ok(formatted) = format_source(source) else {
+        return json!([]);
+    };
     let mut actions = Vec::new();
     for (line_no, line) in source.lines().enumerate() {
         let leading = line.len() - line.trim_start().len();

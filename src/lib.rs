@@ -10,9 +10,9 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod comments;
+pub mod formatter;
 #[doc(hidden)]
 pub mod http;
-pub mod formatter;
 pub mod lsp;
 mod parser;
 mod shell;
@@ -156,13 +156,17 @@ fn format_command(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<
     let first = args.next();
     let (check, path) = if first.as_deref() == Some(std::ffi::OsStr::new("--check")) {
         (true, args.next().map(PathBuf::from))
-    } else { (false, first.map(PathBuf::from)) };
+    } else {
+        (false, first.map(PathBuf::from))
+    };
     if args.next().is_some() || path.is_none() {
         return Err("Usage: shelly fmt [--check] <path>".to_string());
     }
     let path = path.unwrap();
     let clean = formatter::format_file(&path, check)?;
-    if check && !clean { return Err("formatting differs (run 'shelly fmt <path>')".to_string()); }
+    if check && !clean {
+        return Err("formatting differs (run 'shelly fmt <path>')".to_string());
+    }
     Ok(())
 }
 
@@ -675,7 +679,9 @@ fn lexical_path(path: &Path) -> PathBuf {
     for component in path.components() {
         match component {
             std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => { out.pop(); }
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
             other => out.push(other.as_os_str()),
         }
     }
@@ -686,11 +692,24 @@ pub(crate) fn check_source(source: &str, file: &str) -> Vec<Diagnostic> {
     check_source_with_loader(source, file, &|path| fs::read_to_string(path).ok())
 }
 
-pub(crate) fn check_source_with_files(source: &str, file: &str, files: &HashMap<PathBuf, String>) -> Vec<Diagnostic> {
-    check_source_with_loader(source, file, &|path| files.get(path).cloned().or_else(|| fs::read_to_string(path).ok()))
+pub(crate) fn check_source_with_files(
+    source: &str,
+    file: &str,
+    files: &HashMap<PathBuf, String>,
+) -> Vec<Diagnostic> {
+    check_source_with_loader(source, file, &|path| {
+        files
+            .get(path)
+            .cloned()
+            .or_else(|| fs::read_to_string(path).ok())
+    })
 }
 
-fn check_source_with_loader(source: &str, file: &str, loader: &dyn Fn(&Path) -> Option<String>) -> Vec<Diagnostic> {
+fn check_source_with_loader(
+    source: &str,
+    file: &str,
+    loader: &dyn Fn(&Path) -> Option<String>,
+) -> Vec<Diagnostic> {
     let source = match normalize_multiline_strings(source) {
         Ok(source) => source,
         Err(error) => {
@@ -863,7 +882,14 @@ fn check_module_graph(
         diagnostics.extend(checker.diagnostics);
         if !already_visited {
             stack.push(dependency.clone());
-            check_module_graph(&dependency_lines, &dependency, stack, visited, diagnostics, loader);
+            check_module_graph(
+                &dependency_lines,
+                &dependency,
+                stack,
+                visited,
+                diagnostics,
+                loader,
+            );
             stack.pop();
         }
     }
@@ -1938,13 +1964,75 @@ impl Interpreter {
 
     fn run_http(&mut self, text: &str) -> Result<(), String> {
         let (method, args, tail) = self.parse_command_atoms(text)?;
-        if !matches!(method.as_str(), "GET"|"POST"|"PUT"|"PATCH"|"DELETE"|"HEAD"|"OPTIONS") { return Err("http method must be GET, POST, PUT, PATCH, DELETE, HEAD, or OPTIONS".into()); }
+        if !matches!(
+            method.as_str(),
+            "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
+        ) {
+            return Err(
+                "http method must be GET, POST, PUT, PATCH, DELETE, HEAD, or OPTIONS".into(),
+            );
+        }
         let url = args.first().ok_or("http requires METHOD URL")?.clone();
-        let mut headers=None; let mut body=None; let mut timeout=None; let mut max_bytes=None; let mut seen=HashSet::new(); let mut i=1;
-        while i < args.len() { let option=args[i].as_str(); if !seen.insert(option) { return Err(format!("http option repeated: {option}")); } match option { "headers" => {i+=1; headers=Some(self.eval_expr_value(args.get(i).ok_or("headers requires a dictionary")?)?);}, "body" => {i+=1; body=Some(self.eval_string(args.get(i).ok_or("body requires text")?)?);}, "timeout" => {i+=1; timeout=Some(self.eval_expr(args.get(i).ok_or("timeout requires a number")?)?.parse().map_err(|_|"timeout must be a number")?);}, "maxBytes" => {i+=1; max_bytes=Some(self.eval_expr(args.get(i).ok_or("maxBytes requires an integer")?)?.parse().map_err(|_|"maxBytes must be an integer")?);}, other => return Err(format!("unexpected http option: {other}")),} i+=1; }
-        let dest=tail.trim().strip_prefix("->").ok_or("http requires exactly one capture: -> $response")?;
-        let names=parse_command_capture_destinations(dest.trim())?; if names.len()!=1{return Err("http requires exactly one capture".into());}
-        match http::request(&method,&url,headers,body,timeout,max_bytes) { Ok(value)=>{self.vars.insert(names[0].clone(),value);Ok(())}, Err((message,fields))=>{self.pending_process_error=Some(fields);Err(message)} }
+        let mut headers = None;
+        let mut body = None;
+        let mut timeout = None;
+        let mut max_bytes = None;
+        let mut seen = HashSet::new();
+        let mut i = 1;
+        while i < args.len() {
+            let option = args[i].as_str();
+            if !seen.insert(option) {
+                return Err(format!("http option repeated: {option}"));
+            }
+            match option {
+                "headers" => {
+                    i += 1;
+                    headers = Some(
+                        self.eval_expr_value(args.get(i).ok_or("headers requires a dictionary")?)?,
+                    );
+                }
+                "body" => {
+                    i += 1;
+                    body = Some(self.eval_string(args.get(i).ok_or("body requires text")?)?);
+                }
+                "timeout" => {
+                    i += 1;
+                    timeout = Some(
+                        self.eval_expr(args.get(i).ok_or("timeout requires a number")?)?
+                            .parse()
+                            .map_err(|_| "timeout must be a number")?,
+                    );
+                }
+                "maxBytes" => {
+                    i += 1;
+                    max_bytes = Some(
+                        self.eval_expr(args.get(i).ok_or("maxBytes requires an integer")?)?
+                            .parse()
+                            .map_err(|_| "maxBytes must be an integer")?,
+                    );
+                }
+                other => return Err(format!("unexpected http option: {other}")),
+            }
+            i += 1;
+        }
+        let dest = tail
+            .trim()
+            .strip_prefix("->")
+            .ok_or("http requires exactly one capture: -> $response")?;
+        let names = parse_command_capture_destinations(dest.trim())?;
+        if names.len() != 1 {
+            return Err("http requires exactly one capture".into());
+        }
+        match http::request(&method, &url, headers, body, timeout, max_bytes) {
+            Ok(value) => {
+                self.vars.insert(names[0].clone(), value);
+                Ok(())
+            }
+            Err((message, fields)) => {
+                self.pending_process_error = Some(fields);
+                Err(message)
+            }
+        }
     }
 
     fn parse_command_atoms<'a>(
@@ -4076,7 +4164,10 @@ impl Checker {
             .or_else(|| line.strip_prefix("fn "))
         {
             let rest = rest.trim();
-            if rest.ends_with("{}") { parse_function_signature(&format!("{} {{", rest.trim_end_matches("{}")))?; return Ok(()); }
+            if rest.ends_with("{}") {
+                parse_function_signature(&format!("{} {{", rest.trim_end_matches("{}")))?;
+                return Ok(());
+            }
             parse_function_signature(rest)?;
             self.blocks.push(BlockKind::Function);
             return Ok(());
@@ -4150,21 +4241,36 @@ impl Checker {
         if line == "timeout" {
             return Err("timeout value required".to_string());
         }
-        if line == "wait" { return Ok(()); }
-        if line.starts_with("wait ") { return Err("wait takes no arguments".to_string()); }
+        if line == "wait" {
+            return Ok(());
+        }
+        if line.starts_with("wait ") {
+            return Err("wait takes no arguments".to_string());
+        }
         if let Some(rest) = line.strip_prefix("watch ") {
-            let (command_text, handler_text) = rest.split_once("->").ok_or("watch syntax is watch <program> <args...> -> $line")?;
+            let (command_text, handler_text) = rest
+                .split_once("->")
+                .ok_or("watch syntax is watch <program> <args...> -> $line")?;
             let (_, _, tail) = validate_command_atoms(command_text.trim())?;
-            if !tail.trim().is_empty() { return Err("watch syntax is watch <program> <args...> -> $line".to_string()); }
+            if !tail.trim().is_empty() {
+                return Err("watch syntax is watch <program> <args...> -> $line".to_string());
+            }
             if !handler_text.trim().starts_with('$') || handler_text.trim() == "$" {
                 return Err("watch destination must be a variable".to_string());
             }
-            let destinations = parse_command_capture_destinations(handler_text.trim()).map_err(|e| {
-                if e.contains("destination") { e } else { format!("watch {e}") }
-            })?;
-            if destinations.len() != 1 { return Err("watch requires exactly one line destination".to_string()); }
+            let destinations =
+                parse_command_capture_destinations(handler_text.trim()).map_err(|e| {
+                    if e.contains("destination") {
+                        e
+                    } else {
+                        format!("watch {e}")
+                    }
+                })?;
+            if destinations.len() != 1 {
+                return Err("watch requires exactly one line destination".to_string());
+            }
             self.blocks.push(BlockKind::Watch);
-            return Ok(())
+            return Ok(());
         }
         if let Some(rest) = line.strip_prefix("while ") {
             validate_condition_form(rest.trim())?;
@@ -4390,13 +4496,55 @@ fn validate_assignment_form(line: &str) -> Result<(), String> {
 fn validate_statement_form(line: &str) -> Result<(), String> {
     if let Some(rest) = line.strip_prefix("http ") {
         let (method, args, tail) = validate_command_atoms(rest.trim())?;
-        if !matches!(method.as_str(), "GET"|"POST"|"PUT"|"PATCH"|"DELETE"|"HEAD"|"OPTIONS") { return Err("http method must be GET, POST, PUT, PATCH, DELETE, HEAD, or OPTIONS".into()); }
-        if args.is_empty() { return Err("http requires METHOD URL".into()); }
-        let mut seen=HashSet::new(); let mut i=1;
-        while i < args.len() { let option=&args[i]; if !matches!(option.as_str(), "headers"|"body"|"timeout"|"maxBytes") { return Err(format!("unexpected http option: {option}")); } if !seen.insert(option) { return Err(format!("http option repeated: {option}")); } let value=args.get(i+1).ok_or_else(|| format!("{option} requires a value"))?; match option.as_str() { "headers" if value != "$" && !value.starts_with('{') => return Err("headers must be a dictionary".into()), "body" if value != "$" && !value.starts_with('"') => return Err("body must be text".into()), "timeout" if value != "$" && value.parse::<f64>().is_err() => return Err("timeout must be a number".into()), "maxBytes" if value != "$" && value.parse::<usize>().is_err() => return Err("maxBytes must be an integer".into()), _ => {} } i+=2; }
-        let destination=tail.trim().strip_prefix("->").ok_or("http requires exactly one capture: -> $response")?;
-        if parse_command_capture_destinations(destination.trim())?.len()!=1 { return Err("http requires exactly one capture".into()); }
-        return Ok(())
+        if !matches!(
+            method.as_str(),
+            "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
+        ) {
+            return Err(
+                "http method must be GET, POST, PUT, PATCH, DELETE, HEAD, or OPTIONS".into(),
+            );
+        }
+        if args.is_empty() {
+            return Err("http requires METHOD URL".into());
+        }
+        let mut seen = HashSet::new();
+        let mut i = 1;
+        while i < args.len() {
+            let option = &args[i];
+            if !matches!(option.as_str(), "headers" | "body" | "timeout" | "maxBytes") {
+                return Err(format!("unexpected http option: {option}"));
+            }
+            if !seen.insert(option) {
+                return Err(format!("http option repeated: {option}"));
+            }
+            let value = args
+                .get(i + 1)
+                .ok_or_else(|| format!("{option} requires a value"))?;
+            match option.as_str() {
+                "headers" if value != "$" && !value.starts_with('{') => {
+                    return Err("headers must be a dictionary".into());
+                }
+                "body" if value != "$" && !value.starts_with('"') => {
+                    return Err("body must be text".into());
+                }
+                "timeout" if value != "$" && value.parse::<f64>().is_err() => {
+                    return Err("timeout must be a number".into());
+                }
+                "maxBytes" if value != "$" && value.parse::<usize>().is_err() => {
+                    return Err("maxBytes must be an integer".into());
+                }
+                _ => {}
+            }
+            i += 2;
+        }
+        let destination = tail
+            .trim()
+            .strip_prefix("->")
+            .ok_or("http requires exactly one capture: -> $response")?;
+        if parse_command_capture_destinations(destination.trim())?.len() != 1 {
+            return Err("http requires exactly one capture".into());
+        }
+        return Ok(());
     }
     if line.starts_with('$') {
         return validate_assignment_form(line);

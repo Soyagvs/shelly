@@ -1,7 +1,21 @@
-use std::{collections::BTreeMap, fs, path::{Path, PathBuf}, sync::{atomic::{AtomicBool, Ordering}, Arc, mpsc::{self, Receiver, SyncSender, Sender}}, thread, time::Duration};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver, Sender, SyncSender},
+    },
+    thread,
+    time::Duration,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Event { Upsert(PathBuf), Remove(PathBuf) }
+pub enum Event {
+    Upsert(PathBuf),
+    Remove(PathBuf),
+}
 
 pub struct Watcher {
     rx: Receiver<Event>,
@@ -19,15 +33,26 @@ impl Watcher {
         let overflowed = Arc::new(AtomicBool::new(false));
         let signal = Arc::clone(&overflowed);
         let thread = thread::spawn(move || poll(root, tx, stop_rx, signal));
-        Self { rx, stop: Some(stop), thread: Some(thread), overflowed }
+        Self {
+            rx,
+            stop: Some(stop),
+            thread: Some(thread),
+            overflowed,
+        }
     }
-    pub fn overflowed(&self) -> bool { self.overflowed.swap(false, Ordering::AcqRel) }
+    pub fn overflowed(&self) -> bool {
+        self.overflowed.swap(false, Ordering::AcqRel)
+    }
     #[cfg(test)]
-    pub(crate) fn trigger_overflow(&self) { self.overflowed.store(true, Ordering::Release); }
+    pub(crate) fn trigger_overflow(&self) {
+        self.overflowed.store(true, Ordering::Release);
+    }
     pub fn drain(&self) -> Vec<Event> {
         let mut latest = BTreeMap::new();
         while let Ok(event) = self.rx.try_recv() {
-            let path = match &event { Event::Upsert(p) | Event::Remove(p) => p.clone() };
+            let path = match &event {
+                Event::Upsert(p) | Event::Remove(p) => p.clone(),
+            };
             latest.insert(path, event);
         }
         latest.into_values().collect()
@@ -36,7 +61,9 @@ impl Watcher {
 impl Drop for Watcher {
     fn drop(&mut self) {
         self.stop.take().map(|s| s.send(()));
-        if let Some(thread) = self.thread.take() { let _ = thread.join(); }
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
     }
 }
 fn files(root: &Path) -> (BTreeMap<PathBuf, std::time::SystemTime>, bool) {
@@ -44,15 +71,28 @@ fn files(root: &Path) -> (BTreeMap<PathBuf, std::time::SystemTime>, bool) {
     let mut complete = true;
     let mut dirs = vec![root.to_path_buf()];
     while let Some(dir) = dirs.pop() {
-        let Ok(entries) = fs::read_dir(dir) else { complete = false; continue };
+        let Ok(entries) = fs::read_dir(dir) else {
+            complete = false;
+            continue;
+        };
         for e in entries.flatten() {
             let p = e.path();
-            if p.is_dir() { dirs.push(p); continue; }
-            if matches!(p.extension().and_then(|x| x.to_str()), Some("shelly"|"shl")) {
-                match e.metadata().and_then(|m| m.modified()) {
-                Ok(m) => { out.insert(p, m); }
-                Err(_) => { complete = false; }
+            if p.is_dir() {
+                dirs.push(p);
+                continue;
             }
+            if matches!(
+                p.extension().and_then(|x| x.to_str()),
+                Some("shelly" | "shl")
+            ) {
+                match e.metadata().and_then(|m| m.modified()) {
+                    Ok(m) => {
+                        out.insert(p, m);
+                    }
+                    Err(_) => {
+                        complete = false;
+                    }
+                }
             }
         }
     }
@@ -61,16 +101,28 @@ fn files(root: &Path) -> (BTreeMap<PathBuf, std::time::SystemTime>, bool) {
 fn poll(root: PathBuf, tx: SyncSender<Event>, stop: Receiver<()>, overflowed: Arc<AtomicBool>) {
     let (mut old, _) = files(&root);
     loop {
-        if stop.recv_timeout(Duration::from_millis(40)).is_ok() { break; }
+        if stop.recv_timeout(Duration::from_millis(40)).is_ok() {
+            break;
+        }
         let (new, complete) = files(&root);
-        for (p, m) in &new { if old.get(p) != Some(m) && tx.try_send(Event::Upsert(p.clone())).is_err() { overflowed.store(true, Ordering::Release); } }
+        for (p, m) in &new {
+            if old.get(p) != Some(m) && tx.try_send(Event::Upsert(p.clone())).is_err() {
+                overflowed.store(true, Ordering::Release);
+            }
+        }
         // A partial scan cannot distinguish an error from a deletion.
         if complete {
-            for p in old.keys() { if !new.contains_key(p) && tx.try_send(Event::Remove(p.clone())).is_err() { overflowed.store(true, Ordering::Release); } }
+            for p in old.keys() {
+                if !new.contains_key(p) && tx.try_send(Event::Remove(p.clone())).is_err() {
+                    overflowed.store(true, Ordering::Release);
+                }
+            }
             old = new;
         } else {
             // Preserve the last known state for paths hidden by transient errors.
-            for (p, m) in new { old.insert(p, m); }
+            for (p, m) in new {
+                old.insert(p, m);
+            }
         }
     }
 }
@@ -84,12 +136,21 @@ mod tests {
         let _ = fs::create_dir_all(&root);
         let w = Watcher::start(root.clone());
         std::thread::sleep(Duration::from_millis(80));
-        let p = root.join("a.shl"); fs::write(&p, "x").unwrap();
+        let p = root.join("a.shl");
+        fs::write(&p, "x").unwrap();
         std::thread::sleep(Duration::from_millis(100));
-        assert!(w.drain().iter().any(|e| matches!(e, Event::Upsert(x) if x == &p)));
+        assert!(
+            w.drain()
+                .iter()
+                .any(|e| matches!(e, Event::Upsert(x) if x == &p))
+        );
         fs::remove_file(&p).unwrap();
         std::thread::sleep(Duration::from_millis(100));
-        assert!(w.drain().iter().any(|e| matches!(e, Event::Remove(x) if x == &p)));
+        assert!(
+            w.drain()
+                .iter()
+                .any(|e| matches!(e, Event::Remove(x) if x == &p))
+        );
         let _ = fs::remove_dir(&root);
     }
 }
