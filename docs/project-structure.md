@@ -111,7 +111,7 @@ shelly run -- --dry-run input.txt
 The separator is mandatory before forwarded arguments; `shelly run --dry-run` is invalid. For an explicit script path, run it directly instead:
 
 ```sh
-shelly main.shelly --dry-run input.txt
+shelly --dry-run main.shelly
 ```
 
 ## Tests

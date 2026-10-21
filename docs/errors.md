@@ -4,7 +4,7 @@
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
 
-[Documentation index](index.md) · [Archives](archive.md) · [Deferred cleanup](defer.md) · [Timeouts](timeouts.md) · [Exit](exit.md)
+[Documentation index](index.md) · [Environment-only secrets](secrets.md) · [Archives](archive.md) · [Deferred cleanup](defer.md) · [Timeouts](timeouts.md) · [Exit](exit.md)
 
 Use `try`, a required `catch`, and `end` to handle ordinary runtime errors.
 
@@ -38,7 +38,7 @@ end
 
 ## Structured errors and timeouts
 
-Process failures include `program`, `args`, `code`, `stdout`, and `stderr` in addition to `kind` and `message`. A timeout is a distinct error with `kind` set to `"timeout"`; it includes `program` and `args`, but does not represent a process exit code or completed output. HTTP failures use `kind` and `message`; network, policy, syntax, and limit failures do not expose a response dictionary. A response with status 400 or higher uses `kind == "http"` and intentionally redacts its status, body, headers, and URL. See [HTTP requests](http.md) for the v1 network and redaction rules, [Timeouts](timeouts.md) for command and block deadlines, and [Commands and input](commands.md) for process and capture behavior.
+Process failures include `program`, `args`, `code`, `stdout`, and `stderr` in addition to `kind` and `message`. A timeout is a distinct error with `kind` set to `"timeout"`; it includes `program` and `args`, but does not represent a process exit code or completed output. HTTP failures use `kind` and `message`; network, policy, syntax, and limit failures do not expose a response dictionary. Secret lookup failures include invalid environment names, missing or empty values, and non-text environment values; see [Environment-only secrets](secrets.md). A response with status 400 or higher uses `kind == "http"` and intentionally redacts its status, body, headers, and URL. See [HTTP requests](http.md) for the v1 network and redaction rules, [Timeouts](timeouts.md) for command and block deadlines, and [Commands and input](commands.md) for process and capture behavior.
 
 ```shelly
 try -> $error

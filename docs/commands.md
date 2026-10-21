@@ -1,5 +1,7 @@
 # Commands and input
 
+For script validation and redacted JSONL action records, see [dry-run and audit logs](dry-run.md). For environment-only secret capture and safe command usage, see [Environment-only secrets](secrets.md).
+
 ## `shelly update`
 
 `shelly update` is a manual-only command; it does not run automatically. It downloads the latest versioned GitHub Release asset for Linux x86_64, macOS x86_64/aarch64, or Windows x86_64, including both `shelly` and `shelly-lsp`, and verifies the archive's SHA-256 checksum sidecar. It requires permission to replace the installed binaries. GitHub network access and checksum validation cover the downloaded archive, not OS trust. On Windows replacement is handed to a helper after exit; restart Shelly after the handoff.
@@ -28,7 +30,7 @@ args -> $all
 - `shellin` reads one stdin line into a variable.
 - `ask` prints a prompt, reads one line, and stores it with `->`.
 - `choose` prints a numbered menu, accepts a number or exact option text, and stores the selected value; see [choose.md](choose.md).
-- `command <program> <args...>` runs a program directly, without shell parsing. Bare words, quoted argument atoms, and variables each become argv arguments. Add `timeout SECONDS` to set a per-process deadline; see [Timeouts](timeouts.md).
+- `command <program> <args...>` runs a program directly, without shell parsing. Bare words, quoted argument atoms, and variables each become argv arguments. This is the allowed way to pass a captured environment secret as an argv value; see [Environment-only secrets](secrets.md). Add `timeout SECONDS` to set a per-process deadline; see [Timeouts](timeouts.md).
 - `shell "..."` explicitly runs text through the system shell; use it for pipelines and redirections. Shell syntax is platform dependent.
 - `arg N -> $var`, `hasArg VALUE -> $var`, and `args -> $var` read arguments passed after the script path.
 - `log "identifier"` records structured action markers for a block without silencing normal output; see [logging.md](logging.md).
@@ -147,7 +149,7 @@ shellout "command finished with code $code and stderr: $err"
 
 `command <program> <args...>` executes directly, so arguments are not interpreted as shell syntax. Quoted atoms remain one argument and variables are evaluated as arguments. Add `timeout SECONDS` after the arguments to bound that process; see [Timeouts](timeouts.md). Without capture it streams stdout/stderr and fails the script on a non-zero exit; its process error has `kind`, `message`, `program`, `args`, and `code`, but no captured output fields. A one-variable capture buffers stdout and stderr until process exit, trims trailing newlines, and also fails on a non-zero exit; that process error includes `stdout` and `stderr`. `shell "..."` uses the same capture behavior and reports shell failures with captured `stdout` and `stderr`. Successful captures and three-variable captures require stdout and stderr to be valid UTF-8. A one-variable capture on a non-zero command or shell failure uses lossy UTF-8 conversion for the captured output. Use three captures when the script should inspect failure itself; stdout and stderr are buffered until exit and trimmed, and `$code` is the process exit code or `1` when no code is available. Use `shell "..."` for pipelines or redirections; it is shell/platform dependent.
 
-For portable file work, prefer Shelly path commands such as `write "file" $text`, `append "file" $text`, `read "file" -> $text`, `size "file" -> $bytes`, and `copy "from" "to"`; see [files.md](files.md). Use `command` when you need an OS-specific tool.
+For portable file work, prefer Shelly path commands such as `write "file" $text`, `append "file" $text`, `read "file" -> $text`, `size "file" -> $bytes`, and `copy "from" "to"`; see [files.md](files.md). Tests can replace exact `read` inputs with virtual text; see [test read mocks](mocks.md). Use `command` when you need an OS-specific tool.
 
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />

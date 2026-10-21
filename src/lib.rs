@@ -10,12 +10,15 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod archive;
+mod audit;
 mod comments;
 pub mod formatter;
 #[doc(hidden)]
 pub mod http;
 pub mod lsp;
+mod mock;
 mod parser;
+mod secret;
 mod shell;
 pub mod update;
 mod value;
@@ -59,7 +62,48 @@ pub fn cli_main() {
         }
         return;
     }
-    let mut args = env::args_os().skip(1);
+    let mut raw_args: Vec<_> = env::args_os().skip(1).collect();
+    let dry_run = raw_args.first().is_some_and(|arg| arg == "--dry-run");
+    if dry_run {
+        raw_args.remove(0);
+    }
+    let audit_count = raw_args.iter().filter(|a| *a == "--audit-log").count();
+    if audit_count > 1 {
+        eprintln!("--audit-log may be specified only once");
+        std::process::exit(1);
+    }
+    let audit_path = if dry_run && raw_args.first().is_some_and(|a| a == "--audit-log") {
+        raw_args.remove(0);
+        match raw_args.get(0).cloned() {
+            Some(p) if p != "--audit-log" => {
+                raw_args.remove(0);
+                Some(PathBuf::from(p))
+            }
+            _ => {
+                eprintln!("--audit-log requires a path");
+                std::process::exit(1);
+            }
+        }
+    } else if raw_args.iter().any(|a| a == "--audit-log") {
+        eprintln!("--audit-log must immediately follow --dry-run and precede the script");
+        std::process::exit(1);
+    } else {
+        None
+    };
+    if dry_run
+        && matches!(
+            raw_args.first().and_then(|a| a.to_str()),
+            Some("init" | "fmt" | "update" | "test" | "run" | "check")
+        )
+    {
+        eprintln!("--dry-run supports a direct script path, not a top-level command");
+        std::process::exit(1);
+    }
+    if dry_run && raw_args.iter().skip(1).any(|a| a == "--audit-log") {
+        eprintln!("--audit-log must precede the script path");
+        std::process::exit(1);
+    }
+    let mut args = raw_args.into_iter();
     let result = match args.next() {
         Some(command) if command == "init" => init_project(args),
         Some(command) if command == "test" => run_tests(args),
@@ -89,7 +133,21 @@ pub fn cli_main() {
         }
         Some(path) => {
             let script_args = args.map(|arg| arg.to_string_lossy().into_owned()).collect();
-            run_script(PathBuf::from(path), script_args)
+            let context = if dry_run {
+                audit::ExecutionContext::dry_run(
+                    audit_path
+                        .as_deref()
+                        .map(audit::AuditWriter::create)
+                        .transpose()
+                        .unwrap_or_else(|e| {
+                            eprintln!("{e}");
+                            std::process::exit(1)
+                        }),
+                )
+            } else {
+                audit::ExecutionContext::default()
+            };
+            run_script(PathBuf::from(path), script_args, context)
         }
         None => {
             println!("Shelly is ready. Pass a .shelly script path to run it.");
@@ -103,7 +161,7 @@ pub fn cli_main() {
             std::process::exit(code);
         }
         if error != "__shelly_check_failed" {
-            eprintln!("{error}");
+            eprintln!("{}", secret::redact(&error));
         }
         std::process::exit(1);
     }
@@ -219,7 +277,7 @@ fn run_project(args: impl Iterator<Item = std::ffi::OsString>) -> Result<(), Str
             manifest.project.entry
         ));
     }
-    run_script(entry, forwarded)
+    run_script(entry, forwarded, audit::ExecutionContext::default())
 }
 
 fn run_tests(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<(), String> {
@@ -256,6 +314,7 @@ fn run_tests(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<(), S
     for relative in tests {
         let output = Command::new(&executable)
             .arg(&relative)
+            .env("SHELLY_TEST_MODE", "1")
             .current_dir(&cwd)
             .output()
             .map_err(|error| format!("could not run test '{relative}': {error}"))?;
@@ -896,22 +955,43 @@ fn check_module_graph(
     }
 }
 
-fn run_script(path: PathBuf, script_args: Vec<String>) -> Result<(), String> {
+fn run_script(
+    path: PathBuf,
+    script_args: Vec<String>,
+    context: audit::ExecutionContext,
+) -> Result<(), String> {
     let path = path
         .canonicalize()
         .map_err(|error| format!("could not read script '{}': {error}", path.display()))?;
     let source = fs::read_to_string(&path)
         .map_err(|error| format!("could not read script '{}': {error}", path.display()))?;
     let mut interpreter = Interpreter::default();
+    interpreter.context = context;
     interpreter.script_args = script_args;
     interpreter.current_dir = path.parent().map(PathBuf::from).unwrap_or_default();
     interpreter.stack.push(path);
-    interpreter.run(&source)
+    let result = interpreter.run(&source);
+    if interpreter.context.is_dry_run() {
+        match result {
+            Ok(()) => audit::finish(&mut interpreter.context),
+            Err(error) => {
+                if let Some(writer) = &mut interpreter.context.audit {
+                    if let Err(audit_error) = writer.error(&error) {
+                        return Err(audit_error);
+                    }
+                }
+                Err(error)
+            }
+        }
+    } else {
+        result
+    }
 }
 
 #[derive(Default)]
 struct Interpreter {
     vars: HashMap<String, Value>,
+    unavailable: HashSet<String>,
     consts: HashMap<String, Value>,
     functions: HashMap<String, Function>,
     current_dir: PathBuf,
@@ -922,6 +1002,8 @@ struct Interpreter {
     pending_process_error: Option<BTreeMap<String, Value>>,
     deadline: Option<Instant>,
     defers: Vec<Vec<Vec<(usize, String)>>>,
+    context: audit::ExecutionContext,
+    mocks: mock::MockRegistry,
 }
 
 #[derive(Clone)]
@@ -930,6 +1012,15 @@ struct LogContext {
 }
 
 impl Interpreter {
+    fn effect(&mut self, action: audit::AuditAction) -> Result<bool, String> {
+        if self.context.is_dry_run() {
+            audit::record(&mut self.context, action)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     fn run(&mut self, source: &str) -> Result<(), String> {
         let source = normalize_multiline_strings(source)?;
         let lines = strip_comments(&source)?;
@@ -975,6 +1066,23 @@ impl Interpreter {
             if line.is_empty() || line.starts_with('#') {
                 index += 1;
                 continue;
+            }
+            if line.starts_with("mock ") {
+                if env::var_os("SHELLY_TEST_MODE").is_none() {
+                    return Err(format!(
+                        "line {line_no}: mock declarations are only allowed in shelly test"
+                    ));
+                }
+                let (key, declaration) =
+                    parse_mock_declaration(line).map_err(|error| line_error(line_no, error))?;
+                self.mocks
+                    .add(key, declaration)
+                    .map_err(|error| line_error(line_no, error))?;
+                index += 1;
+                continue;
+            }
+            if line == "mock" {
+                return Err(format!("line {line_no}: mock declaration required"));
             }
             if let Some(rest) = line.strip_prefix("export fn ") {
                 let (function, next_index) = parse_function(rest.trim(), lines, index)
@@ -1064,6 +1172,11 @@ impl Interpreter {
                 return Err(format!("line {line_no}: timeout value required"));
             }
             if line == "wait" {
+                if self.context.is_dry_run() {
+                    audit::record(&mut self.context, audit::AuditAction::Wait)?;
+                    index += 1;
+                    continue;
+                }
                 loop {
                     thread::park();
                 }
@@ -1084,6 +1197,14 @@ impl Interpreter {
                     return Err("watch requires exactly one line destination".to_string());
                 }
                 let (body, next_index) = collect_block(lines, index, "watch")?;
+                if self.context.is_dry_run() {
+                    audit::record(
+                        &mut self.context,
+                        audit::AuditAction::Watch { argc: args.len() },
+                    )?;
+                    index = next_index;
+                    continue;
+                }
                 let mut child = Command::new(&program)
                     .args(&args)
                     .stdout(Stdio::piped())
@@ -1442,7 +1563,16 @@ impl Interpreter {
         Ok(next_index)
     }
 
-    fn log_path(&self, identifier: &str) -> Result<PathBuf, String> {
+    fn log_path(&mut self, identifier: &str) -> Result<PathBuf, String> {
+        if self.context.is_dry_run() {
+            audit::record(
+                &mut self.context,
+                audit::AuditAction::Log {
+                    identifier: identifier.to_string(),
+                },
+            )?;
+            return Err("dry-run unavailable-result: log destination was not created".into());
+        }
         let dir = self.current_dir.join("logs");
         fs::create_dir_all(&dir).map_err(|error| {
             format!(
@@ -1471,12 +1601,16 @@ impl Interpreter {
     }
 
     fn log_action(&self, message: &str) {
+        let safe = secret::redact(message);
         for ctx in &self.logs {
-            let _ = self.write_log(ctx, message);
+            let _ = self.write_log(ctx, &safe);
         }
     }
 
     fn write_log(&self, ctx: &LogContext, message: &str) -> Result<(), String> {
+        if self.context.is_dry_run() {
+            return Ok(());
+        }
         let mut file = fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -1548,6 +1682,45 @@ impl Interpreter {
         }
         let name = parse_var_ref(dest.trim())?;
         let args = args.trim();
+        if self.context.is_dry_run() {
+            self.mark_unavailable(name.clone());
+            match op {
+                "create" => {
+                    let (a, b) = args
+                        .split_once(" from ")
+                        .ok_or("archive create syntax invalid")?;
+                    if b.contains(" from ") {
+                        return Err("archive create syntax invalid".into());
+                    }
+                    self.eval_string(a.trim())?;
+                    self.eval_string(b.trim())?;
+                }
+                "extract" => {
+                    let (a, b) = args
+                        .split_once(" into ")
+                        .ok_or("archive extract syntax invalid")?;
+                    if b.contains(" into ") {
+                        return Err("archive extract syntax invalid".into());
+                    }
+                    self.eval_string(a.trim())?;
+                    self.eval_string(b.trim())?;
+                }
+                "checksum" | "check" => {
+                    if args.is_empty() {
+                        return Err(format!("archive {} operand required", op));
+                    }
+                    self.eval_string(args)?;
+                }
+                _ => return Err("unknown archive operation".into()),
+            }
+            audit::record(
+                &mut self.context,
+                audit::AuditAction::Archive {
+                    operation: op.to_string(),
+                },
+            )?;
+            return Ok(());
+        }
         let value = match op {
             "create" => {
                 let (a, b) = args
@@ -1593,7 +1766,21 @@ impl Interpreter {
         Ok(())
     }
 
+    fn secret_get(&mut self, text: &str) -> Result<(), String> {
+        let Some(index) = find_capture_arrow(text) else {
+            return Err("secret get syntax is secret get \"ENV_NAME\" -> $var".to_string());
+        };
+        let name = parse_string_literal(text[..index].trim())?;
+        let destination = parse_capture_destination(&text[index + 2..], "secret get")?;
+        let value = secret::get(&name)?;
+        self.vars.insert(destination, Value::Scalar(value));
+        Ok(())
+    }
+
     fn run_line(&mut self, line: &str, line_no: usize) -> Result<(), String> {
+        if let Some(rest) = line.strip_prefix("secret get ") {
+            return self.secret_get(rest.trim());
+        }
         if let Some(rest) = line.strip_prefix("arg ") {
             return self.capture_arg(rest.trim());
         }
@@ -1738,11 +1925,17 @@ impl Interpreter {
         }
         if let Some(rest) = line.strip_prefix("shellin") {
             let name = parse_var_ref(rest.trim())?;
+            if self.effect(audit::AuditAction::Input { kind: "stdin" })? {
+                return Ok(());
+            }
             let input = read_stdin_line()?;
             self.vars.insert(name, Value::Scalar(input));
             return Ok(());
         }
         if let Some(rest) = line.strip_prefix("ask") {
+            if self.effect(audit::AuditAction::Input { kind: "stdin" })? {
+                return Ok(());
+            }
             let rest = rest.trim();
             if rest.contains(',') && !rest.contains("->") {
                 return Err(
@@ -1775,6 +1968,11 @@ impl Interpreter {
             };
             if options.is_empty() {
                 return Err("choose options must not be empty".to_string());
+            }
+            if self.effect(audit::AuditAction::Input { kind: "stdin" })? {
+                return Err(
+                    "dry-run unavailable-result: choose requires interactive input".to_string(),
+                );
             }
             println!("{question}");
             for (index, option) in options.iter().enumerate() {
@@ -1846,6 +2044,65 @@ impl Interpreter {
                 };
                 Some(parse_command_capture_destinations(destination_text.trim())?)
             };
+            if self.context.is_dry_run() {
+                audit::record(
+                    &mut self.context,
+                    audit::AuditAction::Process {
+                        program: program.clone(),
+                        argc: args.len(),
+                    },
+                )?;
+                if let Some(names) = &destinations {
+                    for n in names {
+                        self.mark_unavailable(n.clone());
+                    }
+                }
+                return Ok(());
+            }
+            let mock_key = format!(
+                "command:{}",
+                std::iter::once(program.clone())
+                    .chain(args.iter().cloned())
+                    .collect::<Vec<_>>()
+                    .join("\u{1f}")
+            );
+            if env::var_os("SHELLY_TEST_MODE").is_some() {
+                let Some(mock::Mock::Command {
+                    code,
+                    stdout,
+                    stderr,
+                    ..
+                }) = self.mocks.find(&mock_key)
+                else {
+                    return Err(format!("no exact command mock for {} {:?}", program, args));
+                };
+                let code = *code;
+                let stdout = stdout.clone();
+                let stderr = stderr.clone();
+                if destinations.is_none() {
+                    if code != 0 {
+                        return self.mock_process_error(&program, &args, code, stdout, stderr);
+                    }
+                    return Ok(());
+                }
+                let destinations = destinations.unwrap();
+                if code != 0 {
+                    return self.mock_process_error(&program, &args, code, stdout, stderr);
+                }
+                match destinations.as_slice() {
+                    [name] => {
+                        self.vars.insert(name.clone(), Value::Scalar(stdout));
+                    }
+                    [out, err, status] => {
+                        self.vars.insert(out.clone(), Value::Scalar(stdout));
+                        self.vars.insert(err.clone(), Value::Scalar(stderr));
+                        self.vars
+                            .insert(status.clone(), Value::Scalar(code.to_string()));
+                    }
+                    _ => unreachable!(),
+                }
+                return Ok(());
+            }
             let mut process = Command::new(&program);
             process.args(&args);
             let deadline = timeout
@@ -1929,6 +2186,9 @@ impl Interpreter {
         if let Some(rest) = line.strip_prefix("shell ") {
             let (text, tail) = split_string_literal_tail(rest.trim())?;
             let command = self.eval_string(text)?;
+            if command.contains("[REDACTED]") {
+                return Err("secret values cannot be interpolated into shell source".to_string());
+            }
             let tail = tail.trim();
             let destinations = if tail.is_empty() {
                 None
@@ -1939,6 +2199,15 @@ impl Interpreter {
                         .trim(),
                 )?)
             };
+            if self.context.is_dry_run() {
+                audit::record(&mut self.context, audit::AuditAction::Shell)?;
+                if let Some(names) = &destinations {
+                    for n in names {
+                        self.mark_unavailable(n.clone());
+                    }
+                }
+                return Ok(());
+            }
             if destinations.is_none() {
                 let status = shell_command(&command)
                     .status()
@@ -2024,6 +2293,30 @@ impl Interpreter {
         Err(format!("unknown command or invalid syntax: {line}"))
     }
 
+    fn mock_process_error(
+        &mut self,
+        program: &str,
+        args: &[String],
+        code: i32,
+        stdout: String,
+        stderr: String,
+    ) -> Result<(), String> {
+        let message = format!("command exited with status {code}");
+        let mut fields = BTreeMap::new();
+        fields.insert("kind".into(), Value::Scalar("process".into()));
+        fields.insert("program".into(), Value::Scalar(program.into()));
+        fields.insert(
+            "args".into(),
+            Value::List(args.iter().cloned().map(Value::Scalar).collect()),
+        );
+        fields.insert("code".into(), Value::Scalar(code.to_string()));
+        fields.insert("stdout".into(), Value::Scalar(stdout));
+        fields.insert("stderr".into(), Value::Scalar(stderr));
+        fields.insert("message".into(), Value::Scalar(message.clone()));
+        self.pending_process_error = Some(fields);
+        Err(message)
+    }
+
     fn run_http(&mut self, text: &str) -> Result<(), String> {
         let (method, args, tail) = self.parse_command_atoms(text)?;
         if !matches!(
@@ -2085,6 +2378,33 @@ impl Interpreter {
         if names.len() != 1 {
             return Err("http requires exactly one capture".into());
         }
+        if self.context.is_dry_run() {
+            audit::record(
+                &mut self.context,
+                audit::AuditAction::Http {
+                    method: method.clone(),
+                    url: url.clone(),
+                },
+            )?;
+            self.mark_unavailable(names[0].clone());
+            return Ok(());
+        }
+        let mock_key = format!("http:{method}:{url}");
+        if env::var_os("SHELLY_TEST_MODE").is_some() {
+            let Some(mock::Mock::Http { status, body, .. }) = self.mocks.find(&mock_key) else {
+                return Err(format!("no exact HTTP mock for {method} {url}"));
+            };
+            let mut response = BTreeMap::new();
+            response.insert("status".into(), Value::Scalar(status.to_string()));
+            response.insert("body".into(), Value::Scalar(body.clone()));
+            response.insert("url".into(), Value::Scalar(url));
+            response.insert("headers".into(), Value::Dict(BTreeMap::new()));
+            if *status >= 400 {
+                return Err(format!("HTTP request returned a non-success status"));
+            }
+            self.vars.insert(names[0].clone(), Value::Dict(response));
+            return Ok(());
+        }
         match http::request(&method, &url, headers, body, timeout, max_bytes) {
             Ok(value) => {
                 self.vars.insert(names[0].clone(), value);
@@ -2110,7 +2430,11 @@ impl Interpreter {
                 text = rest;
             } else if text.starts_with('$') {
                 let (kind, name, rest) = parse_identifier(text)?;
-                atoms.push(format_value(self.lookup_value(kind, &name)?));
+                let value = self.lookup_value(kind, &name)?;
+                atoms.push(match value {
+                    Value::Scalar(secret) if secret::redact(secret) != *secret => secret.clone(),
+                    value => format_value(value),
+                });
                 text = rest;
             } else {
                 let end = text.find(char::is_whitespace).unwrap_or(text.len());
@@ -2231,9 +2555,19 @@ impl Interpreter {
         self.eval_expr(text).map_err(|_| error.to_string())
     }
 
-    fn create_path(&self, text: &str) -> Result<(), String> {
+    fn create_path(&mut self, text: &str) -> Result<(), String> {
         let raw = self.eval_path_expr(text, "create requires a string path")?;
         let path = self.resolve_user_path(&raw);
+        if self.context.is_dry_run() {
+            audit::record(
+                &mut self.context,
+                audit::AuditAction::Path {
+                    action: "create",
+                    path: path.display().to_string(),
+                },
+            )?;
+            return Ok(());
+        }
         if raw.ends_with('/') {
             fs::create_dir_all(&path).map_err(|error| {
                 format!("could not create directory '{}': {error}", path.display())
@@ -2256,10 +2590,21 @@ impl Interpreter {
         Ok(())
     }
 
-    fn copy_path(&self, text: &str) -> Result<(), String> {
+    fn copy_path(&mut self, text: &str) -> Result<(), String> {
         let (from, to) = parse_two_string_paths(text, "copy")?;
         let from = self.resolve_user_path(&from);
         let to = self.resolve_user_path(&to);
+        if self.context.is_dry_run() {
+            audit::record(
+                &mut self.context,
+                audit::AuditAction::FromTo {
+                    action: "copy",
+                    from: from.display().to_string(),
+                    to: to.display().to_string(),
+                },
+            )?;
+            return Ok(());
+        }
         if to.exists() {
             return Err(format!("copy destination already exists: {}", to.display()));
         }
@@ -2274,10 +2619,21 @@ impl Interpreter {
         copy_recursive(&from, &to)
     }
 
-    fn move_path(&self, text: &str) -> Result<(), String> {
+    fn move_path(&mut self, text: &str) -> Result<(), String> {
         let (from, to) = parse_two_string_paths(text, "move")?;
         let from = self.resolve_user_path(&from);
         let to = self.resolve_user_path(&to);
+        if self.context.is_dry_run() {
+            audit::record(
+                &mut self.context,
+                audit::AuditAction::FromTo {
+                    action: "move",
+                    from: from.display().to_string(),
+                    to: to.display().to_string(),
+                },
+            )?;
+            return Ok(());
+        }
         if to.exists() {
             return Err(format!("move destination already exists: {}", to.display()));
         }
@@ -2313,7 +2669,7 @@ impl Interpreter {
             })
     }
 
-    fn rename_path(&self, text: &str) -> Result<(), String> {
+    fn rename_path(&mut self, text: &str) -> Result<(), String> {
         let (from_raw, name) = parse_two_string_paths(text, "rename")?;
         if name.contains('/')
             || name.contains('\\')
@@ -2325,6 +2681,17 @@ impl Interpreter {
         }
         let from = self.resolve_user_path(&from_raw);
         let to = from.parent().unwrap_or_else(|| Path::new("")).join(name);
+        if self.context.is_dry_run() {
+            audit::record(
+                &mut self.context,
+                audit::AuditAction::FromTo {
+                    action: "rename",
+                    from: from.display().to_string(),
+                    to: to.display().to_string(),
+                },
+            )?;
+            return Ok(());
+        }
         if to.exists() {
             return Err(format!(
                 "rename destination already exists: {}",
@@ -2340,9 +2707,19 @@ impl Interpreter {
         })
     }
 
-    fn remove_path(&self, text: &str) -> Result<(), String> {
+    fn remove_path(&mut self, text: &str) -> Result<(), String> {
         let raw = self.eval_path_expr(text, "remove requires a string path")?;
         let path = self.resolve_user_path(&raw);
+        if self.context.is_dry_run() {
+            audit::record(
+                &mut self.context,
+                audit::AuditAction::Path {
+                    action: "remove",
+                    path: path.display().to_string(),
+                },
+            )?;
+            return Ok(());
+        }
         if !path.exists() {
             return Ok(());
         }
@@ -2365,6 +2742,18 @@ impl Interpreter {
     fn read_file_command(&mut self, text: &str) -> Result<(), String> {
         let (file_text, destination) = parse_read_capture(text)?;
         let raw = self.eval_path_expr(file_text, "read requires a string file path")?;
+        let mock_key = format!("read:{}", normalize_mock_path(&raw));
+        if env::var_os("SHELLY_TEST_MODE").is_some() {
+            let Some(mock::Mock::Read { content }) = self.mocks.find(&mock_key) else {
+                return Err(format!(
+                    "no exact read mock for '{}'; filesystem access is disabled",
+                    raw
+                ));
+            };
+            self.vars
+                .insert(destination, Value::Scalar(content.clone()));
+            return Ok(());
+        }
         let path = self.resolve_user_path(&raw);
         if path.is_dir() {
             return Err(format!("read path is a directory: {}", path.display()));
@@ -2375,8 +2764,11 @@ impl Interpreter {
         Ok(())
     }
 
-    fn append_file_command(&self, text: &str) -> Result<(), String> {
+    fn append_file_command(&mut self, text: &str) -> Result<(), String> {
         let (file_text, value_text) = split_path_expr_tail(text, "append")?;
+        if self.effect(audit::AuditAction::Input { kind: "filesystem" })? {
+            return Ok(());
+        }
         if value_text.trim().is_empty() {
             return Err("append syntax is append \"file\" $text".to_string());
         }
@@ -2426,6 +2818,17 @@ impl Interpreter {
         if kind != IdentKind::Variable || !extra.trim().is_empty() {
             return Err("temp destination must be a variable".to_string());
         }
+        if self.context.is_dry_run() {
+            self.mark_unavailable(name.to_string());
+            audit::record(
+                &mut self.context,
+                audit::AuditAction::Temp {
+                    kind: if file { "file" } else { "dir" },
+                    capture: name.to_string(),
+                },
+            )?;
+            return Ok(());
+        }
         let path = unique_temp_path(if file { "file" } else { "dir" });
         if file {
             fs::File::create(&path).map_err(|error| {
@@ -2458,13 +2861,23 @@ impl Interpreter {
         Ok(())
     }
 
-    fn write_file_command(&self, text: &str) -> Result<(), String> {
+    fn write_file_command(&mut self, text: &str) -> Result<(), String> {
         let (file_text, value_text) = split_path_expr_tail(text, "write")?;
         if value_text.trim().is_empty() {
             return Err("write syntax is write \"file\" $text".to_string());
         }
         let raw = self.eval_path_expr(file_text, "write requires a string file path")?;
         let path = self.resolve_user_path(&raw);
+        if self.context.is_dry_run() {
+            audit::record(
+                &mut self.context,
+                audit::AuditAction::Path {
+                    action: "write",
+                    path: path.display().to_string(),
+                },
+            )?;
+            return Ok(());
+        }
         if path.is_dir() {
             return Err(format!("write path is a directory: {}", path.display()));
         }
@@ -2723,6 +3136,7 @@ impl Interpreter {
         let value = self.eval_value_kind(rest)?;
         match kind {
             IdentKind::Variable => {
+                self.unavailable.remove(&name);
                 self.vars.insert(name, value);
             }
             IdentKind::Constant => {
@@ -3822,12 +4236,23 @@ impl Interpreter {
         Ok(format_number(value))
     }
 
+    fn mark_unavailable(&mut self, name: String) {
+        self.vars.remove(&name);
+        self.unavailable.insert(name);
+    }
+
     fn lookup_value(&self, kind: IdentKind, name: &str) -> Result<&Value, String> {
         match kind {
-            IdentKind::Variable => self
-                .vars
-                .get(name)
-                .ok_or_else(|| format!("undefined variable ${name}")),
+            IdentKind::Variable => {
+                if self.unavailable.contains(name) {
+                    return Err(format!(
+                        "dry-run unavailable-result: ${name} was not created"
+                    ));
+                }
+                self.vars
+                    .get(name)
+                    .ok_or_else(|| format!("undefined variable ${name}"))
+            }
             IdentKind::Constant => self
                 .consts
                 .get(name)
@@ -6569,6 +6994,154 @@ fn parse_function_header(rest: &str) -> Result<(String, Vec<Param>), String> {
         }
     }
     Ok((name.to_string(), params))
+}
+
+fn parse_mock_declaration(line: &str) -> Result<(String, mock::Mock), String> {
+    let rest = line
+        .strip_prefix("mock ")
+        .ok_or("expected mock declaration")?
+        .trim();
+    let (kind, rest) = rest.split_once(' ').ok_or("mock kind required")?;
+    match kind {
+        "http" => {
+            let (method, rest) = rest.trim().split_once(' ').ok_or("HTTP method required")?;
+            if !matches!(
+                method,
+                "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
+            ) {
+                return Err("unsupported HTTP method".to_string());
+            }
+            let (target, dict) = parser::split_string_literal_tail(rest.trim())?;
+            let target = parser::parse_string_literal(target)?;
+            if target.is_empty() || !target.starts_with("http") {
+                return Err("HTTP target must be a literal URL".to_string());
+            }
+            let dict = parse_mock_dict(dict, &["status", "body"])?;
+            let status = dict_value(&dict, "status")?;
+            if !status.chars().all(|c| c.is_ascii_digit()) {
+                return Err("status must be a number".to_string());
+            }
+            Ok((
+                format!("http:{method}:{target}"),
+                mock::Mock::Http {
+                    method: method.to_string(),
+                    url: target,
+                    status: status.parse().unwrap(),
+                    body: dict_value(&dict, "body")?,
+                },
+            ))
+        }
+        "read" => {
+            let (target, tail) = parser::split_string_literal_tail(rest)?;
+            if !tail.trim().starts_with("returns") {
+                return Err("read mock requires returns".to_string());
+            }
+            let path = parser::parse_string_literal(target)?;
+            let value =
+                parser::parse_string_literal(tail.trim().strip_prefix("returns").unwrap().trim())?;
+            Ok((
+                format!("read:{}", normalize_mock_path(&path)),
+                mock::Mock::Read { content: value },
+            ))
+        }
+        "command" => {
+            let (before, dict) = rest
+                .split_once(" returns ")
+                .ok_or("command mock requires returns")?;
+            let atoms = literal_atoms(before)?;
+            if atoms.is_empty() {
+                return Err("command program required".to_string());
+            }
+            let fields = parse_mock_dict(dict, &["code", "stdout", "stderr"])?;
+            let code = dict_value(&fields, "code")?;
+            if !code.chars().all(|c| c.is_ascii_digit()) {
+                return Err("code must be a number".to_string());
+            }
+            let key = format!("command:{}", atoms.join("\u{1f}"));
+            Ok((
+                key,
+                mock::Mock::Command {
+                    program: atoms[0].clone(),
+                    args: atoms[1..].to_vec(),
+                    code: code.parse().unwrap(),
+                    stdout: dict_value(&fields, "stdout")?,
+                    stderr: dict_value(&fields, "stderr")?,
+                },
+            ))
+        }
+        _ => Err("unsupported mock kind".to_string()),
+    }
+}
+
+fn literal_atoms(input: &str) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    let mut rest = input.trim();
+    while !rest.is_empty() {
+        if rest.starts_with('"') {
+            let (lit, tail) = parser::split_string_literal_tail(rest)?;
+            out.push(parser::parse_string_literal(lit)?);
+            rest = tail.trim();
+        } else {
+            let end = rest.find(char::is_whitespace).unwrap_or(rest.len());
+            let atom = &rest[..end];
+            if atom.starts_with('$') {
+                return Err("mock targets must be literals".to_string());
+            }
+            out.push(atom.to_string());
+            rest = rest[end..].trim();
+        }
+    }
+    Ok(out)
+}
+
+fn parse_mock_dict(input: &str, expected: &[&str]) -> Result<HashMap<String, String>, String> {
+    let text = input.trim();
+    if !text.starts_with('{') || !text.ends_with('}') {
+        return Err("mock returns requires a dictionary".to_string());
+    }
+    let mut result = HashMap::new();
+    for part in parser::split_commas(&text[1..text.len() - 1])? {
+        let (key, value) = part.split_once(':').ok_or("malformed mock dictionary")?;
+        let key = key.trim();
+        if !expected.contains(&key) || result.contains_key(key) {
+            return Err("malformed mock dictionary".to_string());
+        }
+        let value = value.trim();
+        let valid = key == "status" || key == "code";
+        if valid {
+            if !parser::is_number_literal(value) {
+                return Err("mock status/code must be a number".to_string());
+            }
+            result.insert(key.to_string(), value.to_string());
+        } else {
+            result.insert(key.to_string(), parser::parse_string_literal(value)?);
+        }
+    }
+    if result.len() != expected.len() {
+        return Err("malformed mock dictionary".to_string());
+    }
+    Ok(result)
+}
+fn dict_value(dict: &HashMap<String, String>, key: &str) -> Result<String, String> {
+    dict.get(key)
+        .cloned()
+        .ok_or_else(|| "malformed mock dictionary".to_string())
+}
+
+fn normalize_mock_path(path: &str) -> String {
+    let mut parts = Vec::new();
+    for part in Path::new(path).components() {
+        match part {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                parts.pop();
+            }
+            std::path::Component::Normal(value) => parts.push(value.to_string_lossy().into_owned()),
+            std::path::Component::RootDir => parts.clear(),
+            _ => {}
+        }
+    }
+    parts.join("/")
 }
 
 fn parse_call_syntax(text: &str) -> Result<(&str, Vec<&str>), String> {

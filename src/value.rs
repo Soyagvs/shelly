@@ -30,7 +30,7 @@ pub(crate) fn format_number(value: f64) -> String {
 
 pub(crate) fn format_value(value: &Value) -> String {
     match value {
-        Value::Scalar(value) => value.clone(),
+        Value::Scalar(value) => crate::secret::redact(value),
         Value::List(values) => format_list(values),
         Value::Dict(values) => format_dict(values),
     }
