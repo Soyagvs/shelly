@@ -57,7 +57,7 @@ See [Project structure](docs/project-structure.md) for an overview of the genera
 
 ## 📚 Documentation
 
-Start with the [documentation index](docs/index.md) for the recommended reading path, or jump to the [Language Guide](docs/language.md) and [HTTP requests](docs/http.md).
+Start with the [documentation index](docs/index.md) for the recommended reading path, or jump to the [Language Guide](docs/language.md), [Files](docs/files.md), [Archives](docs/archive.md), and [HTTP requests](docs/http.md).
 
 ---
 

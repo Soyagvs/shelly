@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+mod archive;
 mod comments;
 pub mod formatter;
 #[doc(hidden)]
@@ -1534,6 +1535,64 @@ impl Interpreter {
         Ok(value as u8)
     }
 
+    fn archive_command(&mut self, text: &str) -> Result<(), String> {
+        let (op, rest) = text
+            .split_once(char::is_whitespace)
+            .ok_or("archive syntax invalid")?;
+        let (args, dest) = rest
+            .trim()
+            .split_once("->")
+            .ok_or("archive capture required")?;
+        if dest.contains("->") {
+            return Err("archive capture must be unique".into());
+        }
+        let name = parse_var_ref(dest.trim())?;
+        let args = args.trim();
+        let value = match op {
+            "create" => {
+                let (a, b) = args
+                    .split_once(" from ")
+                    .ok_or("archive create syntax invalid")?;
+                if b.contains(" from ") {
+                    return Err("archive create syntax invalid".into());
+                }
+                archive::create(
+                    Path::new(&self.eval_string(a.trim())?),
+                    Path::new(&self.eval_string(b.trim())?),
+                )?
+            }
+            "extract" => {
+                let (a, b) = args
+                    .split_once(" into ")
+                    .ok_or("archive extract syntax invalid")?;
+                if b.contains(" into ") {
+                    return Err("archive extract syntax invalid".into());
+                }
+                archive::extract(
+                    Path::new(&self.eval_string(a.trim())?),
+                    Path::new(&self.eval_string(b.trim())?),
+                )?
+            }
+            "checksum" => {
+                if args.is_empty() {
+                    return Err("archive checksum operand required".into());
+                } else {
+                    archive::checksum(Path::new(&self.eval_string(args)?))?
+                }
+            }
+            "check" => {
+                if args.is_empty() {
+                    return Err("archive check operand required".into());
+                } else {
+                    archive::check(Path::new(&self.eval_string(args)?))?
+                }
+            }
+            _ => return Err("unknown archive operation".into()),
+        };
+        self.vars.insert(name, value);
+        Ok(())
+    }
+
     fn run_line(&mut self, line: &str, line_no: usize) -> Result<(), String> {
         if let Some(rest) = line.strip_prefix("arg ") {
             return self.capture_arg(rest.trim());
@@ -1588,6 +1647,9 @@ impl Interpreter {
         }
         if let Some(rest) = line.strip_prefix("prepend ") {
             return self.push_list_item(rest.trim(), false);
+        }
+        if let Some(rest) = line.strip_prefix("archive ") {
+            return self.archive_command(rest.trim());
         }
         if let Some(rest) = line.strip_prefix("create ") {
             self.log_action(&format!("create: {}", rest.trim()));
@@ -4156,6 +4218,38 @@ impl Checker {
     }
 
     fn check_line(&mut self, line: &str) -> Result<(), String> {
+        if let Some(rest) = line.strip_prefix("archive ") {
+            let (op, tail) = rest
+                .split_once(char::is_whitespace)
+                .ok_or("archive operation required")?;
+            if !matches!(op, "create" | "extract" | "checksum" | "check") {
+                return Err("unknown archive operation".into());
+            }
+            let (args, dst) = tail
+                .split_once("->")
+                .ok_or("archive syntax requires -> $result")?;
+            if args.trim().is_empty() || dst.trim().is_empty() || dst.contains("->") {
+                return Err("archive syntax requires one operand and one result".into());
+            }
+            parse_var_ref(dst.trim())?;
+            match op {
+                "create" if args.matches(" from ").count() == 1 => {
+                    let mut p = args.split(" from ");
+                    if p.next().unwrap().trim().is_empty() || p.next().unwrap().trim().is_empty() {
+                        return Err("archive create operands required".into());
+                    }
+                }
+                "extract" if args.matches(" into ").count() == 1 => {
+                    let mut p = args.split(" into ");
+                    if p.next().unwrap().trim().is_empty() || p.next().unwrap().trim().is_empty() {
+                        return Err("archive extract operands required".into());
+                    }
+                }
+                "checksum" | "check" => {}
+                _ => return Err("archive syntax invalid".into()),
+            }
+            return Ok(());
+        }
         if line.starts_with("export $") {
             return Ok(());
         }

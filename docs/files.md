@@ -4,7 +4,7 @@
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
 
-Shelly has first-class file commands for common script automation, plus `files` for collecting matching paths.
+Shelly has first-class file commands for common script automation, plus `files` for collecting matching paths. For regular-file archives, see [Archives](archive.md).
 
 All relative paths, including `./`, resolve from the current Shelly script file directory, not from the process current working directory. `import`, `include`, `exists`, and `files` use the same script-relative model. This is not a sandbox: `..` is allowed and can escape the script directory, for example `write "../shared/out.txt" "hello"` writes in its parent directory.
 

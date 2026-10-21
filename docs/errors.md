@@ -4,7 +4,7 @@
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
 </p>
 
-[Documentation index](index.md) · [Deferred cleanup](defer.md) · [Timeouts](timeouts.md) · [Exit](exit.md)
+[Documentation index](index.md) · [Archives](archive.md) · [Deferred cleanup](defer.md) · [Timeouts](timeouts.md) · [Exit](exit.md)
 
 Use `try`, a required `catch`, and `end` to handle ordinary runtime errors.
 
