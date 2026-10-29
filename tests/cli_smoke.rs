@@ -4,6 +4,132 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn functions_accept_nested_end_blocks_and_keep_loop_control_local() {
+    let source = r#"
+fn nested() {
+    if true
+        repeat 2
+            if false
+                continue
+            end
+            shellout "ok"
+        end
+    elif false
+        shellout "wrong"
+    else
+        shellout "wrong"
+    end
+    return "done"
+}
+call nested()
+"#;
+    let output = run_script(source);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "ok\nok\n");
+}
+
+#[test]
+fn function_nesting_matrix_executes_local_loops_and_returns() {
+    let output = run_script(
+        r#"
+fn nested() {
+    $values = ["for"]
+    for $item in $values
+        shellout $item
+    end
+    $i = 0
+    while $i < 2
+        $i = $i + 1
+        if $i == 1
+            continue
+        end
+        repeat 2
+            break
+        end
+        shellout "after"
+    end
+    return "done"
+}
+call nested()
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "for\nafter\n");
+}
+
+#[test]
+fn functions_support_nested_collections_try_timeout_defer_and_watch() {
+    let output = run_script(
+        r#"
+fn nested() {
+    defer
+        shellout "deferred"
+    end
+    try
+        timeout 1
+            watch printf "watched\\n" -> $line
+                shellout $line
+            end
+        end
+    catch
+        shellout "caught"
+    end
+    $value = {"items": ["ok"]}
+    shellout $value.items[1]
+}
+call nested()
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "watched\nok\ndeferred\n");
+}
+
+#[test]
+fn exported_and_nested_function_braces_have_strict_closures() {
+    let valid = check_script(
+        r#"
+export fn outer() {
+    fn inner() {
+        return "inner"
+    }
+    return "outer"
+}
+"#,
+    );
+    assert!(valid.status.success(), "stderr: {}", stderr(&valid));
+
+    for source in [
+        "fn broken() {\n    if true\n        shellout \"x\"\n}\n",
+        "fn broken() {\n    if true\n        shellout \"x\"\nend\n",
+        "fn broken() {\n    shellout \"x\"\nend\n}\n",
+    ] {
+        let output = check_script(source);
+        assert!(
+            !output.status.success(),
+            "accepted mismatched closure: {source}"
+        );
+    }
+}
+
+#[test]
+fn checker_rejects_loop_control_that_crosses_function_scope() {
+    for statement in ["break", "continue"] {
+        let output = check_script(&format!(
+            "while true\n    fn inner() {{\n        {statement}\n    }}\n    break\nend\n"
+        ));
+        assert!(
+            !output.status.success(),
+            "accepted {statement} in nested function"
+        );
+        assert!(
+            stderr(&output).contains(&format!("{statement} outside loop")),
+            "stderr: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
 fn watch_streams_stdout_lines_to_sequential_handler() {
     let output = run_script("watch printf \"one\\ntwo\\n\" -> $line\n    shellout $line\nend\n");
     assert!(output.status.success(), "stderr: {}", stderr(&output));

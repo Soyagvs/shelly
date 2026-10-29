@@ -50,6 +50,46 @@ fn formatting_is_idempotent() {
 }
 
 #[test]
+fn modern_functions_indent_nested_blocks_and_following_statements() {
+    for declaration in ["fn local {", "export fn public {"] {
+        let source = format!(
+            "{declaration}\n if true\n for $item in $items\n shellout $item\n end\n end\n}}\nshellout \"top-level\"\n"
+        );
+        let expected = format!(
+            "{declaration}\n    if true\n        for $item in $items\n            shellout $item\n        end\n    end\n}}\nshellout \"top-level\"\n"
+        );
+        let formatted = format_source(&source).expect("format modern function");
+        assert_eq!(formatted, expected);
+        assert_eq!(format_source(&formatted).unwrap(), formatted);
+    }
+}
+
+#[test]
+fn modern_function_braces_do_not_close_on_strings_comments_or_dictionaries() {
+    let source = "fn example {\n shellout \"}\" # } in a comment\n $value = {\"key\": \"}\"}\n```\n}\n```\n}\nshellout \"done\"\n";
+    let expected = "fn example {\n    shellout \"}\" #\n    $value = {\"key\": \"}\"}\n    ```\n}\n```\n}\nshellout \"done\"\n";
+    let formatted = format_source(source).expect("format protected braces");
+    assert_eq!(formatted, expected);
+    assert_eq!(format_source(&formatted).unwrap(), formatted);
+}
+
+#[test]
+fn multiline_dictionaries_do_not_consume_function_closers() {
+    let source = "fn example() {\n$value = {\n\"key\": \"value\"\n}\nshellout \"after\"\n}\ncall example()\n";
+    let expected = "fn example() {\n    $value = {\n        \"key\": \"value\"\n    }\n    shellout \"after\"\n}\ncall example()\n";
+    let formatted = format_source(source).expect("format multiline dictionary");
+    assert_eq!(formatted, expected);
+    assert_eq!(format_source(&formatted).unwrap(), formatted);
+
+    let top_level = "$value = {\n\"key\": \"value\",\n}\nshellout \"after\"\n";
+    let top_level_formatted = format_source(top_level).expect("format top-level dictionary");
+    assert_eq!(
+        format_source(&top_level_formatted).unwrap(),
+        top_level_formatted
+    );
+}
+
+#[test]
 fn malformed_sources_are_rejected() {
     for source in [
         "end\n",

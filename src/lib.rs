@@ -4871,7 +4871,15 @@ impl Checker {
             return Ok(());
         }
         if line == "break" || line == "continue" {
-            if !self.blocks.iter().any(|kind| *kind == BlockKind::Loop) {
+            let function_boundary = self
+                .blocks
+                .iter()
+                .rposition(|kind| *kind == BlockKind::Function);
+            let in_loop = self.blocks.iter().enumerate().any(|(index, kind)| {
+                *kind == BlockKind::Loop
+                    && function_boundary.map_or(true, |boundary| index > boundary)
+            });
+            if !in_loop {
                 return Err(format!("{line} outside loop"));
             }
             return Ok(());
@@ -6873,6 +6881,8 @@ fn starts_block(line: &str) -> bool {
         || line.starts_with("while ")
         || line.starts_with("for ")
         || line.starts_with("repeat ")
+        || line.starts_with("timeout ")
+        || line.starts_with("watch ")
         || line.starts_with("fn ")
         || line.starts_with("export fn ")
         || line == "try"
@@ -6946,10 +6956,6 @@ fn collect_try_block(
     } else {
         Err("missing catch for try".to_string())
     }
-}
-
-fn starts_function_block(line: &str) -> bool {
-    line.starts_with("fn ") || line.starts_with("export fn ")
 }
 
 fn parse_function_header(rest: &str) -> Result<(String, Vec<Param>), String> {
@@ -7208,7 +7214,7 @@ fn parse_function(
     while index < lines.len() {
         let line_no = lines[index].0;
         let line = lines[index].1.trim();
-        if starts_function_block(line) {
+        if starts_block(line) {
             depth += 1;
         }
         if line == "}" {
@@ -7217,8 +7223,11 @@ fn parse_function(
             }
             depth -= 1;
         }
-        if line == "end" && depth == 0 {
-            return Err("old function syntax was removed; close functions with }".to_string());
+        if line == "end" {
+            if depth == 0 {
+                return Err("old function syntax was removed; close functions with }".to_string());
+            }
+            depth -= 1;
         }
         if !line.is_empty() {
             body.push((line_no, line.to_string()));
