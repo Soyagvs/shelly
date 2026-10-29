@@ -14,8 +14,8 @@ fn both_binaries_report_package_version_without_starting_protocol() {
             "shelly"
         };
         assert_eq!(
-            String::from_utf8_lossy(&output.stdout).trim(),
-            format!("{expected_name} {}", env!("CARGO_PKG_VERSION"))
+            String::from_utf8_lossy(&output.stdout),
+            format!("{expected_name} {}\n", env!("CARGO_PKG_VERSION"))
         );
         assert!(output.stderr.is_empty());
     }

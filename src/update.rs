@@ -206,6 +206,10 @@ pub fn parse_version_output(output: &[u8], expected_name: &str) -> Result<String
         return Err("unexpected binary name".into());
     }
     let version = fields.next().ok_or("missing version")?;
+    let version = version
+        .strip_suffix("\r\n")
+        .or_else(|| version.strip_suffix('\n'))
+        .unwrap_or(version);
     if version.is_empty() || version.contains(['\n', '\r']) || version.trim() != version {
         return Err("version output is not one exact line".into());
     }
@@ -232,7 +236,7 @@ pub fn pending_message(has_lsp: bool) -> String {
     }
 }
 
-fn installed_version(path: &Path, expected_name: &str) -> String {
+pub fn installed_version(path: &Path, expected_name: &str) -> String {
     let output_path = env::temp_dir().join(format!(
         "shelly-version-{}-{}",
         std::process::id(),

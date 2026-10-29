@@ -6,19 +6,38 @@ use std::{fs, path::PathBuf};
 fn version_output_requires_exact_expected_binary_version() {
     for output in [
         b"".as_slice(),
-        b"3.8.2\nextra",
-        b"not-a-version",
-        b"3.8.2\n",
+        b"shelly 3.8.2\nextra",
+        b"shelly 3.8.2\n\n",
+        b"shelly 3.8.2 ",
     ] {
         assert!(
             update::parse_version_output(output, "shelly").is_err(),
             "{output:?}"
         );
     }
-    assert_eq!(
-        update::parse_version_output(b"shelly 3.8.2", "shelly").unwrap(),
-        "3.8.2"
-    );
+    for output in [
+        b"shelly 3.8.2".as_slice(),
+        b"shelly 3.8.2\n".as_slice(),
+        b"shelly 3.8.2\r\n".as_slice(),
+    ] {
+        assert_eq!(
+            update::parse_version_output(output, "shelly").unwrap(),
+            "3.8.2"
+        );
+    }
+}
+
+#[test]
+fn installed_version_reads_both_production_binaries() {
+    for (binary, name) in [
+        (env!("CARGO_BIN_EXE_shelly"), "shelly"),
+        (env!("CARGO_BIN_EXE_shelly-lsp"), "shelly-lsp"),
+    ] {
+        assert_eq!(
+            update::installed_version(&PathBuf::from(binary), name),
+            env!("CARGO_PKG_VERSION")
+        );
+    }
 }
 
 #[test]
