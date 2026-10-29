@@ -42,6 +42,11 @@ pub fn run_lsp() {
 }
 
 pub fn cli_main() {
+    let version = env::args_os().skip(1).next();
+    if version.as_deref() == Some(std::ffi::OsStr::new("--version")) {
+        println!("shelly {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
     if env::args_os()
         .next()
         .and_then(|path| {

@@ -2,6 +2,47 @@ use sha2::{Digest, Sha256};
 use shelly::update;
 use std::{fs, path::PathBuf};
 
+#[test]
+fn version_output_requires_exact_expected_binary_version() {
+    for output in [
+        b"".as_slice(),
+        b"3.8.2\nextra",
+        b"not-a-version",
+        b"3.8.2\n",
+    ] {
+        assert!(
+            update::parse_version_output(output, "shelly").is_err(),
+            "{output:?}"
+        );
+    }
+    assert_eq!(
+        update::parse_version_output(b"shelly 3.8.2", "shelly").unwrap(),
+        "3.8.2"
+    );
+}
+
+#[test]
+fn exact_binary_equality_drives_noop_only_when_both_match() {
+    let root = temp_dir("noop-decision");
+    let installed = root.join("installed");
+    let staged = root.join("staged");
+    fs::write(&installed, b"same").unwrap();
+    fs::write(&staged, b"same").unwrap();
+    assert!(update::binaries_equal(&installed, &staged));
+    fs::write(&staged, b"different").unwrap();
+    assert!(!update::binaries_equal(&installed, &staged));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn update_reports_missing_lsp_without_claiming_replacement() {
+    assert_eq!(
+        update::pending_message(false),
+        "Update pending: shelly will be replaced; shelly-lsp is missing and will remain unavailable."
+    );
+    assert!(update::pending_message(true).contains("shelly and shelly-lsp will be replaced"));
+}
+
 #[cfg(windows)]
 use std::process::Command;
 

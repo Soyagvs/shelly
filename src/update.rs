@@ -1,11 +1,14 @@
 use sha2::{Digest, Sha256};
+use std::time::Duration;
 #[cfg(windows)]
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use std::{
     env, fs,
+    fs::{File, OpenOptions},
     io::{Cursor, Read},
     path::{Component, Path, PathBuf},
     process::Command,
+    process::Stdio,
 };
 const REPOSITORY: &str = "Soyagvs/shelly";
 
@@ -36,6 +39,12 @@ pub fn run(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<(), Str
     extract(&archive_name, &archive, &dir)?;
     let exe = env::current_exe().map_err(|e| format!("could not locate executable: {e}"))?;
     let lsp = exe.with_file_name(binary_name("shelly-lsp"));
+    let before_shelly = installed_version(&exe, "shelly");
+    let before_lsp = installed_version(&lsp, "shelly-lsp");
+    println!(
+        "Current versions: shelly {}, shelly-lsp {}.",
+        before_shelly, before_lsp
+    );
     let staged = dir.join(binary_name("shelly"));
     let staged_lsp = dir.join(binary_name("shelly-lsp"));
     if !staged.is_file() {
@@ -45,10 +54,21 @@ pub fn run(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<(), Str
     if has_lsp && !staged_lsp.is_file() {
         return Err("release archive does not contain shelly-lsp".into());
     }
+    if has_lsp
+        && staged_lsp.is_file()
+        && binaries_equal(&exe, &staged)
+        && binaries_equal(&lsp, &staged_lsp)
+    {
+        println!(
+            "Already current. Installed versions: shelly {}, shelly-lsp {}.",
+            before_shelly, before_lsp
+        );
+        return Ok(());
+    }
     if cfg!(windows) {
         let mut handoff = Command::new(&exe);
         handoff.arg("--shelly-update-helper").arg(&staged).arg(&exe);
-        if has_lsp {
+        if staged_lsp.is_file() {
             handoff.arg(&staged_lsp).arg(&lsp);
         }
         handoff
@@ -56,13 +76,27 @@ pub fn run(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<(), Str
             .arg(std::process::id().to_string())
             .spawn()
             .map_err(|e| format!("could not start update hand-off: {e}"))?;
-        println!("Update handed off; restart Shelly after it exits.");
+        println!(
+            "{} Installed versions: shelly {}, shelly-lsp {} until restart.",
+            pending_message(staged_lsp.is_file()),
+            before_shelly,
+            before_lsp
+        );
         return Ok(());
     }
-    transactional_replace(&[(staged, exe), (staged_lsp, lsp)], has_lsp)?;
+    transactional_replace(
+        &[(staged, exe.clone()), (staged_lsp.clone(), lsp.clone())],
+        staged_lsp.is_file(),
+    )?;
+    let after_shelly = installed_version(&exe, "shelly");
+    let after_lsp = installed_version(&lsp, "shelly-lsp");
     println!(
         "Updated shelly{}.",
         if has_lsp { " and shelly-lsp" } else { "" }
+    );
+    println!(
+        "Installed versions: shelly {}, shelly-lsp {}.",
+        after_shelly, after_lsp
     );
     Ok(())
 }
@@ -164,6 +198,106 @@ fn binary_name(n: &str) -> String {
         n.into()
     }
 }
+
+pub fn parse_version_output(output: &[u8], expected_name: &str) -> Result<String, String> {
+    let text = std::str::from_utf8(output).map_err(|_| "version is not UTF-8")?;
+    let mut fields = text.splitn(2, ' ');
+    if fields.next() != Some(expected_name) {
+        return Err("unexpected binary name".into());
+    }
+    let version = fields.next().ok_or("missing version")?;
+    if version.is_empty() || version.contains(['\n', '\r']) || version.trim() != version {
+        return Err("version output is not one exact line".into());
+    }
+    let fields: Vec<_> = version.split('.').collect();
+    if fields.len() != 3
+        || fields
+            .iter()
+            .any(|f| f.is_empty() || !f.chars().all(|c| c.is_ascii_digit()))
+    {
+        return Err("version is not strict semantic version".into());
+    }
+    Ok(version.into())
+}
+
+pub fn binaries_equal(installed: &Path, staged: &Path) -> bool {
+    fs::read(installed).ok() == fs::read(staged).ok()
+}
+
+pub fn pending_message(has_lsp: bool) -> String {
+    if has_lsp {
+        "Update pending: shelly and shelly-lsp will be replaced after this process exits.".into()
+    } else {
+        "Update pending: shelly will be replaced; shelly-lsp is missing and will remain unavailable.".into()
+    }
+}
+
+fn installed_version(path: &Path, expected_name: &str) -> String {
+    let output_path = env::temp_dir().join(format!(
+        "shelly-version-{}-{}",
+        std::process::id(),
+        expected_name
+    ));
+    let output = match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&output_path)
+    {
+        Ok(file) => file,
+        Err(_) => return "unavailable".into(),
+    };
+    let mut child = match Command::new(path)
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(output)
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => {
+            let _ = fs::remove_file(output_path);
+            return "unavailable".into();
+        }
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    let result = loop {
+        if fs::metadata(&output_path)
+            .map(|m| m.len() > 128)
+            .unwrap_or(false)
+        {
+            let _ = child.kill();
+            let _ = child.wait();
+            break "unknown".into();
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    break "unavailable".into();
+                }
+                let mut bytes = Vec::new();
+                let read =
+                    File::open(&output_path).and_then(|f| f.take(129).read_to_end(&mut bytes));
+                break if read.is_err() || bytes.len() > 128 {
+                    "unknown".into()
+                } else {
+                    parse_version_output(&bytes, expected_name).unwrap_or_else(|_| "unknown".into())
+                };
+            }
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10))
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break "unavailable".into();
+            }
+        }
+    };
+    let _ = fs::remove_file(output_path);
+    let _ = expected_name;
+    result
+}
+
 fn replace(s: &Path, d: &Path) -> Result<(), String> {
     let t = d.with_extension("shelly-update");
     fs::copy(s, &t).map_err(|e| e.to_string())?;
@@ -176,6 +310,9 @@ pub fn transactional_replace(
     let mut backups: Vec<(PathBuf, PathBuf)> = Vec::new();
     for (_, d) in items.iter().take(if include_lsp { 2 } else { 1 }) {
         let b = d.with_extension("shelly-backup");
+        if !d.exists() {
+            continue;
+        }
         if let Err(e) = fs::rename(d, &b) {
             let mut restore_errors = Vec::new();
             for (backup, destination) in backups.iter().rev() {
@@ -339,6 +476,20 @@ mod tests {
     #[test]
     fn platform_is_known() {
         assert!(target_archive_name().is_ok() || target_archive_name().is_err());
+    }
+    #[test]
+    fn version_probe_does_not_overwrite_collision_path() {
+        let path = env::temp_dir().join(format!(
+            "shelly-version-{}-collision-test",
+            std::process::id()
+        ));
+        fs::write(&path, b"preserve me").unwrap();
+        assert_eq!(
+            installed_version(Path::new("/nonexistent"), "collision-test"),
+            "unavailable"
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"preserve me");
+        fs::remove_file(path).unwrap();
     }
 }
 pub fn target_archive_name() -> Result<&'static str, String> {

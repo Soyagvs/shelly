@@ -2,9 +2,13 @@
 
 For script validation and redacted JSONL action records, see [dry-run and audit logs](dry-run.md). For environment-only secret capture and safe command usage, see [Environment-only secrets](secrets.md).
 
+## `shelly --version` and `shelly-lsp --version`
+
+Both binaries print their own installed package version and exit without starting script or LSP processing (for example, `shelly 3.8.2` and `shelly-lsp 3.8.2`).
+
 ## `shelly update`
 
-`shelly update` is a manual-only command; it does not run automatically. It downloads the latest versioned GitHub Release asset for Linux x86_64, macOS x86_64/aarch64, or Windows x86_64, including both `shelly` and `shelly-lsp`, and verifies the archive's SHA-256 checksum sidecar. It requires permission to replace the installed binaries. GitHub network access and checksum validation cover the downloaded archive, not OS trust. On Windows replacement is handed to a helper after exit; restart Shelly after the handoff.
+`shelly update` is a manual-only command; it does not run automatically. It downloads the latest versioned GitHub Release asset for Linux x86_64, macOS x86_64/aarch64, or Windows x86_64, including both `shelly` and `shelly-lsp`, and verifies the archive's SHA-256 checksum sidecar. It prints the actual versions reported by both installed binaries before updating and, after synchronous replacement, prints their versions again. A missing, malformed, failed, or legacy binary is reported as unavailable or unknown rather than inferred from the release tag. It requires permission to replace the installed binaries. GitHub network access and checksum validation cover the downloaded archive, not OS trust. On Windows replacement is handed to a helper after exit; the command reports the replacement as pending and restart Shelly after the handoff.
 
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
