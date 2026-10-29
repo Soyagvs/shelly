@@ -41,7 +41,7 @@ domains/
 ```
 
 - `Shelly.toml` — the manifest: it names the project, identifies its entry script, and can configure test discovery. It is required by the manifest-based forms of `shelly run`, `shelly check`, and `shelly test`.
-- `main.shelly` — the user-facing entry point.
+- `main.shelly` — the user-facing entry point, prefilled with an executable `call greet("world")` starter example that prints `Hello, Shelly!`.
 - `README.md` — starter project documentation.
 - `.gitignore` — ignores generated files, including `logs/`.
 - `tests/` — scripts that verify behavior. Add recursively discovered `*_test.shelly` files here or in nested directories; run them with `shelly test`.

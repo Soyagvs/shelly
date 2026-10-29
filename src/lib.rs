@@ -447,7 +447,11 @@ fn init_project(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<()
                 "[project]\nname = \"{toml_name}\"\nversion = \"0.1.0\"\nentry = \"main.shelly\"\n"
             ),
         ),
-        ("main.shelly", String::new()),
+        (
+            "main.shelly",
+            "# Hello, Shelly #\n\nfn greet($name) {\n    if $name == \"world\"\n        shellout \"Hello, Shelly!\"\n    else\n        shellout \"Hello, $name\"\n    end\n}\n\ncall greet(\"world\")\n"
+                .to_string(),
+        ),
         ("README.md", format!("# {project_name}\n")),
         (".gitignore", "logs/\n".to_string()),
     ];

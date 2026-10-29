@@ -288,6 +288,26 @@ fn init_in_current_directory_creates_the_approved_scaffold() {
             .contains("logs/")
     );
     assert!(!dir.join(dir.file_name().expect("directory name")).exists());
+
+    let expected = "# Hello, Shelly #\n\nfn greet($name) {\n    if $name == \"world\"\n        shellout \"Hello, Shelly!\"\n    else\n        shellout \"Hello, $name\"\n    end\n}\n\ncall greet(\"world\")\n";
+    assert_eq!(
+        fs::read_to_string(dir.join("main.shelly")).unwrap(),
+        expected
+    );
+
+    let check = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .arg("check")
+        .current_dir(&dir)
+        .output()
+        .expect("check generated project");
+    assert!(check.status.success(), "stderr: {}", stderr(&check));
+    let run = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .arg("run")
+        .current_dir(&dir)
+        .output()
+        .expect("run generated project");
+    assert!(run.status.success(), "stderr: {}", stderr(&run));
+    assert_eq!(stdout(&run), "Hello, Shelly!\n");
 }
 
 #[test]
