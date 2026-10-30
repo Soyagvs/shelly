@@ -137,6 +137,141 @@ fn watch_streams_stdout_lines_to_sequential_handler() {
 }
 
 #[test]
+fn composition_control_function_try_defer_return_matrix() {
+    let cases = [
+        (
+            "fn run() {\n    defer\n        shellout \"cleanup\"\n    end\n    try\n        command false\n    catch\n        shellout \"caught\"\n    end\n    return \"returned\"\n}\ncall run() -> $result\nshellout $result\n",
+            true,
+            "caught\ncleanup\nreturned\n",
+        ),
+        (
+            "fn run() {\n    defer\n        shellout \"cleanup\"\n    end\n    return \"early\"\n}\ncall run() -> $result\nshellout $result\n",
+            true,
+            "cleanup\nearly\n",
+        ),
+    ];
+    for (source, valid, expected) in cases {
+        let checked = check_script(source);
+        assert_eq!(
+            checked.status.success(),
+            valid,
+            "checker stderr: {}",
+            stderr(&checked)
+        );
+        let output = run_script(source);
+        assert!(output.status.success(), "stderr: {}", stderr(&output));
+        assert_eq!(stdout(&output), expected);
+    }
+}
+
+#[test]
+fn composition_control_loop_try_defer_break_continue_matrix() {
+    let cases = [
+        (
+            "repeat 2 -> $i\n    defer\n        shellout \"cleanup-$i\"\n    end\n    try\n        if $i == 1\n            continue\n        end\n        shellout \"body-$i\"\n        break\n    catch\n        shellout \"caught\"\n    end\nend\n",
+            "cleanup-1\nbody-2\ncleanup-2\n",
+        ),
+        (
+            "repeat 3 -> $i\n    defer\n        shellout \"cleanup-$i\"\n    end\n    try\n        break\n    catch\n        shellout \"caught\"\n    end\n    shellout \"unreachable\"\nend\n",
+            "cleanup-1\n",
+        ),
+    ];
+    for (source, expected) in cases {
+        let checked = check_script(source);
+        assert!(
+            checked.status.success(),
+            "checker stderr: {}",
+            stderr(&checked)
+        );
+        let output = run_script(source);
+        assert!(output.status.success(), "stderr: {}", stderr(&output));
+        assert_eq!(stdout(&output), expected);
+    }
+}
+
+#[test]
+fn composition_control_defer_errors_preserve_lifo_and_primary_error() {
+    let lifo = run_script(
+        "defer\n    shellout \"first\"\nend\ndefer\n    shellout \"second\"\nend\nshellout \"body\"\n",
+    );
+    assert!(lifo.status.success(), "stderr: {}", stderr(&lifo));
+    assert_eq!(stdout(&lifo), "body\nsecond\nfirst\n");
+
+    let error = run_script(
+        "defer\n    command false\nend\ntry\n    command false\ncatch\n    shellout \"caught\"\nend\n",
+    );
+    assert!(!error.status.success());
+    assert_eq!(stdout(&error), "caught\n");
+    assert!(
+        stderr(&error).contains("command exited with status"),
+        "stderr: {}",
+        stderr(&error)
+    );
+}
+
+#[test]
+fn composition_control_watch_function_loop_and_destination_restoration() {
+    let source = r#"
+$line = "outer"
+fn handle($value) {
+    repeat 2 -> $i
+        if $i == 1
+            continue
+        end
+        shellout "handled-$value"
+        break
+    end
+}
+watch printf "one\ntwo\n" -> $line
+    call handle($line)
+end
+shellout $line
+"#;
+    let checked = check_script(source);
+    assert!(
+        checked.status.success(),
+        "checker stderr: {}",
+        stderr(&checked)
+    );
+    let output = run_script(source);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "handled-one\nhandled-two\nouter\n");
+}
+
+#[test]
+fn composition_control_nested_timeout_restores_deadline_and_constrains_inner_cleanup() {
+    let source = r#"
+timeout 2
+    defer
+        shellout "outer-cleanup"
+    end
+    try -> $error
+        timeout 0.01
+            defer
+                shellout "inner-cleanup"
+            end
+            command sleep 1
+        end
+    catch
+        shellout "kind=$error.kind"
+    end
+    command printf restored
+end
+"#;
+    let checked = check_script(source);
+    assert!(
+        checked.status.success(),
+        "checker stderr: {}",
+        stderr(&checked)
+    );
+    let output = run_script(source);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    // The expired inner deadline prevents its cleanup statement from starting;
+    // the still-valid outer scope restores its deadline and runs its cleanup.
+    assert_eq!(stdout(&output), "kind=timeout\nrestoredouter-cleanup\n");
+}
+
+#[test]
 fn wait_requires_no_arguments() {
     let output = check_script("wait extra\n");
     assert!(!output.status.success());
@@ -180,6 +315,38 @@ shellout $items
         stdout(&output).trim(),
         "[{extra: {ok: true}, name: a, tags: []}, {name: b, tags: [y, q]}]"
     );
+}
+
+#[test]
+fn quoted_commas_are_values_but_top_level_commas_are_rejected() {
+    let output = run_script(
+        r#"$items = [{"a, b": ["old"]}]
+set $items[1]["a, b"][1] "x, y"
+append $items[1]["a, b"] "z, q"
+delete $items[1]["a, b"][2]
+shellout $items
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output).trim(), r#"[{"a, b": [x, y]}]"#);
+
+    let output =
+        run_script("$items = [\"old\"]\nprepend $items \"first, value\"\nshellout $items\n");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output).trim(), "[first, value, old]");
+
+    for source in [
+        "set $items[0] , \"x\"\n",
+        "append $items , \"x\"\n",
+        "prepend $items , \"x\"\n",
+        "delete $items[0], \"x\"\n",
+    ] {
+        let output = run_script(&format!("$items = [\"a\"]\n{source}"));
+        assert!(
+            !output.status.success(),
+            "accepted comma mutation: {source}"
+        );
+    }
 }
 
 #[test]
@@ -1520,6 +1687,141 @@ call greet($name, $APP, 27, true)
 }
 
 #[test]
+fn function_call_collection_arguments_preserve_values_and_isolate_mutations() {
+    let output = run_script(
+        r#"$items = ["caller"]
+$state = {nested: {value: "caller"}}
+fn mutate($items, $state, $fallback = "default") {
+    append $items "inside"
+    set $state.nested.value "inside"
+    shellout $items
+    shellout $state.nested.value
+    shellout $fallback
+}
+call mutate($items, $state)
+shellout $items
+shellout $state.nested.value
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "[caller, inside]\ninside\ndefault\n[caller]\ncaller\n"
+    );
+}
+
+#[test]
+fn checker_and_runtime_accept_dictionary_keys_with_commas() {
+    let source =
+        "$items = [{\"a, b\": [\"old\"]}]\nset $items[1][\"a, b\"][1] \"new\"\nshellout $items\n";
+    let checked = check_script(source);
+    assert!(
+        checked.status.success(),
+        "checker stderr: {}",
+        stderr(&checked)
+    );
+    let output = run_script(source);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "[{\"a, b\": [new]}]\n");
+}
+
+#[test]
+fn checker_accepts_set_paths_and_rejects_malformed_mutations() {
+    for source in [
+        "$state = {nested: {value: \"caller\"}, items: [\"old\"]}\nset $state.nested.value \"mutated\"\nset $state.items[0] \"new\"\n",
+        "fn update($state) {\n    set $state.nested.value \"mutated\"\n}\n",
+    ] {
+        let checked = check_script(source);
+        assert!(
+            checked.status.success(),
+            "checker stderr: {}",
+            stderr(&checked)
+        );
+    }
+    for statement in [
+        "set",
+        "set $state",
+        "set $state.nested",
+        "set $state.nested.value",
+        "set $state.nested.value = \"bad\"",
+        "set $state.nested.value, \"bad\"",
+    ] {
+        let checked = check_script(&format!(
+            "$state = {{nested: {{value: \"caller\"}}}}\n{statement}\n"
+        ));
+        assert!(
+            !checked.status.success(),
+            "checker accepted malformed statement: {statement}"
+        );
+    }
+}
+
+#[test]
+fn function_call_collection_literals_and_imports_and_scalar_returns_work() {
+    let dir = test_dir();
+    fs::write(
+        dir.join("library.shelly"),
+        "export fn inspect($items, $state) {\n    append $items \"inside\"\n    set $state.nested.value \"mutated\"\n    shellout $items\n    shellout $state.nested.value\n}\n",
+    )
+    .expect("write module");
+    let source = "import \"library.shelly\"\n$items = [\"caller\"]\n$state = {nested: {value: \"caller\"}}\ncall inspect([\"nested\"], {nested: {value: \"imported\"}})\ncall inspect($items, $state)\nshellout $items\nshellout $state.nested.value\n";
+    fs::write(dir.join("main.shelly"), source).expect("write main");
+    let path = dir.join("main.shelly");
+    let before = run_script_path(path.clone());
+    assert!(before.status.success(), "stderr: {}", stderr(&before));
+    let expected = "[nested, inside]\nmutated\n[caller, inside]\nmutated\n[caller]\ncaller\n";
+    assert_eq!(stdout(&before), expected);
+
+    let checked_before = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["check", path.to_str().unwrap()])
+        .output()
+        .expect("check imported collection fixture");
+    assert!(
+        checked_before.status.success(),
+        "stderr: {}",
+        stderr(&checked_before)
+    );
+    let formatted = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["fmt", path.to_str().unwrap()])
+        .output()
+        .expect("format imported collection fixture");
+    assert!(formatted.status.success(), "stderr: {}", stderr(&formatted));
+    let clean = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["fmt", "--check", path.to_str().unwrap()])
+        .output()
+        .expect("check formatted imported collection fixture");
+    assert!(clean.status.success(), "stderr: {}", stderr(&clean));
+    let after = run_script_path(path);
+    assert!(after.status.success(), "stderr: {}", stderr(&after));
+    assert_eq!(stdout(&after), expected);
+
+    for returned in ["[\"list\"]", "{key: \"dict\"}"] {
+        let rejected = run_script(&format!(
+            "fn answer() {{\n    return {returned}\n}}\ncall answer() -> $result\n"
+        ));
+        assert!(
+            !rejected.status.success(),
+            "collection return capture succeeded"
+        );
+        assert!(
+            stderr(&rejected).contains("scalar"),
+            "expected scalar-only return diagnostic: {}",
+            stderr(&rejected)
+        );
+    }
+
+    let scalar_return = run_script(
+        "fn answer() {\n    return \"ok\"\n}\ncall answer() -> $result\nshellout $result\n",
+    );
+    assert!(
+        scalar_return.status.success(),
+        "stderr: {}",
+        stderr(&scalar_return)
+    );
+    assert_eq!(stdout(&scalar_return), "ok\n");
+}
+
+#[test]
 fn function_call_reference_arguments_fail_when_undefined() {
     for (source, expected) in [
         (
@@ -1771,6 +2073,115 @@ fn case_errors_cover_malformed_forms() {
             );
         }
     }
+}
+
+#[test]
+fn composition_data_imported_function_captures_nested_return() {
+    let dir = test_dir();
+    fs::write(
+        dir.join("data.shelly"),
+        r#"export fn build() {
+    return "hello Ada"
+}
+"#,
+    )
+    .expect("write module");
+    fs::write(
+        dir.join("main.shelly"),
+        r#"import "data.shelly"
+call build() -> $captured
+shellout $captured
+"#,
+    )
+    .expect("write main");
+
+    let checked = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["check", "main.shelly"])
+        .current_dir(&dir)
+        .output()
+        .expect("run check");
+    assert!(checked.status.success(), "stderr: {}", stderr(&checked));
+    let output = run_script_path(dir.join("main.shelly"));
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "hello Ada\n");
+}
+
+#[test]
+fn composition_data_nested_copy_isolated_before_and_after_calls() {
+    let output = run_script(
+        r#"$original = {profile: {tags: ["outside"]}}
+$copy = $original
+set $copy.profile.tags[1] "inside"
+append $copy.profile.tags "added"
+shellout $original.profile.tags
+shellout $copy.profile.tags
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "[outside]\n[inside, added]\n");
+}
+
+#[test]
+fn composition_data_global_nested_copy_does_not_mutate_caller() {
+    let output = run_script(
+        r#"$state = {items: [["caller"]]}
+fn touch() {
+    global $state
+    set $state.items[1][1] "module"
+    append $state.items[1] "copy"
+    shellout $state.items[1]
+}
+call touch()
+shellout $state.items[1]
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "[module, copy]\n[caller]\n");
+}
+
+#[test]
+fn composition_data_include_scope_and_import_private_top_level_stay_distinct() {
+    let dir = test_dir();
+    fs::write(
+        dir.join("setup.shelly"),
+        "$included = {nested: {values: [\"setup\"]}}\nset $included.nested.values[1] \"included\"\n",
+    )
+    .expect("write setup");
+    fs::write(
+        dir.join("library.shelly"),
+        "export fn read() {\n    return \"imported\"\n}\n$private = \"hidden\"\n",
+    )
+    .expect("write library");
+    fs::write(
+        dir.join("main.shelly"),
+        r#"include "setup.shelly"
+import "library.shelly"
+call read() -> $result
+shellout $included.nested.values[1]
+shellout $result
+"#,
+    )
+    .expect("write main");
+
+    let output = run_script_path(dir.join("main.shelly"));
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "included\nimported\n");
+}
+
+#[test]
+fn composition_data_reverse_mutation_sequence_preserves_independent_copies() {
+    let output = run_script(
+        r#"$first = {items: [["a", "b"]]}
+$second = $first
+set $second.items[1][2] "second"
+delete $first.items[1][1]
+append $first.items[1] "first"
+shellout $first.items[1]
+shellout $second.items[1]
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "[b, first]\n[a, second]\n");
 }
 
 #[test]
@@ -3276,43 +3687,93 @@ shellout $mixed[!=3]
     );
 }
 
-#[test]
-fn advanced_list_selector_and_filter_errors_are_clear() {
-    for (source, expected) in [
+fn assert_selector_filter_error(case: &str, source: &str, expected: &str) {
+    let output = run_script(source);
+    let actual = stderr(&output);
+    assert!(
+        !output.status.success(),
+        "case={case} source={source:?} unexpectedly succeeded"
+    );
+    assert!(
+        actual.contains("line"),
+        "case={case} source={source:?} expected line diagnostic, actual={actual}"
+    );
+    assert!(
+        actual.contains(expected),
+        "case={case} source={source:?} expected={expected:?} actual={actual}"
+    );
+}
+
+fn selector_filter_error_cases() -> [(&'static str, &'static str, &'static str); 6] {
+    [
         (
+            "reverse-range",
             "$names = [\"Ana\", \"Luis\"]\nshellout $names[3..1]\n",
             "reverse list ranges are not supported",
         ),
         (
+            "zero-index",
             "$names = [\"Ana\", \"Luis\"]\nshellout $names[0,1]\n",
             "list index must be 1 or greater",
         ),
         (
+            "named-range",
             "$names = [\"Ana\", \"Luis\"]\nshellout $names[first..3]\n",
             "list index 3 out of range",
         ),
         (
+            "missing-comma-value",
             "$names = [\"Ana\", \"Luis\"]\nshellout $names[1,,2]\n",
             "expected value after comma",
         ),
         (
+            "ordered-string-filter",
             "$names = [\"Ana\", \"Luis\"]\nshellout $names[>\"Ana\"]\n",
             "ordered string filters are not supported",
         ),
         (
+            "mixed-ordered-filter",
             "$mixed = [1, \"Ana\"]\nshellout $mixed[>1]\n",
             "ordered list filters require numeric items",
         ),
-    ] {
-        let output = run_script(source);
-        assert!(!output.status.success(), "source succeeded: {source}");
-        assert!(stderr(&output).contains("line"));
-        assert!(
-            stderr(&output).contains(expected),
-            "stderr did not contain {expected:?}: {}",
-            stderr(&output)
-        );
+    ]
+}
+
+#[test]
+fn advanced_list_selector_and_filter_errors_are_clear() {
+    for (case, source, expected) in selector_filter_error_cases() {
+        assert_selector_filter_error(case, source, expected);
     }
+}
+
+#[test]
+fn advanced_list_selector_and_filter_errors_are_order_independent() {
+    let cases = selector_filter_error_cases();
+    for (case, source, expected) in cases.into_iter().rev() {
+        assert_selector_filter_error(case, source, expected);
+    }
+}
+
+#[test]
+fn selector_filter_valid_nested_script_has_no_state_leakage() {
+    let output = run_script(
+        r#"
+fn pick() {
+    $items = [{"name": "Ana", "scores": [2, 4]}, {"name": "Luis", "scores": [1, 3]}]
+    shellout $items[1].name
+    shellout $items[2].scores[2]
+}
+call pick
+$items = [{"name": "Mora"}, {"name": "Zoe"}]
+shellout $items[1].name
+shellout $items[1..2]
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "Ana\n3\nMora\n[{name: Mora}, {name: Zoe}]\n"
+    );
 }
 
 #[test]

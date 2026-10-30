@@ -16,7 +16,18 @@ Both binaries print their own installed package version and exit without startin
 
 Shelly has built-in commands for output, input, prompts, collection mutation, and system shell execution.
 
-Collection mutation uses `set PATH VALUE`, `append PATH VALUE`, `delete PATH`, and top-level scalar-list `prepend $list VALUE`. Command arguments are whitespace-separated; comma-separated command syntax is unsupported. Structural commas remain valid in literals and capture destinations. Paths may combine dot keys, bracket-string keys, and one-based list indexes; see [lists.md](lists.md) and [dictionaries.md](dictionaries.md). Nested `prepend`, `insert`, slices, and range replacement remain deferred. These commands are distinct from file `append` and `remove`.
+Collection mutation uses `set PATH VALUE`, `append PATH VALUE`, `delete PATH`, and top-level scalar-list `prepend $list VALUE`. Arguments are whitespace-separated; a top-level comma is rejected. Commas (and spaces) inside quoted values or bracket-string keys remain literal. Paths may combine dot keys, quoted bracket keys, and existing one-based list indexes; see [lists.md](lists.md) and [dictionaries.md](dictionaries.md). `set`/`append`/`delete` support nested paths; `prepend` is root-only. These commands are distinct from file `append` and `remove`; nested `insert`, slices, and range replacement remain deferred.
+
+```shelly
+$data = {"a, key": {items: ["old"]}}
+set $data["a, key"].items[1] "x, y"
+append $data["a, key"].items "z z"
+delete $data["a, key"].items[1]
+shellout $data
+# {a, key: {items: [z z]}}
+```
+
+`append "file" VALUE` appends text to a file (creating it as documented in [files.md](files.md)); it is not collection `append PATH VALUE`. Collection mutation value support depends on the target: dictionary `set` and list-index `set` accept scalars, lists, or dictionaries; nested `append` does too. Root `append` accepts scalars or dictionaries but rejects lists, while `prepend` and legacy bracket assignment are scalar-only. Missing intermediate path segments and list indexes are errors.
 
 ```shelly
 shellout "hello"

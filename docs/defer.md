@@ -32,7 +32,7 @@ Each block belongs to the nearest scope and does not escape it. Nested scopes cl
 
 ## Every exit path
 
-The current implementation runs deferred blocks when a scope ends normally or with an ordinary error. It also unwinds them for Shelly’s encoded control signals: `exit`, `return`, `break`, and `continue`.
+The current implementation runs deferred blocks when a scope ends normally or with an ordinary error. It also unwinds them for Shelly’s encoded control signals: `exit`, `return`, `break`, and `continue`. An already-expired active deadline can prevent a deferred statement from starting, so cleanup is not guaranteed after a deadline expires. An outer-scope cleanup can run only when its enclosing deadline remains valid; this does not provide a hard wall-clock guarantee.
 
 ```shelly
 defer

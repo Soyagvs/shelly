@@ -1813,7 +1813,7 @@ impl Interpreter {
         }
         if let Some(rest) = line.strip_prefix("append ") {
             let rest = rest.trim();
-            if rest.contains(',') {
+            if has_top_level_comma(rest)? {
                 return Err("append uses whitespace-separated arguments; comma-separated mutation syntax is unsupported".to_string());
             }
             if let Some((path_text, _)) = rest.split_once(char::is_whitespace) {
@@ -3040,11 +3040,11 @@ impl Interpreter {
         child.deadline = self.deadline;
         for (idx, param) in function.params.iter().enumerate() {
             let value = if let Some(text) = arg_texts.get(idx) {
-                self.eval_expr(text)?
+                self.eval_expr_value(text)?
             } else {
-                param.default.clone().expect("default exists")
+                Value::Scalar(param.default.clone().expect("default exists"))
             };
-            child.vars.insert(param.name.clone(), Value::Scalar(value));
+            child.vars.insert(param.name.clone(), value);
         }
         let mut executable_body = Vec::new();
         for (line_no, body_line) in function.body {
@@ -3160,21 +3160,19 @@ impl Interpreter {
         text: &str,
         mutation: CollectionMutation,
     ) -> Result<(), String> {
-        if text.contains(',') {
+        if has_top_level_comma(text)? {
             return Err(format!(
                 "{} uses whitespace-separated arguments; comma-separated mutation syntax is unsupported",
                 mutation.name()
             ));
         }
         let (path_text, value_text) = if mutation == CollectionMutation::Delete {
-            if text.split_whitespace().count() != 1 {
+            if split_mutation_args(text).is_some() {
                 return Err("delete requires exactly one argument".to_string());
             }
             (text, None)
         } else {
-            let (path, value) = text
-                .trim()
-                .split_once(char::is_whitespace)
+            let (path, value) = split_mutation_args(text)
                 .ok_or_else(|| format!("{} requires exactly two arguments", mutation.name()))?;
             if value.trim().is_empty() {
                 return Err(format!(
@@ -3222,13 +3220,12 @@ impl Interpreter {
 
     fn push_list_item(&mut self, rest: &str, append: bool) -> Result<(), String> {
         let verb = if append { "append" } else { "prepend" };
-        if rest.contains(',') {
+        if has_top_level_comma(rest)? {
             return Err(format!(
                 "{verb} uses whitespace-separated arguments; comma-separated mutation syntax is unsupported"
             ));
         }
-        let (path_text, value_text) = rest
-            .split_once(char::is_whitespace)
+        let (path_text, value_text) = split_mutation_args(rest)
             .ok_or_else(|| format!("{verb} requires exactly two arguments"))?;
         let (kind, name, extra) = parse_identifier(path_text)
             .map_err(|_| "mutation target must be a variable list".to_string())?;
@@ -5082,6 +5079,21 @@ fn validate_statement_form(line: &str) -> Result<(), String> {
         }
         return Ok(());
     }
+    if let Some(rest) = line.strip_prefix("set ") {
+        if has_top_level_comma(rest)? {
+            return Err("set uses whitespace-separated arguments; comma-separated mutation syntax is unsupported".into());
+        }
+        let (path_text, value_text) =
+            split_mutation_args(rest).ok_or("set requires exactly two arguments")?;
+        if value_text.trim().is_empty() || value_text.trim_start().starts_with('=') {
+            return Err("set requires exactly two arguments".into());
+        }
+        let (kind, _, _) = parse_collection_path(path_text.trim())?;
+        if kind != IdentKind::Variable {
+            return Err("mutation target must be a variable collection".into());
+        }
+        return Ok(());
+    }
     if line.starts_with('$') {
         return validate_assignment_form(line);
     }
@@ -5219,7 +5231,7 @@ fn validate_statement_form(line: &str) -> Result<(), String> {
     }
     if let Some(rest) = line.strip_prefix("append ") {
         let rest = rest.trim();
-        if rest.trim_start().starts_with('"') || !rest.contains(',') {
+        if rest.trim_start().starts_with('"') || !has_top_level_comma(rest)? {
             let (_, value) = split_path_expr_tail(rest, "append")?;
             if value.trim().is_empty() {
                 return Err("append syntax is append \"file\" $text".to_string());
@@ -5704,6 +5716,77 @@ fn expect_min_arg_count(name: &str, args: &[&str], min: usize) -> Result<(), Str
     } else {
         Err(format!("{name} expects at least {min} argument(s)"))
     }
+}
+
+fn split_mutation_args(input: &str) -> Option<(&str, &str)> {
+    let input = input.trim();
+    let mut quote = false;
+    let mut escaped = false;
+    let mut square = 0usize;
+    let mut curly = 0usize;
+    for (i, ch) in input.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if quote {
+            if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                quote = false;
+            }
+            continue;
+        }
+        match ch {
+            '"' => quote = true,
+            '[' => square += 1,
+            ']' => square = square.saturating_sub(1),
+            '{' => curly += 1,
+            '}' => curly = curly.saturating_sub(1),
+            c if c.is_whitespace() && square == 0 && curly == 0 => {
+                let value = input[i..].trim();
+                if !value.is_empty() {
+                    return Some((&input[..i], value));
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn has_top_level_comma(input: &str) -> Result<bool, String> {
+    let mut in_string = false;
+    let mut escaped = false;
+    let mut square_depth = 0usize;
+    let mut curly_depth = 0usize;
+    for ch in input.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if in_string {
+            match ch {
+                '\\' => escaped = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match ch {
+            '"' => in_string = true,
+            '[' => square_depth += 1,
+            ']' => square_depth = square_depth.saturating_sub(1),
+            '{' => curly_depth += 1,
+            '}' => curly_depth = curly_depth.saturating_sub(1),
+            ',' if square_depth == 0 && curly_depth == 0 => return Ok(true),
+            _ => {}
+        }
+    }
+    if in_string {
+        return Err("unterminated string literal".to_string());
+    }
+    Ok(false)
 }
 
 fn split_space_args(text: &str) -> Result<Vec<&str>, String> {

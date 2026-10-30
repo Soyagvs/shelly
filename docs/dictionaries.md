@@ -50,9 +50,9 @@ shellout $data.pais[$country].city
 shellout $data["pais"]["argentina"].city
 ```
 
-Dot keys must be simple identifiers. Use brackets for spaces, punctuation, reserved words, or dynamic keys. A path's intermediate segments must already exist and have the required collection type: a dictionary key for a dictionary step, or an existing one-based list index for a list step. Lists do not auto-expand.
+Dot keys must be simple identifiers. Use brackets for spaces, punctuation, reserved words, or dynamic keys. Quoted bracket keys preserve commas and spaces, for example `$data["a, key"]`. A path's intermediate segments must already exist and have the required collection type: a dictionary key for a dictionary step, or an existing one-based list index for a list step. Lists do not auto-expand.
 
-Comma-separated command arguments are rejected. Commas remain valid where the language requires them, such as list literals, dictionary literals, selectors, and multi-capture destinations. For example, `set $user.name "Ada", $user.age 32` is invalid; use one command per line.
+Mutation commands use whitespace-separated arguments. A top-level comma is rejected, while commas inside quoted values and quoted bracket keys are literal. For example, `set $user.name "Ada", $user.age 32` is invalid; use one command per line. `set` creates or replaces a terminal dictionary key, `delete` removes an existing terminal key, and `set` may store a scalar, list, or dictionary there. `append` can target a nested list and accepts scalar, list, or dictionary values; `prepend` remains top-level-only and scalar-only. See [Lists](lists.md) for the capability table and list mutation details.
 
 ## Mutation
 
@@ -61,9 +61,12 @@ Only a mutable, lowercase variable can be the root of a mutation. A path may tra
 `set PATH VALUE` creates the terminal dictionary key when it is missing, or replaces it when it already exists. It does not create missing intermediate dictionaries, list indexes, or list entries. Assignment with a path (`$dict.key = VALUE`) replaces an existing terminal key; it does not create a missing key. Both forms replace the value at that terminal location rather than merging dictionaries. `delete PATH` removes an existing terminal dictionary key and errors when the key is missing. List insertion, replacement, and deletion follow the rules in [Lists](lists.md).
 
 ```shelly
-$data = { profile: {} }
+$data = { profile: {}, "a, key": {items: ["old"]} }
 set $data.profile.name "Ada"       # creates name
 $data.profile.name = "Grace"       # replaces name
+set $data["a, key"].items[1] "x, y"
+append $data["a, key"].items "z z"
+delete $data["a, key"].items[1]
 set $data.profile {
     name: "Ada"
     age: 32
@@ -73,7 +76,7 @@ set $data.profile {
 delete $data.profile.name
 ```
 
-Dictionary mutation changes only the targeted mutable root and its reachable value. It does not mutate a separately assigned copy, and it does not change an unrelated dictionary or list. `append` can mutate a list reached through a dictionary path, subject to the scalar-value and root rules in [Lists](lists.md); dictionary paths do not make list `prepend`, filters, or scalar-list helpers applicable.
+Dictionary mutation changes only the targeted mutable root and its reachable value. It does not mutate a separately assigned copy, and it does not change an unrelated dictionary or list. `append` can mutate a list reached through a dictionary path, subject to the value and root rules in [Lists](lists.md); dictionary paths do not make list `prepend`, filters, or scalar-list helpers applicable.
 
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />

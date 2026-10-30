@@ -72,7 +72,19 @@ end
 
 Only a mutable, lowercase variable can be mutated. Constants and values produced directly by an expression cannot be mutation targets. Mutation commands take whitespace-separated arguments; comma-separated command syntax is invalid.
 
-Inserted and replaced list values must be scalar (string, number, or boolean). Dictionaries and lists may be stored in a list literal and addressed through nested paths, but cannot be inserted or used as replacement values by list mutation. Paths may traverse nested dictionaries and lists; every intermediate segment must already exist and have the required collection type. Lists never auto-expand.
+Collection mutation accepts values according to the target form. Paths may traverse nested dictionaries and lists; every intermediate segment must already exist and have the required collection type. Lists never auto-expand.
+
+| Form | Value support | Target and result |
+| --- | --- | --- |
+| `set $dict.key VALUE` | scalar, list, or dictionary | Creates or replaces a terminal dictionary value. |
+| `set $list[INDEX] VALUE` | scalar, list, or dictionary | Replaces an existing list item. |
+| `append $list VALUE` | scalar or dictionary; list is invalid | Adds one item at the root. |
+| `prepend $list VALUE` | scalar only | Adds one item at the root. |
+| `append $path[INDEX] VALUE` | scalar, list, or dictionary | Appends to an existing nested list item. |
+| `prepend $path VALUE` | scalar only | Root-only list prepend. |
+| bracket assignment (`$list[INDEX] = VALUE`) | scalar only | Legacy list-item replacement. |
+
+Every list index must already exist; nested `prepend` is rejected.
 
 ```shelly
 $queue = ["Luis"]
@@ -88,24 +100,33 @@ delete $queue[1]
 
 | Form | Effect and limits |
 | --- | --- |
-| `append PATH VALUE` | Adds scalar `VALUE` to the end of the list at `PATH`. The path may be nested. |
-| `prepend PATH VALUE` | Adds scalar `VALUE` to the beginning of a **top-level mutable scalar list**. Nested paths and nested-item lists are rejected. |
+| `append PATH VALUE` | Appends to an existing nested list; scalar, list, or dictionary values are supported. |
+| `prepend PATH VALUE` | Adds a scalar `VALUE` to the beginning of a top-level mutable list; nested paths are rejected. |
 | `remove PATH[SELECTOR]` | Removes the selected item from a list and compacts it. The selected item must exist; use a one-item selector for one removal. |
 | `delete PATH[INDEX]` | Deletes the indexed item from a list and compacts it. Nested paths are allowed; the index must exist. |
-| `set PATH[INDEX] VALUE` | Replaces an existing list item with scalar `VALUE`; nested paths are allowed. It never creates an index. |
-| `PATH[INDEX] = VALUE` | Bracket replacement, equivalent to `set`; the index must exist and `VALUE` must be scalar. |
+| `set PATH[INDEX] VALUE` | Replaces an existing list item with a scalar, list, or dictionary. It never creates an index. |
+| `PATH[INDEX] = VALUE` | Legacy bracket replacement; only scalar replacement is supported. |
 
 Dictionary paths can be combined with list paths:
 
 ```shelly
-$data = { items: [["a"]] }
-set $data.items[1][1] "b"
-append $data.items[1] "c"
-delete $data.items[1][1]
-shellout $data.items[1]
+$data = {"items, now": [["a"]]}
+set $data["items, now"][1][1] "b"
+append $data["items, now"][1] "c"
+delete $data["items, now"][1][1]
+shellout $data["items, now"][1]
+# [c]
 ```
 
-The following are **invalid examples**: `append $CONSTANT "x"` (constants are immutable), `prepend $data.items "x"` (prepend is top-level only), `set $items[4] "x"` (no auto-expansion), `set $items[1] ["x"]` (replacement must be scalar), and `append $items "x", "y"` (comma-separated mutation arguments are unsupported).
+Quoted bracket keys preserve commas and spaces. For supported value types, see the capability table above; dictionary paths do not change the root-only restriction on `prepend`.
+
+The following are **invalid examples**: `append $CONSTANT "x"` (constants are immutable), `prepend $data.items "x"` (prepend is top-level only), `set $items[4] "x"` (no auto-expansion), `append $items ["x"]` (root append rejects lists), and `append $items "x", "y"` (top-level comma is rejected). These are valid:
+
+```shelly
+$items = ["a"]
+set $items[1] ["x"]
+# $items is [[x]]
+```
 
 Nested paths are allowed for generic collection mutation, but mutation still requires a mutable root. A path through a constant cannot be changed.
 
@@ -116,8 +137,8 @@ Nested paths are allowed for generic collection mutation, but mutation still req
 | `list[0]`, negative, fractional, or missing index | Indexes are one-based existing integers. |
 | Reversed or out-of-range range | Range endpoints must resolve within the list. |
 | Filter on a dictionary/list item or incompatible RHS | Filters compare scalar values only. |
-| `prepend $nested.path VALUE` | `prepend` only targets a top-level mutable scalar list. |
-| `set`/replacement with a list or dictionary value | Inserted and replaced list values must be scalar. |
+| `prepend $nested.path VALUE` | `prepend` only targets a top-level mutable list. |
+| root `append` with a list value | Root append accepts scalars or dictionaries, not lists. |
 | Mutation of a constant or expression | Only mutable variables are targets. |
 | `append $list a, b` | Commands do not use comma-separated arguments. |
 | Nested-item `prepend`, filtering, or scalar-list helpers | Nested items are not scalar-list inputs. |

@@ -27,7 +27,7 @@ timeout 30
 end
 ```
 
-The deadline is inherited through `call`, functions, and loops. It is checked at statement boundaries and while waiting for processes; it is not an arbitrary interruption mechanism for every blocking operation. A nested `timeout` block uses the shorter of its deadline and the inherited block deadline. A command-level `timeout SECONDS` establishes its own effective command deadline and can override the inherited block deadline. A block timeout reports `kind == "timeout"` without process metadata; a process timeout reports `program` and `args` as well.
+The deadline is inherited through `call`, functions, and loops. It is checked at statement boundaries and while waiting for processes; it is not an arbitrary interruption mechanism for every blocking operation. When a deadline has expired, subsequent statements—including deferred cleanup statements—may not start. No grace period or hard wall-clock guarantee is provided. A nested `timeout` block uses the shorter of its deadline and the inherited block deadline. A command-level `timeout SECONDS` establishes its own effective command deadline and can override the inherited block deadline. A block timeout reports `kind == "timeout"` without process metadata; a process timeout reports `program` and `args` as well.
 
 ## Handling timeouts
 
