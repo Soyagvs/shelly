@@ -15,6 +15,16 @@
 [**Why Shelly?**](#-why-shelly) · [**Get started**](#-get-started) · [**Documentation**](#-documentation) · [**Releases**](https://github.com/Soyagvs/shelly/releases/latest)
 
 <!-- release-downloads:start -->
+- [v3.9.0](https://github.com/Soyagvs/shelly/releases/tag/v3.9.0): 8 downloads
+- [v3.8.5](https://github.com/Soyagvs/shelly/releases/tag/v3.8.5): 19 downloads
+- [v3.8.4](https://github.com/Soyagvs/shelly/releases/tag/v3.8.4): 21 downloads
+- [v3.8.3](https://github.com/Soyagvs/shelly/releases/tag/v3.8.3): 27 downloads
+- [v3.8.2](https://github.com/Soyagvs/shelly/releases/tag/v3.8.2): 34 downloads
+- [v3.8.1](https://github.com/Soyagvs/shelly/releases/tag/v3.8.1): 23 downloads
+- [v3.8.0](https://github.com/Soyagvs/shelly/releases/tag/v3.8.0): 13 downloads
+- [v3.7.0](https://github.com/Soyagvs/shelly/releases/tag/v3.7.0): 12 downloads
+- [v3.6.1](https://github.com/Soyagvs/shelly/releases/tag/v3.6.1): 11 downloads
+- [v3.6.0](https://github.com/Soyagvs/shelly/releases/tag/v3.6.0): 13 downloads
 <!-- release-downloads:end -->
 
 </div>
