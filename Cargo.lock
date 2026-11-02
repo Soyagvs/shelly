@@ -961,7 +961,7 @@ dependencies = [
 
 [[package]]
 name = "shelly"
-version = "3.9.0"
+version = "3.10.0"
 dependencies = [
  "flate2",
  "regex",

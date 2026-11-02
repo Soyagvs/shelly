@@ -34,6 +34,34 @@ fn v1_allows_query_strings_and_http_options() {
 }
 
 #[test]
+fn http_pages_checker_accepts_get_pagination_options_and_one_destination() {
+    let output = check(
+        "httpPages GET https://example.test/resource headers $headers timeout 1 maxBytes 1024 maxPages 3 maxTotalBytes 4096 -> $response\n",
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn http_pages_checker_rejects_invalid_options_and_destinations() {
+    for source in [
+        "httpPages POST https://example.test/ maxPages 3 -> $response\n",
+        "httpPages GET https://example.test/ maxPages 0 -> $response\n",
+        "httpPages GET https://example.test/ maxTotalBytes nope -> $response\n",
+        "httpPages GET https://example.test/ maxPages 3 -> $one, $two\n",
+    ] {
+        let output = check(source);
+        assert!(
+            !output.status.success(),
+            "accepted invalid httpPages source: {source}"
+        );
+    }
+}
+
+#[test]
 fn http_checker_accepts_dynamic_option_variables() {
     let output = check(
         "$headers = {\"x-test\": \"yes\"}\n$body = \"payload\"\n$timeout = 1\n$limit = 1024\nhttp POST https://example.test/ headers $headers body $body timeout $timeout maxBytes $limit -> $response\n",

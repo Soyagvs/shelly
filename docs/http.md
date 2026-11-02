@@ -18,6 +18,14 @@ http GET "https://example.com/health" -> $response
 
 `http` always requires exactly one capture destination after `->`. The supported methods are `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, and `OPTIONS`.
 
+For a paginated GET API, use `httpPages`:
+
+```shelly
+httpPages GET "https://api.github.com/repos/shelly-lang/shelly/issues?per_page=100" headers {"accept": "application/vnd.github+json"} -> $pages
+```
+
+`httpPages` follows the API's pagination links and captures a list of complete response dictionaries. It is still one command and requires exactly one capture destination.
+
 Optional clauses may appear after the URL, once each:
 
 ```shelly
@@ -50,6 +58,37 @@ http GET https://example.com/ timeout 1 timeout 2 -> $r # repeated option
 ```
 
 A multiline form is not an alternative spelling; it is not HTTP v1 syntax.
+
+## `httpPages`: paginated GET requests
+
+`httpPages` accepts `GET` only and has the same HTTPS, SSRF, TLS, no-proxy, and no-redirect policy as `http`. It returns a list in request order; each item is a complete response dictionary with the same `status`, `body`, `headers`, and `url` keys described below. The body remains text (UTF-8 decoded lossily): Shelly does not automatically parse JSON, so inspect or parse it using the tools your script provides.
+
+```text
+httpPages GET URL [headers DICT] [body STRING] [timeout NUMBER]
+                 [maxBytes INTEGER] [maxPages INTEGER]
+                 [maxTotalBytes INTEGER] -> $VARIABLE
+```
+
+Defaults and limits:
+
+| Option | Default | Limit or meaning |
+| --- | --- | --- |
+| `timeout` | 30 seconds | Positive and at most 120 seconds, per request |
+| `maxBytes` | 8 MiB | Positive; maximum body size of each response |
+| `maxPages` | 10 | Positive; maximum number of responses to fetch |
+| `maxTotalBytes` | 32 MiB | Positive; maximum combined body size across pages |
+
+### Link-next semantics
+
+After each response, Shelly looks only for a `Link` response header containing `rel="next"` (the header name is case-insensitive). It accepts an absolute HTTPS URL or a relative URL, resolves relative URLs against the current page, and applies the same HTTPS and public-address policy before fetching it. Other link relations are ignored. Shelly does not guess page parameters, follow redirects, or treat a response body as pagination metadata. A malformed `rel=next` link, cycle, page limit, or byte limit raises an error.
+
+For example, GitHub may return a header like:
+
+```text
+Link: <https://api.github.com/repositories/123/issues?page=2>; rel="next", <https://api.github.com/repositories/123/issues?page=5>; rel="last"
+```
+
+The example command above follows only the `rel="next"` target. It does not jump to `last` or infer pagination from JSON.
 
 ## Response dictionary
 
@@ -89,7 +128,7 @@ These restrictions are intentional SSRF and resource limits, not suggestions to 
 
 A response with status 400 or higher raises a catchable error with `kind == "http"` and `message == "HTTP request returned a non-success status"`. Its response status, body, headers, and URL are not copied into catch fields. This prevents a failed response from leaking response data through structured error handling.
 
-Transport failures use `kind` values such as `network`, `timeout`, `policy`, `syntax`, or `limit`, with a `message`. DNS failure and blocked destinations are policy errors. A timeout or body-limit failure is not converted into a successful response.
+Transport failures use `kind` values such as `network`, `timeout`, `policy`, `syntax`, or `limit`, with a `message`. DNS failure, blocked destinations, malformed next links, and pagination cycles are policy errors. A timeout or body-limit failure is not converted into a successful response. For `httpPages`, any failed page fails the command; partial pages are not returned.
 
 ```shelly
 try -> $error
@@ -109,7 +148,7 @@ See [Error handling](errors.md) for catch rules and [Timeouts](timeouts.md) for 
 
 ## Non-goals in v1
 
-HTTP v1 does not provide HTTP (non-TLS) URLs, redirects, proxies, custom TLS settings, streaming uploads/downloads, binary response preservation, multipart/form uploads, repeated request headers, automatic JSON encoding/decoding, authentication helpers, cookies, retries, or pagination.
+HTTP v1 does not provide HTTP (non-TLS) URLs, redirects, proxies, custom TLS settings, streaming uploads/downloads, binary response preservation, multipart/form uploads, repeated request headers, automatic JSON encoding/decoding, authentication helpers, cookies, or retries. `httpPages` is deliberately limited to GET and `Link: rel="next"`; it does not infer pagination from JSON, follow other link relations, or return partial results after an error.
 
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />

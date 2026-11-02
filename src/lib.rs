@@ -1919,8 +1919,11 @@ impl Interpreter {
         if line.starts_with('$') {
             return self.assignment(line, line_no);
         }
+        if let Some(rest) = line.strip_prefix("httpPages ") {
+            return self.run_http(rest.trim(), true);
+        }
         if let Some(rest) = line.strip_prefix("http ") {
-            return self.run_http(rest.trim());
+            return self.run_http(rest.trim(), false);
         }
         if let Some(rest) = line.strip_prefix("shellout") {
             let value = self.eval_expr(rest.trim())?;
@@ -2322,12 +2325,15 @@ impl Interpreter {
         Err(message)
     }
 
-    fn run_http(&mut self, text: &str) -> Result<(), String> {
+    fn run_http(&mut self, text: &str, pages: bool) -> Result<(), String> {
         let (method, args, tail) = self.parse_command_atoms(text)?;
-        if !matches!(
-            method.as_str(),
-            "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
-        ) {
+        if (pages && method != "GET")
+            || (!pages
+                && !matches!(
+                    method.as_str(),
+                    "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
+                ))
+        {
             return Err(
                 "http method must be GET, POST, PUT, PATCH, DELETE, HEAD, or OPTIONS".into(),
             );
@@ -2337,6 +2343,8 @@ impl Interpreter {
         let mut body = None;
         let mut timeout = None;
         let mut max_bytes = None;
+        let mut max_pages = None;
+        let mut max_total_bytes = None;
         let mut seen = HashSet::new();
         let mut i = 1;
         while i < args.len() {
@@ -2369,6 +2377,22 @@ impl Interpreter {
                         self.eval_expr(args.get(i).ok_or("maxBytes requires an integer")?)?
                             .parse()
                             .map_err(|_| "maxBytes must be an integer")?,
+                    );
+                }
+                "maxPages" if pages => {
+                    i += 1;
+                    max_pages = Some(
+                        self.eval_expr(args.get(i).ok_or("maxPages requires an integer")?)?
+                            .parse()
+                            .map_err(|_| "maxPages must be an integer")?,
+                    );
+                }
+                "maxTotalBytes" if pages => {
+                    i += 1;
+                    max_total_bytes = Some(
+                        self.eval_expr(args.get(i).ok_or("maxTotalBytes requires an integer")?)?
+                            .parse()
+                            .map_err(|_| "maxTotalBytes must be an integer")?,
                     );
                 }
                 other => return Err(format!("unexpected http option: {other}")),
@@ -2410,7 +2434,33 @@ impl Interpreter {
             self.vars.insert(names[0].clone(), Value::Dict(response));
             return Ok(());
         }
-        match http::request(&method, &url, headers, body, timeout, max_bytes) {
+        let options = http::Options {
+            headers,
+            body,
+            timeout,
+            max_bytes,
+        };
+        let result = if pages {
+            http::request_pages(
+                &method,
+                &url,
+                &options,
+                max_pages.unwrap_or(10),
+                max_total_bytes.unwrap_or(32 * 1024 * 1024),
+                &http::SystemResolver,
+                &http::ReqwestTransport,
+            )
+        } else {
+            http::request(
+                &method,
+                &url,
+                options.headers,
+                options.body,
+                options.timeout,
+                options.max_bytes,
+            )
+        };
+        match result {
             Ok(value) => {
                 self.vars.insert(names[0].clone(), value);
                 Ok(())
@@ -5023,12 +5073,16 @@ fn validate_assignment_form(line: &str) -> Result<(), String> {
 }
 
 fn validate_statement_form(line: &str) -> Result<(), String> {
-    if let Some(rest) = line.strip_prefix("http ") {
+    let http_pages = line.strip_prefix("httpPages ");
+    if let Some(rest) = line.strip_prefix("http ").or(http_pages) {
         let (method, args, tail) = validate_command_atoms(rest.trim())?;
-        if !matches!(
-            method.as_str(),
-            "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
-        ) {
+        if (http_pages.is_some() && method != "GET")
+            || (http_pages.is_none()
+                && !matches!(
+                    method.as_str(),
+                    "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
+                ))
+        {
             return Err(
                 "http method must be GET, POST, PUT, PATCH, DELETE, HEAD, or OPTIONS".into(),
             );
@@ -5040,7 +5094,12 @@ fn validate_statement_form(line: &str) -> Result<(), String> {
         let mut i = 1;
         while i < args.len() {
             let option = &args[i];
-            if !matches!(option.as_str(), "headers" | "body" | "timeout" | "maxBytes") {
+            if !matches!(
+                option.as_str(),
+                "headers" | "body" | "timeout" | "maxBytes" | "maxPages" | "maxTotalBytes"
+            ) || (!http_pages.is_some()
+                && matches!(option.as_str(), "maxPages" | "maxTotalBytes"))
+            {
                 return Err(format!("unexpected http option: {option}"));
             }
             if !seen.insert(option) {
@@ -5059,8 +5118,12 @@ fn validate_statement_form(line: &str) -> Result<(), String> {
                 "timeout" if value != "$" && value.parse::<f64>().is_err() => {
                     return Err("timeout must be a number".into());
                 }
-                "maxBytes" if value != "$" && value.parse::<usize>().is_err() => {
-                    return Err("maxBytes must be an integer".into());
+                "maxBytes" | "maxPages" | "maxTotalBytes"
+                    if value != "$"
+                        && (value.parse::<usize>().is_err()
+                            || (option == "maxPages" && value == "0")) =>
+                {
+                    return Err("option must be a positive integer".into());
                 }
                 _ => {}
             }
