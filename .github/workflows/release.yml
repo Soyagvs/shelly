@@ -80,20 +80,23 @@ jobs:
         with:
           ref: main
 
-      - name: Update badge payloads
+      - name: Update badge payloads and release downloads
         env:
           GH_TOKEN: ${{ github.token }}
-        run: scripts/update-release-badges.sh
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          scripts/update-release-badges.sh
+          scripts/update-release-downloads.sh
 
       - name: Commit changed badge payloads
         run: |
           set -euo pipefail
-          if git diff --quiet -- .github/badges/release.json .github/badges/downloads.json; then
+          if git diff --quiet -- .github/badges/release.json .github/badges/downloads.json README.md; then
             echo 'Badge payloads are already current.'
             exit 0
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/badges/release.json .github/badges/downloads.json
+          git add .github/badges/release.json .github/badges/downloads.json README.md
           git commit -m 'chore: update release badges'
           git push origin HEAD:main

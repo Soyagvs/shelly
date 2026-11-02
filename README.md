@@ -14,6 +14,9 @@
 
 [**Why Shelly?**](#-why-shelly) · [**Get started**](#-get-started) · [**Documentation**](#-documentation) · [**Releases**](https://github.com/Soyagvs/shelly/releases/latest)
 
+<!-- release-downloads:start -->
+<!-- release-downloads:end -->
+
 </div>
 
 ---
