@@ -23,41 +23,29 @@ shelly main.shelly
 
 `shelly init` uses the current directory and accepts no project-name argument. It preflights every scaffold target, so if any target already exists it fails without changing files.
 
-A fresh scaffold contains:
+A fresh scaffold uses this scalable canonical structure:
 
 ```text
 Shelly.toml
 main.shelly
 README.md
 .gitignore
-tests/
-consts/
-functions/
-utils/
-setup/
-scripts/
 modules/
-domains/
+tests/
 ```
 
 - `Shelly.toml` — the manifest: it names the project, identifies its entry script, and can configure test discovery. It is required by the manifest-based forms of `shelly run`, `shelly check`, and `shelly test`.
 - `main.shelly` — the user-facing entry point, prefilled with an executable `call greet("world")` starter example that prints `Hello, Shelly!`.
 - `README.md` — starter project documentation.
-- `.gitignore` — ignores generated files, including `logs/`.
+- `.gitignore` — ignores generated `logs/`.
+- `modules/` — shared Shelly code. For large projects, group that shared code by domain under this directory (for example, `modules/release/` or `modules/docs/`).
 - `tests/` — scripts that verify behavior. Add recursively discovered `*_test.shelly` files here or in nested directories; run them with `shelly test`.
-- `consts/` — named values shared by several scripts.
-- `functions/` — reusable actions that scripts can call.
-- `utils/` — small helpers used in different parts of the project.
-- `setup/` — code that prepares the environment when a script starts.
-- `scripts/` — extra command entry points people can run directly.
-- `modules/` — reusable building blocks that do not belong to one business area.
-- `domains/` — code organized around a larger area of work, such as releases or documentation.
 
 Each scaffold directory contains a `.gitkeep` marker so the empty directory can be tracked. `logs/` is ignored and generated lazily beside the running script when logging needs it; `init` does not create it.
 
-A natural growth path is: start with one script; extract repeated or reusable code into imported files; then use purpose-oriented folders and domain groupings when the project has several commands or areas of work. None of those later stages is required.
+Specialized folders are optional, not prescribed. A project may add folders such as `consts/`, `functions/`, `utils/`, `setup/`, or `scripts/` when those names make its code easier to understand; keep shared code in `modules/` and organize it by domain as the project grows. Start with the canonical scaffold and introduce only the structure the project needs.
 
-Import and include paths are resolved relative to the file that contains the statement. For example, a file in `scripts/` uses `../consts/app.shelly` because `..` moves from `scripts/` back to the project root, where `consts/` is a sibling folder.
+Import and include paths are resolved relative to the file that contains the statement. For example, a file in `modules/release/` uses `../shared.shelly` to reach another module under `modules/`.
 
 ## Which command should I use?
 

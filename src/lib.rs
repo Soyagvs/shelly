@@ -417,16 +417,7 @@ fn init_project(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<()
         .ok_or_else(|| "could not represent the current directory name as UTF-8".to_string())?;
 
     let files = ["Shelly.toml", "main.shelly", "README.md", ".gitignore"];
-    let directories = [
-        "tests",
-        "consts",
-        "functions",
-        "utils",
-        "setup",
-        "scripts",
-        "modules",
-        "domains",
-    ];
+    let directories = ["modules", "tests"];
     let mut targets = Vec::new();
     targets.extend(files.iter().map(|name| cwd.join(name)));
     for directory in directories {
@@ -457,7 +448,12 @@ fn init_project(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<()
             "# Hello, Shelly #\n\nfn greet($name) {\n    if $name == \"world\"\n        shellout \"Hello, Shelly!\"\n    else\n        shellout \"Hello, $name\"\n    end\n}\n\ncall greet(\"world\")\n"
                 .to_string(),
         ),
-        ("README.md", format!("# {project_name}\n")),
+        (
+            "README.md",
+            format!(
+                "# {project_name}\n\n## Generated project structure\n\n`shelly init` created these paths:\n\n- `Shelly.toml` — the project manifest and test-discovery configuration.\n- `main.shelly` — the executable project entry point.\n- `README.md` — this project guide.\n- `.gitignore` — ignores generated logs.\n- `modules/` — shared Shelly code; large projects organize shared code by domain under `modules/`.\n- `tests/` — recursively discovered `*_test.shelly` tests.\n\nspecialized folders are optional. Add folders such as `consts/`, `functions/`, `utils/`, `setup/`, or `scripts/` only when they clarify this project; they are not part of the required structure.\n"
+            ),
+        ),
         (".gitignore", "logs/\n".to_string()),
     ];
     for (name, content) in contents {

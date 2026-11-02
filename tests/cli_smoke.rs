@@ -433,16 +433,7 @@ fn init_in_current_directory_creates_the_approved_scaffold() {
     for file in ["Shelly.toml", "main.shelly", "README.md", ".gitignore"] {
         assert!(dir.join(file).is_file(), "missing {file}");
     }
-    for directory in [
-        "tests",
-        "consts",
-        "functions",
-        "utils",
-        "setup",
-        "scripts",
-        "modules",
-        "domains",
-    ] {
+    for directory in ["modules", "tests"] {
         assert!(
             dir.join(directory).join(".gitkeep").is_file(),
             "missing {directory}/.gitkeep"
@@ -453,6 +444,14 @@ fn init_in_current_directory_creates_the_approved_scaffold() {
         fs::read_to_string(dir.join(".gitignore"))
             .expect("read .gitignore")
             .contains("logs/")
+    );
+    let readme = fs::read_to_string(dir.join("README.md")).expect("read README");
+    assert!(readme.contains("modules/"), "README must explain modules/");
+    assert!(readme.contains("tests/"), "README must explain tests/");
+    assert!(
+        readme.contains("large projects organize shared code by domain under `modules/`")
+            && readme.contains("specialized folders are optional"),
+        "README must describe domain organization and optional specialized folders"
     );
     assert!(!dir.join(dir.file_name().expect("directory name")).exists());
 
@@ -501,13 +500,7 @@ fn init_preflights_existing_targets_without_partial_scaffold() {
         "Shelly.toml",
         "main.shelly",
         ".gitignore",
-        "consts",
-        "functions",
-        "utils",
-        "setup",
-        "scripts",
         "modules",
-        "domains",
         "logs",
     ] {
         assert!(
