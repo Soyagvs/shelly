@@ -76,6 +76,26 @@ fn zip_nested_round_trip() {
     assert_eq!(fs::read(d.join("b/x")).unwrap(), b"hello");
 }
 #[test]
+fn create_rejects_oversized_individual_file() {
+    let r = tmp("create-limit");
+    let src = r.join("src");
+    fs::create_dir(&src).unwrap();
+    let oversized = src.join("oversized");
+    let f = fs::File::create(&oversized).unwrap();
+    f.set_len(256 * 1024 * 1024 + 1).unwrap();
+    let o = run(&format!(
+        "archive create \"{}\" from \"{}\" -> $r\n",
+        src.display(),
+        r.join("x.zip").display()
+    ));
+    assert!(
+        !o.status.success(),
+        "archive creation unexpectedly succeeded: {:?}",
+        o
+    );
+}
+
+#[test]
 fn create_refuses_preexisting_archive_without_replacing_it() {
     let r = tmp("create-existing");
     fs::create_dir_all(r.join("src")).unwrap();

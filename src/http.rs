@@ -182,9 +182,15 @@ fn request_response(
     let addresses = resolver
         .resolve(url.host_str().unwrap(), url.port().unwrap_or(443))
         .map_err(|m| simple("policy", &m))?;
+    if addresses.iter().any(|address| blocked(address.ip())) {
+        return Err(simple(
+            "policy",
+            "destination DNS answer includes a blocked address",
+        ));
+    }
     let address = addresses
         .into_iter()
-        .find(|x| !blocked(x.ip()))
+        .next()
         .ok_or_else(|| simple("policy", "destination address is not public"))?;
     let mut hs = Vec::new();
     if let Some(Value::Dict(values)) = options.headers.clone() {
@@ -574,13 +580,13 @@ mod tests {
     }
 
     #[test]
-    fn resolver_skips_private_and_selects_public_address() {
+    fn resolver_rejects_mixed_private_and_public_addresses_without_transport() {
         let t = transport(Ok(HttpResponse {
             status: 200,
             headers: vec![],
             body: vec![],
         }));
-        request_with(
+        let error = request_with(
             "GET",
             "https://example.test/",
             None,
@@ -590,11 +596,9 @@ mod tests {
             &resolver(&["127.0.0.1:443", "8.8.8.8:443"]),
             &t,
         )
-        .unwrap();
-        assert_eq!(
-            t.calls.borrow()[0].4.ip(),
-            "8.8.8.8".parse::<IpAddr>().unwrap()
-        );
+        .unwrap_err();
+        assert!(matches!(&error.1["kind"], Value::Scalar(kind) if kind == "policy"));
+        assert!(t.calls.borrow().is_empty());
     }
 
     #[test]

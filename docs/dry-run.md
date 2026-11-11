@@ -1,10 +1,12 @@
 # Dry-run and audit logs
 
-Use `shelly --dry-run SCRIPT` to validate a script and print its planned actions in execution order. No script effect is performed; normal reads used to parse and validate the script remain permitted. A final summary is printed after successful execution.
+Retry blocks execute their body once during dry-run. They do not repeat effects or claim repeated successful executions in the audit log.
+
+Use `shelly --dry-run SCRIPT` to validate a script and print its planned actions in execution order. Parallel blocks retain serial audit/planning behavior; real execution uses bounded task-local concurrency. No script effect is performed; normal reads used to parse and validate the script remain permitted. A final summary is printed after successful execution.
 
 ## Audit files
 
-`shelly --dry-run --audit-log PATH SCRIPT [ARGS...]` additionally writes JSON Lines. `--audit-log` is accepted only immediately after `--dry-run`, requires one path, and cannot be repeated or placed after the script. The audit file is the sole dry-run filesystem write. It is opened with create-new semantics: an existing path is never overwritten. Open and write failures are reported as errors. The file is created during preflight, so a later script error can leave a partial log; a script that fails before preflight creates no log.
+`shelly --dry-run --audit-log PATH SCRIPT [ARGS...]` additionally writes JSON Lines. `--audit-log` is accepted only immediately after `--dry-run`, requires one path, and cannot be repeated or placed after the script. The audit file is the sole dry-run filesystem write. It is opened with create-new semantics: an existing path is never overwritten. Open and write failures are reported as errors. Terminal records are written first; Shelly then attempts `sync_all()`. If synchronization fails, Shelly exits with an error even when a terminal `complete` record is already present. This does not guarantee durability against OS, filesystem, storage-device, or hardware failures, and the exact guarantees depend on the platform and filesystem. Failed runs write and sync a terminal `error` record when possible, never a `complete` record. The file is created during preflight, so a later script error can leave a partial log; a script that fails before preflight creates no log.
 
 Each line is one serde-serialized object:
 

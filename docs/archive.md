@@ -93,12 +93,12 @@ Suffix matching is case-sensitive. Other or missing suffixes fail; content sniff
 
 The fixed v1 limits are:
 
-- At most **100,000 entries**.
-- At most **256 MiB per extracted file**.
-- At most **1 GiB total uncompressed extracted data**.
+- At most **100,000 entries** during creation, extraction, or checking.
+- At most **256 MiB per regular file**, enforced during creation and extraction.
+- At most **1 GiB total uncompressed regular-file data** during creation or extraction.
 - At most a **1000:1 uncompressed-to-compressed ratio** for an extracted member.
 
-Create also rejects a source whose total regular-file bytes exceed 1 GiB. These limits are checked before extraction writes files. A late invalid member therefore leaves no destination behind. Create rejects nonexistent sources, non-directories, symlinks, and special files. Extract and check reject malformed archives, nonexistent or unreadable archive paths, unsafe names, duplicate/colliding names, non-regular members, and limit violations.
+Creation streams source files and rejects an oversized file before adding it; it does not buffer the whole file in memory. Creation rejects symlinks and special files. Extraction and checking accept only regular-file members; directories, links, and other special members are rejected. Extraction validates all members and limits before writing, uses a staging directory followed by an atomic rename, and never overwrites an existing destination. A late invalid member therefore leaves no destination behind. All operations reject malformed archives, unsafe names, duplicate/colliding names, and limit violations.
 
 ## Errors and non-goals
 

@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, HashSet},
     fs::{self, File},
-    io::{Read, Write},
+    io::Read,
     path::{Component, Path, PathBuf},
 };
 use tar::{Archive, Builder, EntryType};
@@ -138,12 +138,14 @@ pub(crate) fn create(src: &Path, out: &Path) -> Result<crate::value::Value, Stri
     if fs.len() > MAX_ENTRIES {
         return Err("entry limit exceeded".into());
     }
-    let total: u64 = fs
+    let sizes = fs
         .iter()
         .map(|(_, p)| fs::metadata(p).map(|m| m.len()).map_err(|e| e.to_string()))
-        .collect::<Result<Vec<_>, _>>()?
-        .into_iter()
-        .sum();
+        .collect::<Result<Vec<_>, _>>()?;
+    if sizes.iter().any(|&size| size > MAX_FILE) {
+        return Err("file size limit exceeded".into());
+    }
+    let total: u64 = sizes.into_iter().sum();
     if total > MAX_TOTAL {
         return Err("total size limit exceeded".into());
     }
@@ -159,8 +161,8 @@ pub(crate) fn create(src: &Path, out: &Path) -> Result<crate::value::Value, Stri
             for (n, p) in &fs {
                 z.start_file(n, SimpleFileOptions::default())
                     .map_err(|e| e.to_string())?;
-                z.write_all(&fs::read(p).map_err(|e| e.to_string())?)
-                    .map_err(|e| e.to_string())?
+                let mut input = File::open(p).map_err(|e| e.to_string())?;
+                std::io::copy(&mut input, &mut z).map_err(|e| e.to_string())?;
             }
             z.finish().map_err(|e| e.to_string())?;
         } else {

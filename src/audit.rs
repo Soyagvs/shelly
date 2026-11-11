@@ -182,7 +182,8 @@ impl AuditWriter {
     }
     pub(crate) fn error(&mut self, reason: &str) -> Result<(), String> {
         let reason = crate::secret::redact(reason);
-        self.write("error", "summary", "error", json!({"reason":reason}))
+        self.write("error", "summary", "error", json!({"reason":reason}))?;
+        self.sync()
     }
     pub(crate) fn finish(&mut self) -> Result<(), String> {
         self.write(
@@ -190,7 +191,13 @@ impl AuditWriter {
             "summary",
             "complete",
             json!({"counts":self.counts}),
-        )
+        )?;
+        self.sync()
+    }
+    fn sync(&mut self) -> Result<(), String> {
+        self.file
+            .sync_all()
+            .map_err(|e| format!("could not finalize audit log: {e}"))
     }
     fn write(
         &mut self,

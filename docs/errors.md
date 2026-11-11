@@ -16,6 +16,10 @@ catch
 end
 ```
 
+## Retry and transient errors
+
+`retry <attempts>` preserves the final structured error and retries only known timeout failures. Control-flow signals and ordinary command failures are never retried.
+
 ## Syntax and rules
 
 - `try` starts a protected block. You may omit the destination when you do not need to inspect the error.
@@ -51,6 +55,8 @@ end
 ```
 
 Use [`defer`](defer.md) when cleanup must run for success, errors, or control signals; use `try` when failure is expected and recoverable.
+
+Dry-run audit-log write and finalization (`sync_all()`) failures are surfaced as errors. Terminal records are written before synchronization is attempted, so a synchronization failure exits with an error even if a terminal `complete` record is already present. `sync_all()` does not guarantee durability against OS, filesystem, storage-device, or hardware failures; guarantees depend on the platform and filesystem.
 
 ## Nested try
 

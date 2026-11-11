@@ -6,6 +6,7 @@ use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -1017,6 +1018,29 @@ struct LogContext {
 }
 
 impl Interpreter {
+    fn task_snapshot(&self) -> Self {
+        Self {
+            vars: self.vars.clone(),
+            unavailable: self.unavailable.clone(),
+            consts: self.consts.clone(),
+            functions: self.functions.clone(),
+            current_dir: self.current_dir.clone(),
+            stack: self.stack.clone(),
+            imported: self.imported.clone(),
+            logs: self.logs.clone(),
+            script_args: self.script_args.clone(),
+            pending_process_error: None,
+            deadline: self.deadline,
+            defers: Vec::new(),
+            context: audit::ExecutionContext::default(),
+            mocks: self.mocks.clone(),
+        }
+    }
+
+    fn clone_for_task(&self) -> Self {
+        self.task_snapshot()
+    }
+
     fn effect(&mut self, action: audit::AuditAction) -> Result<bool, String> {
         if self.context.is_dry_run() {
             audit::record(&mut self.context, action)?;
@@ -1282,6 +1306,40 @@ impl Interpreter {
                 index = next_index;
                 continue;
             }
+            if let Some(rest) = line.strip_prefix("retry ") {
+                let attempts: usize = rest.trim().parse().map_err(|_| {
+                    line_error(
+                        line_no,
+                        "retry count must be a positive integer".to_string(),
+                    )
+                })?;
+                if attempts == 0 {
+                    return Err(line_error(
+                        line_no,
+                        "retry count must be a positive integer".to_string(),
+                    ));
+                }
+                let (body, next_index) = collect_block(lines, index, "retry")?;
+                let mut result = Ok(());
+                for attempt in 0..attempts {
+                    result = self.run_lines(&body);
+                    match &result {
+                        Ok(()) => break,
+                        Err(error) if is_control_signal(error) => break,
+                        Err(error) if !is_retryable_error(error) || attempt + 1 == attempts => {
+                            break;
+                        }
+                        Err(_) if self.context.is_dry_run() => break,
+                        Err(_) => {}
+                    }
+                }
+                result.map_err(|error| line_error(line_no, error))?;
+                index = next_index;
+                continue;
+            }
+            if line == "retry" {
+                return Err(format!("line {line_no}: retry count required"));
+            }
             if line == "try" || line.starts_with("try ") {
                 let next_index = self
                     .run_try(line, lines, index)
@@ -1305,11 +1363,232 @@ impl Interpreter {
             {
                 return Err(format!("line {line_no}: unexpected conditional marker"));
             }
+            if line.starts_with("parallel") {
+                index = self
+                    .run_parallel(line, lines, index)
+                    .map_err(|error| line_error(line_no, error))?;
+                continue;
+            }
+            if line.starts_with("pipeline") {
+                index = self
+                    .run_pipeline(line, lines, index)
+                    .map_err(|error| line_error(line_no, error))?;
+                continue;
+            }
             self.run_line(line, line_no)
                 .map_err(|error| line_error(line_no, error))?;
             index += 1;
         }
         Ok(())
+    }
+
+    fn run_parallel(
+        &mut self,
+        line: &str,
+        lines: &[(usize, String)],
+        index: usize,
+    ) -> Result<usize, String> {
+        let rest = line.strip_prefix("parallel").unwrap_or_default().trim();
+        let (limit_text, destination) = rest
+            .split_once("->")
+            .ok_or("parallel syntax is parallel limit N -> $results")?;
+        let limit_text = limit_text.trim();
+        let limit = limit_text
+            .strip_prefix("limit ")
+            .ok_or("parallel syntax is parallel limit N -> $results")?
+            .trim()
+            .parse::<usize>()
+            .map_err(|_| "parallel limit must be a positive integer")?;
+        if limit == 0 {
+            return Err("parallel limit must be a positive integer".into());
+        }
+        let destination = parse_var_ref(destination.trim())?;
+        let (body, next) = collect_block(lines, index, "parallel")?;
+        let mut tasks = Vec::new();
+        let mut cursor = 0;
+        while cursor < body.len() {
+            let task_line = body[cursor].1.trim();
+            if !task_line.starts_with("task ") {
+                return Err("parallel body must contain named task blocks".into());
+            }
+            let name = task_line[5..].trim();
+            if name.is_empty() || name.contains(char::is_whitespace) {
+                return Err("task requires a name".into());
+            }
+            let (task_body, next_cursor) = collect_block(&body, cursor, "task")?;
+            tasks.push((name.to_string(), task_body));
+            cursor = next_cursor;
+        }
+        if self.context.is_dry_run() {
+            audit::record(
+                &mut self.context,
+                audit::AuditAction::Log {
+                    identifier: format!("parallel limit {limit} tasks={}", tasks.len()),
+                },
+            )?;
+            for (name, _) in &tasks {
+                audit::record(
+                    &mut self.context,
+                    audit::AuditAction::Log {
+                        identifier: format!("task {name}"),
+                    },
+                )?;
+            }
+            self.mark_unavailable(destination);
+            return Ok(next);
+        }
+        let snapshot = self.task_snapshot();
+        let (sender, receiver) = mpsc::channel();
+        let mut active = 0usize;
+        let mut next_task = 0usize;
+        let mut stopped = false;
+        let mut handles = Vec::new();
+        let mut task_results = Vec::new();
+        while active > 0 || (!stopped && next_task < tasks.len()) {
+            while !stopped && active < limit && next_task < tasks.len() {
+                let (name, task_body) = tasks[next_task].clone();
+                let mut worker = snapshot.clone_for_task();
+                let sender = sender.clone();
+                let task_index = next_task;
+                let handle = thread::spawn(move || {
+                    let result = worker.run_lines(&task_body);
+                    let _ = sender.send((task_index, name, result));
+                });
+                handles.push(handle);
+                active += 1;
+                next_task += 1;
+            }
+            if active == 0 {
+                break;
+            }
+            let (task_index, name, result) = match receiver.recv() {
+                Ok(result) => result,
+                Err(_) => {
+                    // A panicking worker can disconnect the channel. Stop receiving,
+                    // but continue below so every started worker is joined.
+                    break;
+                }
+            };
+            active -= 1;
+            let failed = result.as_ref().err().is_some();
+            task_results.push((task_index, name, result));
+            if failed {
+                stopped = true;
+            }
+        }
+        drop(sender);
+        let mut worker_failed = false;
+        for handle in handles {
+            if handle.join().is_err() {
+                worker_failed = true;
+            }
+        }
+        task_results.sort_by_key(|(index, _, _)| *index);
+        let mut results = BTreeMap::new();
+        let mut failure = worker_failed.then(|| "parallel worker failed".to_string());
+        for (_, name, result) in task_results {
+            match result {
+                Ok(()) => {
+                    results.insert(name, Value::Scalar("ok".into()));
+                }
+                Err(error) => {
+                    results.insert(name.clone(), Value::Scalar(format!("error: {error}")));
+                    if failure.is_none() {
+                        failure = Some(format!("parallel task {name} failed: {error}"));
+                    }
+                }
+            }
+        }
+        self.vars.insert(destination, Value::Dict(results));
+        failure.map_or(Ok(next), Err)
+    }
+
+    fn run_pipeline(
+        &mut self,
+        line: &str,
+        lines: &[(usize, String)],
+        index: usize,
+    ) -> Result<usize, String> {
+        let Some(destination) = line
+            .trim_start_matches("pipeline")
+            .trim()
+            .strip_prefix("->")
+        else {
+            return Err("pipeline syntax is pipeline -> $result".into());
+        };
+        let destination = parse_var_ref(destination.trim())?;
+        let (body, next) = collect_block(lines, index, "pipeline")?;
+        let mut input = Vec::new();
+        for (n, stage) in body.iter().enumerate() {
+            let stage = stage.1.trim();
+            if !stage.starts_with("command ") {
+                return Err(format!(
+                    "pipeline stage {} must be a direct-argv command",
+                    n + 1
+                ));
+            }
+            let (text, timeout) = split_timeout_suffix(stage[8..].trim())?;
+            let (program, args, tail) = self.parse_command_atoms(text)?;
+            if !tail.trim().is_empty() || program.starts_with('"') {
+                return Err("pipeline stages cannot capture or use shell syntax".into());
+            }
+            if self.context.is_dry_run() {
+                audit::record(
+                    &mut self.context,
+                    audit::AuditAction::Process {
+                        program,
+                        argc: args.len(),
+                    },
+                )?;
+                continue;
+            }
+            let mut child = Command::new(&program)
+                .args(&args)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("failed to run pipeline stage: {e}"))?;
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(&input)
+                .map_err(|e| e.to_string())?;
+            let output = poll_output(child, timeout.map(|s| Instant::now() + s).or(self.deadline))
+                .map_err(|_| self.timeout_failure(&program, &args))?;
+            if !output.status.success() {
+                let message = format!(
+                    "pipeline stage {} ({program}) exited with status {}",
+                    n + 1,
+                    output.status.code().unwrap_or(1)
+                );
+                let mut fields = BTreeMap::new();
+                fields.insert("kind".into(), Value::Scalar("pipeline".into()));
+                fields.insert("stage".into(), Value::Scalar((n + 1).to_string()));
+                fields.insert(
+                    "stdout".into(),
+                    Value::Scalar(String::from_utf8_lossy(&output.stdout).into()),
+                );
+                fields.insert(
+                    "stderr".into(),
+                    Value::Scalar(String::from_utf8_lossy(&output.stderr).into()),
+                );
+                fields.insert("message".into(), Value::Scalar(message.clone()));
+                self.pending_process_error = Some(fields);
+                return Err(message);
+            }
+            input = output.stdout;
+        }
+        if !self.context.is_dry_run() {
+            self.vars.insert(
+                destination,
+                Value::Scalar(command_output_to_string(input, "pipeline output")?),
+            );
+        } else {
+            self.mark_unavailable(destination);
+        }
+        Ok(next)
     }
 
     fn run_conditional(
@@ -2031,6 +2310,70 @@ impl Interpreter {
         }
         if line == "files" {
             return Err("files syntax is files \"pattern\" -> $items".to_string());
+        }
+        if let Some(_rest) = line.strip_prefix("pipeline") {
+            return Err("pipeline blocks are handled by the line runner".to_string());
+            /* let header = rest.trim();
+            let Some(destination) = header.strip_prefix("->") else {
+                return Err("pipeline syntax is pipeline -> $result".to_string());
+            };
+            let destination = parse_var_ref(destination.trim())?;
+            let (body, next_index) = collect_block(lines, index, "pipeline")?;
+            let mut stages = Vec::new();
+            for (stage_line, stage) in &body {
+                let stage = stage.trim();
+                if !stage.starts_with("command") || !(stage == "command" || stage[7..].starts_with(char::is_whitespace)) {
+                    return Err(format!("line {stage_line}: pipeline stages must be direct-argv command lines"));
+                }
+                let (text, timeout) = split_timeout_suffix(stage[7..].trim())?;
+                let (program, args, tail) = self.parse_command_atoms(text)?;
+                if !tail.trim().is_empty() || program.starts_with('"') {
+                    return Err(format!("line {stage_line}: pipeline stages cannot capture output or use shell syntax"));
+                }
+                stages.push((program, args, timeout));
+            }
+            if self.context.is_dry_run() {
+                for (program, args, _) in &stages {
+                    audit::record(&mut self.context, audit::AuditAction::Process { program: program.clone(), argc: args.len() })?;
+                }
+                self.mark_unavailable(destination);
+                index = next_index;
+                continue;
+            }
+            let mut input = Vec::new();
+            let mut captures = Vec::new();
+            for (number, (program, args, stage_timeout)) in stages.iter().enumerate() {
+                let mut process = Command::new(program);
+                process.args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+                let deadline = stage_timeout.map(|seconds| Instant::now() + seconds).or(self.deadline);
+                let mut child = process.spawn().map_err(|error| format!("failed to run pipeline stage: {error}"))?;
+                if !input.is_empty() {
+                    child.stdin.take().unwrap().write_all(&input).map_err(|error| format!("pipeline stage input failed: {error}"))?;
+                }
+                drop(child.stdin.take());
+                let output = poll_output(child, deadline).map_err(|_| self.timeout_failure(program, args))?;
+                let stdout = output.stdout.clone();
+                let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+                captures.push((number + 1, program.clone(), args.clone(), output.status.code().unwrap_or(1), stdout.len(), stderr));
+                if !output.status.success() {
+                    let mut fields = BTreeMap::new();
+                    fields.insert("kind".to_string(), Value::Scalar("pipeline".to_string()));
+                    fields.insert("stage".to_string(), Value::Scalar((number + 1).to_string()));
+                    fields.insert("program".to_string(), Value::Scalar(program.clone()));
+                    fields.insert("code".to_string(), Value::Scalar(output.status.code().unwrap_or(1).to_string()));
+                    fields.insert("stdout".to_string(), Value::Scalar(String::from_utf8_lossy(&stdout).into_owned()));
+                    fields.insert("stderr".to_string(), Value::Scalar(captures.last().unwrap().5.clone()));
+                    let message = format!("pipeline stage {} ({}) exited with status {}", number + 1, program, output.status.code().unwrap_or(1));
+                    fields.insert("message".to_string(), Value::Scalar(message.clone()));
+                    self.pending_process_error = Some(fields);
+                    return Err(message);
+                }
+                input = stdout;
+            }
+            self.vars.insert(destination, Value::Scalar(command_output_to_string(input, "pipeline output")?));
+            index = next_index;
+            continue;
+            */
         }
         if let Some(rest) = line.strip_prefix("command") {
             if rest.is_empty() || rest.starts_with(char::is_whitespace) {
@@ -4634,6 +4977,7 @@ enum BlockKind {
     Timeout,
     Defer,
     Watch,
+    Retry,
 }
 
 impl Checker {
@@ -4674,6 +5018,7 @@ impl Checker {
                 BlockKind::Timeout => "timeout",
                 BlockKind::Defer => "defer",
                 BlockKind::Watch => "watch",
+                BlockKind::Retry => "retry",
             };
             if matches!(
                 kind,
@@ -4808,6 +5153,20 @@ impl Checker {
             parse_timeout(rest.trim())?;
             self.blocks.push(BlockKind::Timeout);
             return Ok(());
+        }
+        if let Some(rest) = line.strip_prefix("retry ") {
+            let attempts: usize = rest
+                .trim()
+                .parse()
+                .map_err(|_| "retry count must be a positive integer")?;
+            if attempts == 0 {
+                return Err("retry count must be a positive integer".into());
+            }
+            self.blocks.push(BlockKind::Retry);
+            return Ok(());
+        }
+        if line == "retry" {
+            return Err("retry count required".into());
         }
         if line == "timeout" {
             return Err("timeout value required".to_string());
@@ -5381,6 +5740,13 @@ fn validate_command_atoms(mut text: &str) -> Result<(String, Vec<String>, &str),
         return Err("command requires a program and argv atoms".to_string());
     }
     Ok((atoms[0].clone(), atoms[1..].to_vec(), text))
+}
+
+fn is_retryable_error(error: &str) -> bool {
+    // Retry receives the propagated human-readable error, while structured
+    // fields remain available separately through `try -> $error`. Match only
+    // the canonical timeout values; ordinary error text is never inspected.
+    matches!(error, "timeout" | "command timed out")
 }
 
 fn parse_timeout(text: &str) -> Result<Duration, String> {
@@ -7034,6 +7400,9 @@ fn starts_block(line: &str) -> bool {
         || line.starts_with("repeat ")
         || line.starts_with("timeout ")
         || line.starts_with("watch ")
+        || line.starts_with("retry ")
+        || line.starts_with("parallel")
+        || line.starts_with("task ")
         || line.starts_with("fn ")
         || line.starts_with("export fn ")
         || line == "try"

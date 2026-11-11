@@ -118,7 +118,7 @@ The default timeout is 30 seconds. `timeout` must be finite, positive, and no gr
 ## HTTPS and network limits
 
 - Only `https://` URLs are accepted. Userinfo, passwords, and URL fragments are rejected.
-- DNS is resolved before connecting. The selected address must be public; loopback, private, link-local, multicast, unspecified, IPv4 198.0.0.0/8, and IPv6 unique-local/link-local ranges are rejected. This check happens before the request is sent.
+- DNS is resolved before connecting. Every returned address must be public: loopback, private, link-local, multicast, unspecified, IPv4 198.0.0.0/8, and IPv6 unique-local/link-local ranges are rejected. If one DNS answer is blocked, the request is rejected even when another answer is public; Shelly does not select a public address from a mixed answer. This check happens before the request is sent. The decision is made from the resolver's answer at request time and cannot prevent DNS changes after resolution or an address becoming private later.
 - The client uses no proxy, follows no redirects, and makes one transport dispatch. Redirect responses are returned as ordinary responses; they are not followed.
 - TLS uses the HTTP client's normal HTTPS/TLS validation. Shelly v1 exposes no custom CA, certificate-verification bypass, proxy, redirect, or TLS configuration.
 

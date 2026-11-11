@@ -20,7 +20,7 @@ pub(crate) enum Mock {
     },
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct MockRegistry {
     entries: HashMap<String, Mock>,
 }

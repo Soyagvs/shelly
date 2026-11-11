@@ -4,6 +4,293 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn parallel_tasks_overlap_at_the_bound() {
+    let root = std::env::temp_dir().join(format!("shelly-parallel-{}", std::process::id()));
+    let first = root.with_extension("first");
+    let second = root.with_extension("second");
+    let script = format!(
+        r#"
+parallel limit 2 -> $results
+    task first
+        shell "touch '{}'; while [ ! -f '{}' ]; do sleep 0.01; done"
+    end
+    task second
+        shell "touch '{}'; while [ ! -f '{}' ]; do sleep 0.01; done"
+    end
+end
+shellout $results
+"#,
+        first.display(),
+        second.display(),
+        second.display(),
+        first.display()
+    );
+    let output = run_script(&script);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "{first: ok, second: ok}\n");
+}
+
+#[test]
+fn parallel_returns_named_results_in_declaration_order() {
+    let output = run_script(
+        r#"
+parallel limit 2 -> $results
+    task alpha
+        command true
+    end
+    task beta
+        command true
+    end
+end
+shellout $results
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "{alpha: ok, beta: ok}\n");
+}
+
+#[test]
+fn parallel_enforces_limit_across_more_tasks_than_limit() {
+    let output = run_script(
+        r#"
+parallel limit 1 -> $results
+    task first
+        command true
+    end
+    task second
+        command true
+    end
+    task third
+        command true
+    end
+end
+shellout $results
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "{first: ok, second: ok, third: ok}\n");
+}
+
+#[test]
+fn parallel_task_variables_do_not_leak_between_tasks_or_to_parent() {
+    let output = run_script(
+        r#"
+$value = "parent"
+parallel limit 2 -> $results
+    task first
+        $value = "task"
+        command true
+    end
+    task second
+        $value = "other"
+        command true
+    end
+end
+shellout $value
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "parent\n");
+}
+
+#[test]
+fn parallel_errors_are_reported_in_declaration_order_after_out_of_order_completion() {
+    let output = run_script(
+        r#"
+parallel limit 2 -> $results
+    task slow
+        shell "sleep 0.05; exit 3"
+    end
+    task fast
+        shell sh -c "exit 7"
+    end
+end
+"#,
+    );
+    assert!(!output.status.success());
+    let error = stderr(&output);
+    assert!(error.contains("slow"), "stderr: {error}");
+}
+
+#[test]
+fn parallel_task_defer_and_deadline_are_isolated() {
+    let output = run_script(
+        r#"
+defer
+    shellout "outer"
+end
+parallel limit 2 -> $results
+    task first
+        defer
+            shellout "task-defer"
+        end
+        command true
+    end
+    task second
+        timeout 1
+            command true
+        end
+    end
+end
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "task-defer\nouter\n");
+}
+
+#[test]
+fn parallel_stops_launching_after_failure_and_aggregates_error() {
+    let output = run_script(
+        r#"
+parallel limit 1 -> $results
+    task good
+        command printf good
+    end
+    task bad
+        shell sh -c "exit 7"
+    end
+    task pending
+        shellout "should-not-run"
+    end
+end
+"#,
+    );
+    assert!(!output.status.success());
+    let error = stderr(&output);
+    assert!(error.contains("parallel"), "stderr: {error}");
+    assert!(error.contains("bad"), "stderr: {error}");
+    assert!(!error.contains("should-not-run"), "stderr: {error}");
+}
+
+#[test]
+fn parallel_dry_run_audits_tasks_without_running_them() {
+    let script = write_script(
+        r#"
+parallel limit 2 -> $results
+    task alpha
+        command printf alpha
+    end
+    task beta
+        command printf beta
+    end
+end
+"#,
+    );
+    let audit_path = script.with_extension("jsonl");
+    let output = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args([
+            "--dry-run",
+            "--audit-log",
+            audit_path.to_str().unwrap(),
+            script.to_str().unwrap(),
+        ])
+        .output()
+        .expect("run shelly");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    let records = fs::read_to_string(audit_path).expect("read audit log");
+    let identifiers = records
+        .lines()
+        .filter_map(|line| {
+            line.split_once("\"identifier\":\"")
+                .map(|(_, rest)| rest.split_once('"').unwrap().0)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        identifiers,
+        vec!["parallel limit 2 tasks=2", "task alpha", "task beta"],
+        "audit: {records}"
+    );
+}
+
+#[test]
+fn pipeline_closes_empty_stdin_for_first_stage() {
+    let output = run_script(
+        r#"
+pipeline -> $result
+    command cat timeout 0.2
+end
+shellout $result
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "\n");
+}
+
+#[test]
+fn pipeline_chains_stdout_between_direct_argv_commands() {
+    let output = run_script(
+        r#"
+pipeline -> $result
+    command printf "hello\\n"
+    command tr a-z A-Z
+end
+shellout $result
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "HELLO\n");
+}
+
+#[test]
+fn pipeline_uses_pipefail_and_reports_stage_details() {
+    let output = run_script(
+        r#"
+pipeline -> $result
+    command sh -c "printf before; exit 7"
+    command cat
+end
+"#,
+    );
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("pipeline"),
+        "stderr: {}",
+        stderr(&output)
+    );
+    assert!(
+        stderr(&output).contains("stage"),
+        "stderr: {}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn pipeline_rejects_shell_stages() {
+    let output = run_script(
+        r#"
+pipeline -> $result
+    shell "printf nope"
+end
+"#,
+    );
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("command"),
+        "stderr: {}",
+        stderr(&output)
+    );
+}
+
+#[test]
+fn pipeline_dry_run_plans_without_executing() {
+    let script = write_script(
+        r#"
+pipeline -> $result
+    command printf "hello"
+    command cat
+end
+"#,
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .arg("--dry-run")
+        .arg(script)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(!stdout(&output).contains("HELLO"));
+}
+
+#[test]
 fn functions_accept_nested_end_blocks_and_keep_loop_control_local() {
     let source = r#"
 fn nested() {
@@ -5369,6 +5656,53 @@ randomInt 1 2 -> $n
             stderr(&output)
         );
     }
+}
+
+#[test]
+fn retry_repeats_transient_timeout_and_preserves_final_error() {
+    let output = run_script(
+        r#"
+retry 2
+    command sleep 1 timeout 0.001
+end
+"#,
+    );
+    assert!(!output.status.success(), "retry unexpectedly succeeded");
+    let error = stderr(&output);
+    assert!(error.contains("timed out"), "stderr: {error}");
+}
+
+#[test]
+fn retry_does_not_retry_ordinary_error_containing_transient() {
+    let output = run_script(
+        r#"
+retry 3
+    shellout "attempt"
+    include "transient-missing-file"
+end
+"#,
+    );
+    assert!(!output.status.success());
+    assert_eq!(stdout(&output), "attempt\n");
+    let error = stderr(&output);
+    assert!(error.contains("transient-missing-file"), "stderr: {error}");
+}
+
+#[test]
+fn retry_does_not_retry_control_flow() {
+    let output = run_script(
+        r#"
+retry 3
+    break
+end
+"#,
+    );
+    assert!(!output.status.success());
+    assert!(
+        stderr(&output).contains("break outside loop"),
+        "stderr: {}",
+        stderr(&output)
+    );
 }
 
 fn stderr(output: &std::process::Output) -> String {

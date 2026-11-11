@@ -1,4 +1,15 @@
 use serde_json::{Value, json};
+
+#[test]
+fn utf16_ranges_clamp_invalid_offsets_without_panicking() {
+    let text = "a🌍b\nélan";
+    assert_eq!(shelly::lsp::features::utf16_pos(text, 2), (0, 1));
+    assert_eq!(shelly::lsp::features::utf16_pos(text, usize::MAX), (1, 4));
+    assert_eq!(
+        shelly::lsp::features::range(text, 2, usize::MAX),
+        json!({"start":{"line":0,"character":1},"end":{"line":1,"character":4}})
+    );
+}
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
@@ -442,4 +453,24 @@ fn module_project_diagnostics_use_open_buffer_override() {
     l.open("file:///lib.shl", "export fn good() {}\n");
     let notification = l.open("file:///main.shl", "import \"lib.shl\"\n");
     assert_eq!(notification["params"]["diagnostics"], json!([]));
+}
+
+#[test]
+fn module_diagnostics_use_unsaved_cross_file_overlay_and_file_uri_mapping() {
+    let root = std::env::temp_dir().join(format!("shelly-lsp-overlay-{}", std::process::id()));
+    std::fs::create_dir_all(&root).unwrap();
+    let lib = root.join("lib.shl");
+    let main = root.join("main.shl");
+    std::fs::write(&lib, "export fn good() {}\n").unwrap();
+    std::fs::write(&main, "import \"lib.shl\"\n").unwrap();
+    let mut l = Lsp::start();
+    l.initialize_with_root(Some(&file_uri(&root)));
+    l.open(&file_uri(&lib), "export fn broken(\n");
+    let notification = l.open(&file_uri(&main), "import \"lib.shl\"\n");
+    assert!(
+        !notification["params"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
 }

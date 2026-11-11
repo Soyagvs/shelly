@@ -3,6 +3,18 @@ use crate::formatter::format_source;
 use serde_json::{Value, json};
 
 pub fn utf16_pos(text: &str, byte: usize) -> (usize, usize) {
+    // LSP ranges are derived from parser byte spans, but callers can also hand
+    // us stale or malformed offsets. Clamp to a UTF-8 boundary before slicing.
+    let byte = byte.min(text.len());
+    let byte = if byte == text.len() {
+        byte
+    } else {
+        text.char_indices()
+            .map(|(i, _)| i)
+            .take_while(|&i| i <= byte)
+            .last()
+            .unwrap_or(0)
+    };
     let mut line = 0;
     let mut start = 0;
     for (i, c) in text.char_indices() {
@@ -11,10 +23,10 @@ pub fn utf16_pos(text: &str, byte: usize) -> (usize, usize) {
         }
         if c == '\n' {
             line += 1;
-            start = i + 1
+            start = i + 1;
         }
     }
-    let part = &text[start..byte.min(text.len())];
+    let part = &text[start..byte];
     (line, part.encode_utf16().count())
 }
 pub fn range(text: &str, s: usize, e: usize) -> Value {

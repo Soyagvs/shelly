@@ -65,6 +65,37 @@ fn audit_log_is_typed_jsonl_with_terminal_summary() {
 }
 
 #[test]
+fn failed_dry_run_audit_ends_with_error_without_complete_summary() {
+    let dir = std::env::temp_dir().join(format!(
+        "shelly-audit-error-{}-{}",
+        std::process::id(),
+        N.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let script = dir.join("main.shelly");
+    let log = dir.join("audit.jsonl");
+    std::fs::write(&script, "write \"missing argument\"\n").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args([
+            "--dry-run",
+            "--audit-log",
+            log.to_str().unwrap(),
+            script.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let records: Vec<serde_json::Value> = std::fs::read_to_string(log)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(records.last().unwrap()["event"], "error");
+    assert_eq!(records.last().unwrap()["status"], "error");
+    assert!(!records.iter().any(|record| record["status"] == "complete"));
+}
+
+#[test]
 fn dry_run_validates_and_reports_safe_ordered_effect_details_without_mutation() {
     let dir = std::env::temp_dir().join(format!("shelly-dry-state-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

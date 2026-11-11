@@ -14,7 +14,7 @@ For a plain-language setup, see the [editor support quickstart](editor-support.m
 shelly-lsp
 ```
 
-Do not pass a script path or pipe script output into it: the editor owns the LSP/JSON-RPC stream. The server never executes Shelly scripts. Positions use the LSP UTF-16 convention.
+Do not pass a script path or pipe script output into it: the editor owns the LSP/JSON-RPC stream. The server never executes Shelly scripts. Positions use the LSP UTF-16 convention; clients should send UTF-16 character offsets and must not assume byte offsets. The server clamps malformed or stale internal byte spans to safe UTF-8 boundaries.
 
 ## Document and workspace model
 
@@ -38,9 +38,9 @@ Shelly LSP v1 provides:
 - document and workspace symbols; and
 - rename edits for supported names.
 
-Diagnostics are sent as `textDocument/publishDiagnostics` notifications after `didOpen` and `didChange`. Closing a document republishes diagnostics for its disk fallback when available. The server watches workspace `.shelly` and `.shl` files and refreshes its disk-backed workspace view when handling subsequent LSP messages. A bounded watcher queue is reconciled with a full scan if it overflows. It does not provide pull or workspace diagnostics. Open-document overlays remain authoritative until close.
+Diagnostics are sent as `textDocument/publishDiagnostics` notifications after `didOpen` and `didChange`. The diagnostic pass includes the current open-document overlay for the target and other open workspace files, mapped through local `file://` URIs; unsaved buffers therefore take precedence over disk content. Closing a document republishes diagnostics for its disk fallback when available. The server watches workspace `.shelly` and `.shl` files and refreshes its disk-backed workspace view when handling subsequent LSP messages. The watcher queue is bounded and non-blocking: overflow triggers a full reconciliation, while an incomplete scan preserves the last known state rather than treating inaccessible paths as deletions. It does not provide pull or workspace diagnostics. Open-document overlays remain authoritative until close.
 
-Formatting is supported through `textDocument/formatting`. It returns a full-document edit using the same safe transformations as `shelly fmt`; malformed documents return no formatting edit. The server also exposes exactly two constrained code actions: `Format document` (`source.format`) and `Replace legacy use with import` (`quickfix`) for a top-level line beginning with `use `.
+Formatting is supported through `textDocument/formatting`. It returns a full-document edit using the same safe transformations as `shelly fmt`; malformed documents return no formatting edit. Clients should apply the returned full-document edit and preserve UTF-16 ranges. The server also exposes exactly two constrained code actions: `Format document` (`source.format`) and `Replace legacy use with import` (`quickfix`) for a top-level line beginning with `use `. Code actions are deliberately narrow and do not execute code.
 
 Rename is deliberately limited: a rename whose `newName` contains `x` is refused with JSON-RPC error `-32602` (`ambiguous rename`). Unknown requests with an ID receive error `-32601` (`Method not found`).
 
