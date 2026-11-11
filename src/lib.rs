@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::env;
 use std::fs;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -69,6 +69,30 @@ pub fn cli_main() {
         return;
     }
     let mut raw_args: Vec<_> = env::args_os().skip(1).collect();
+    let color = match raw_args.iter().position(|arg| arg == "--color") {
+        Some(index) => {
+            raw_args.remove(index);
+            match raw_args.get(index).and_then(|arg| arg.to_str()) {
+                Some("auto") => {
+                    raw_args.remove(index);
+                    ColorPolicy::Auto
+                }
+                Some("always") => {
+                    raw_args.remove(index);
+                    ColorPolicy::Always
+                }
+                Some("never") => {
+                    raw_args.remove(index);
+                    ColorPolicy::Never
+                }
+                _ => {
+                    eprintln!("--color requires auto, always, or never");
+                    std::process::exit(1);
+                }
+            }
+        }
+        None => ColorPolicy::Auto,
+    };
     let dry_run = raw_args.first().is_some_and(|arg| arg == "--dry-run");
     if dry_run {
         raw_args.remove(0);
@@ -153,7 +177,7 @@ pub fn cli_main() {
             } else {
                 audit::ExecutionContext::default()
             };
-            run_script(PathBuf::from(path), script_args, context)
+            run_script(PathBuf::from(path), script_args, context, color)
         }
         None => {
             println!("Shelly is ready. Pass a .shelly script path to run it.");
@@ -283,7 +307,12 @@ fn run_project(args: impl Iterator<Item = std::ffi::OsString>) -> Result<(), Str
             manifest.project.entry
         ));
     }
-    run_script(entry, forwarded, audit::ExecutionContext::default())
+    run_script(
+        entry,
+        forwarded,
+        audit::ExecutionContext::default(),
+        ColorPolicy::Auto,
+    )
 }
 
 fn run_tests(mut args: impl Iterator<Item = std::ffi::OsString>) -> Result<(), String> {
@@ -961,10 +990,23 @@ fn check_module_graph(
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ColorPolicy {
+    Auto,
+    Always,
+    Never,
+}
+impl Default for ColorPolicy {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
 fn run_script(
     path: PathBuf,
     script_args: Vec<String>,
     context: audit::ExecutionContext,
+    color: ColorPolicy,
 ) -> Result<(), String> {
     let path = path
         .canonicalize()
@@ -974,6 +1016,7 @@ fn run_script(
     let mut interpreter = Interpreter::default();
     interpreter.context = context;
     interpreter.script_args = script_args;
+    interpreter.color = color;
     interpreter.current_dir = path.parent().map(PathBuf::from).unwrap_or_default();
     interpreter.stack.push(path);
     let result = interpreter.run(&source);
@@ -1010,6 +1053,7 @@ struct Interpreter {
     defers: Vec<Vec<Vec<(usize, String)>>>,
     context: audit::ExecutionContext,
     mocks: mock::MockRegistry,
+    color: ColorPolicy,
 }
 
 #[derive(Clone)]
@@ -1034,6 +1078,7 @@ impl Interpreter {
             defers: Vec::new(),
             context: audit::ExecutionContext::default(),
             mocks: self.mocks.clone(),
+            color: self.color,
         }
     }
 
@@ -2207,7 +2252,9 @@ impl Interpreter {
         if let Some(rest) = line.strip_prefix("shellout") {
             let value = self.eval_expr(rest.trim())?;
             self.log_action(&format!("shellout: {value}"));
-            println!("{value}");
+            if !self.context.is_dry_run() {
+                println!("{}", self.emit_terminal(&value));
+            }
             return Ok(());
         }
         if let Some(rest) = line.strip_prefix("shellin") {
@@ -4283,6 +4330,18 @@ impl Interpreter {
 
     fn eval_value_kind(&self, text: &str) -> Result<Value, String> {
         let text = text.trim();
+        if let Some(args) = text.strip_prefix("style(") {
+            let inner = args
+                .strip_suffix(')')
+                .ok_or_else(|| "malformed style expression".to_string())?;
+            let parts = split_commas(inner)?;
+            if parts.len() != 2 {
+                return Err("style requires exactly two arguments".to_string());
+            }
+            let descriptor = self.eval_expr(parts[0])?;
+            let value = self.eval_expr(parts[1])?;
+            return Ok(Value::Scalar(apply_style(&descriptor, &value)?));
+        }
         if text.starts_with('[') {
             return self.eval_list(text);
         }
@@ -4563,6 +4622,20 @@ impl Interpreter {
             .cloned()
             .collect();
         Ok(selected)
+    }
+
+    fn emit_terminal(&self, value: &str) -> String {
+        let enabled = !env::var_os("NO_COLOR").is_some()
+            && match self.color {
+                ColorPolicy::Always => true,
+                ColorPolicy::Never => false,
+                ColorPolicy::Auto => io::stdout().is_terminal(),
+            };
+        if enabled {
+            value.to_string()
+        } else {
+            strip_ansi(value)
+        }
     }
 
     fn eval_string(&self, text: &str) -> Result<String, String> {
@@ -5740,6 +5813,78 @@ fn validate_command_atoms(mut text: &str) -> Result<(String, Vec<String>, &str),
         return Err("command requires a program and argv atoms".to_string());
     }
     Ok((atoms[0].clone(), atoms[1..].to_vec(), text))
+}
+
+fn apply_style(style: &str, value: &str) -> Result<String, String> {
+    let mut codes = Vec::new();
+    for token in style.split_whitespace().flat_map(|part| part.split(',')) {
+        let code = match token {
+            "black" => 30,
+            "red" => 31,
+            "green" => 32,
+            "yellow" => 33,
+            "blue" => 34,
+            "magenta" => 35,
+            "cyan" => 36,
+            "white" => 37,
+            "bright_black" => 90,
+            "bright_red" => 91,
+            "bright_green" => 92,
+            "bright_yellow" => 93,
+            "bright_blue" => 94,
+            "bright_magenta" => 95,
+            "bright_cyan" => 96,
+            "bright_white" => 97,
+            "on_black" => 40,
+            "on_red" => 41,
+            "on_green" => 42,
+            "on_yellow" => 43,
+            "on_blue" => 44,
+            "on_magenta" => 45,
+            "on_cyan" => 46,
+            "on_white" => 47,
+            "on_bright_black" => 100,
+            "on_bright_red" => 101,
+            "on_bright_green" => 102,
+            "on_bright_yellow" => 103,
+            "on_bright_blue" => 104,
+            "on_bright_magenta" => 105,
+            "on_bright_cyan" => 106,
+            "on_bright_white" => 107,
+            "bold" => 1,
+            "dim" => 2,
+            "italic" => 3,
+            "underline" => 4,
+            "blink" => 5,
+            "reverse" => 7,
+            "strikethrough" => 9,
+            "reset" => 0,
+            "" => return Err("malformed style token".to_string()),
+            _ => return Err(format!("unknown style token: {token}")),
+        };
+        codes.push(code.to_string());
+    }
+    if codes.is_empty() {
+        return Err("style requires a nonempty style descriptor".to_string());
+    }
+    Ok(format!("\x1b[{}m{}\x1b[0m", codes.join(";"), value))
+}
+
+fn strip_ansi(value: &str) -> String {
+    let mut out = String::new();
+    let mut chars = value.chars();
+    while let Some(ch) = chars.next() {
+        if ch == '\x1b' {
+            while let Some(next) = chars.next() {
+                if next.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
 }
 
 fn is_retryable_error(error: &str) -> bool {

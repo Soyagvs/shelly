@@ -43,6 +43,23 @@ fn records_declarations_references_imports_and_calls_with_byte_spans() {
 }
 
 #[test]
+fn recognizes_style_as_a_native_expression_call() {
+    let parsed = parse("let styled = style(\\\"red\\\", value)\\n");
+    assert!(
+        parsed
+            .symbols
+            .iter()
+            .any(|s| s.name == "style" && s.kind == SymbolKind::Call)
+    );
+    assert!(
+        parsed
+            .symbols
+            .iter()
+            .any(|s| s.name == "value" && s.kind == SymbolKind::Reference)
+    );
+}
+
+#[test]
 fn use_is_not_resolved_as_an_import() {
     let parsed = parse("use \"math.shl\"\n");
     assert!(parsed.modules.is_empty());

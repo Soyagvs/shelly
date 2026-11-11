@@ -79,7 +79,10 @@ $name = "Ada"
 
 shellout $name
 shellout "hello $name"
+shellout style("bold,bright_cyan", "hello $name")
 ```
+
+`style(STYLE, VALUE)` produces a safely styled scalar for `shellout` and other expressions. It accepts only the finite color, background, bright-color, and attribute vocabulary described in [Terminal styling](terminal-styling.md). Use `--color auto|always|never` to control ANSI emission; `NO_COLOR` always disables ANSI. See the styling guide for redaction, redirection, check, and dry-run behavior.
 
 Use `"..."` for one-line output and triple backticks for multiline output.
 

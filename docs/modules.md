@@ -63,6 +63,15 @@ shellout $color
 
 Use `import` for reusable modules. Use `include` when you intentionally want the whole file to run.
 
+The optional `lib/palette.shelly` module exports semantic style descriptors such as `$SUCCESS`, `$WARNING`, and `$ERROR` for use with `style(...)`. These are ordinary exported constants, not native aliases:
+
+```shelly
+import "lib/palette.shelly"
+shellout style($SUCCESS, "done")
+```
+
+See [Terminal styling](terminal-styling.md) for the complete vocabulary and color policy.
+
 ## Module graph checking
 
 `shelly check` validates the complete `import`/`include` graph reachable from the checked script without executing the script or any dependency. It follows only literal `import` and `include` declarations; it cannot resolve a computed or variable path. It parses and checks each reachable file, then reports:

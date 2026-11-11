@@ -4821,6 +4821,98 @@ end
     assert!(!invalid_check.status.success());
 }
 
+#[test]
+fn style_expression_emits_deterministic_ansi_and_supports_values() {
+    let output = run_script_with_args(
+        "$value = \"world\"\n$styled = style(\"bold,red on_blue\", $value)\nshellout $styled\n",
+        &["--color", "always"],
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "\x1b[1;31;44mworld\x1b[0m\n");
+}
+
+#[test]
+fn style_rejects_unknown_empty_and_raw_escape_tokens() {
+    for descriptor in ["rainbow", "", "\\x1b[31m"] {
+        let source = format!("shellout style(\"{descriptor}\", \"x\")\n");
+        let output = run_script(&source);
+        assert!(
+            !output.status.success(),
+            "accepted descriptor {descriptor:?}"
+        );
+    }
+}
+
+#[test]
+fn style_supports_palette_import_assignments_interpolation_and_nesting() {
+    let dir = std::env::temp_dir().join(format!("shelly-style-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy("lib/palette.shelly", dir.join("palette.shelly")).unwrap();
+    let path = dir.join("main.shelly");
+    std::fs::write(&path, "import \"palette.shelly\"\n$name = \"ok\"\n$inner = style($SUCCESS, $name)\n$outer = style(\"bold\", $inner)\nshellout $outer\n").unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["--color", "always"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "\x1b[1m\x1b[92mok\x1b[0m\x1b[0m\n");
+}
+
+#[test]
+fn color_policy_no_color_precedes_always_and_auto_is_stripped_when_redirected() {
+    let script = write_script("shellout style(\"red\", \"x\")\n");
+    for args in [["--color", "never"], ["--color", "auto"]] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_shelly"))
+            .args(args)
+            .arg(&script)
+            .output()
+            .unwrap();
+        assert_eq!(stdout(&output), "x\n");
+    }
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["--color", "always"])
+        .arg(&script)
+        .env("NO_COLOR", "1")
+        .output()
+        .unwrap();
+    assert_eq!(stdout(&output), "x\n");
+}
+
+#[test]
+fn check_and_dry_run_do_not_emit_styled_output() {
+    let script = write_script("shellout style(\"red\", \"silent\")\n");
+    let checked = std::process::Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .arg("check")
+        .arg(&script)
+        .output()
+        .unwrap();
+    assert!(checked.status.success());
+    assert!(stdout(&checked).is_empty());
+    let dry = std::process::Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["--dry-run", "--color", "always"])
+        .arg(&script)
+        .output()
+        .unwrap();
+    assert!(dry.status.success());
+    assert_eq!(stdout(&dry), "");
+}
+
+#[test]
+fn style_output_preserves_secret_redaction() {
+    let script = write_script(
+        "secret get \"SHELLY_STYLE_SECRET\" -> $secret\nshellout style(\"red\", $secret)\n",
+    );
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["--color", "always"])
+        .arg(&script)
+        .env("SHELLY_STYLE_SECRET", "STYLE_SECRET_SENTINEL")
+        .output()
+        .unwrap();
+    assert!(!stdout(&output).contains("STYLE_SECRET_SENTINEL"));
+    assert!(!stderr(&output).contains("STYLE_SECRET_SENTINEL"));
+}
+
 fn run_script(source: &str) -> std::process::Output {
     run_script_with_args(source, &[])
 }

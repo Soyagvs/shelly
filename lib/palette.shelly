@@ -1,0 +1,7 @@
+export $SUCCESS = "bright_green"
+export $WARNING = "bright_yellow"
+export $ERROR = "bright_red"
+export $INFO = "bright_cyan"
+export $NOTICE = "bright_blue"
+export $MUTED = "dim"
+export $HIGHLIGHT = "bold"
