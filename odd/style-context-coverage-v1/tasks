@@ -1,0 +1,7 @@
+# Style Context Coverage v1 Tasks
+
+- [x] Add executable context matrix tests.
+- [x] Verify color policy and exact blank lines.
+- [x] Independently validate results.
+
+Evidence: The CLI smoke matrix covers failing `try`/`catch` output and compares complete styled and plain stdout strings, including blank lines.

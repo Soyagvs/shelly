@@ -11,7 +11,62 @@ shellout $label
 shellout style("white on_blue", "status: ready")
 ```
 
-The form is `style(STYLE, VALUE)`. Both arguments are ordinary Shelly expressions. `STYLE` must evaluate to a non-empty descriptor; `VALUE` is converted to a scalar. Styled values can be assigned, interpolated, nested, or passed to `shellout`.
+The form is `style(STYLE, VALUE)`. Both arguments are ordinary Shelly expressions. `STYLE` must evaluate to a non-empty descriptor; `VALUE` is converted to a scalar. Styled values can be assigned, interpolated, nested, or passed to `shellout`; they are also supported in menu titles, subtitles, option labels, and hints.
+
+## Executable control flow
+
+`style(...)` and ordinary `shellout ""` are executable statements, so they can appear inside control-flow blocks, functions, and nested combinations. This complete example is runnable and covers conditionals, all loop forms, functions, error handling, retries, and nesting:
+
+```shelly
+if true
+    shellout style("red", "if")
+    shellout ""
+end
+case "branch"
+    when "branch"
+        shellout style("green", "case")
+        shellout ""
+end
+for $item in ["for"]
+    shellout style("blue", $item)
+    shellout ""
+end
+$i = 0
+while $i < 1
+    $i = $i + 1
+    shellout style("yellow", "while")
+    shellout ""
+end
+repeat 1
+    shellout style("magenta", "repeat")
+    shellout ""
+end
+fn report() {
+    shellout style("cyan", "function")
+    shellout ""
+}
+call report()
+try
+    shellout style("white", "try")
+    shellout ""
+catch
+    shellout style("bright_red", "catch")
+    shellout ""
+end
+retry 2
+    shellout style("red", "retry")
+    shellout ""
+end
+if true
+    repeat 1
+        fn nested() {
+            shellout style("bold", "nested")
+            shellout ""
+        }
+        call nested()
+    end
+end
+```
 
 ## Safe vocabulary
 
