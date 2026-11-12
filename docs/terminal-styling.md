@@ -47,9 +47,29 @@ shellout style($INFO, "details")
 shellout style($NOTICE, "notice")
 shellout style($MUTED, "less important")
 shellout style($HIGHLIGHT, "important")
+shellout style($CRITICAL, "action required")
+shellout style($DEBUG, "debug details")
+shellout style($TITLE, "section title")
+shellout style($BORDER, "separator")
 ```
 
-The supplied aliases are `$SUCCESS = "bright_green"`, `$WARNING = "bright_yellow"`, `$ERROR = "bright_red"`, `$INFO = "bright_cyan"`, `$NOTICE = "bright_blue"`, `$MUTED = "dim"`, and `$HIGHLIGHT = "bold"`. Import paths are resolved relative to the importing script, so use the path that reaches your copy of `lib/palette.shelly`.
+The palette catalog contains these generic aliases:
+
+| Alias | Descriptor | Intended role |
+| --- | --- | --- |
+| `$SUCCESS` | `bright_green` | Successful or completed state |
+| `$WARNING` | `bright_yellow` | Caution or attention-needed state |
+| `$ERROR` | `bright_red` | Error or failed state |
+| `$INFO` | `bright_cyan` | Informational content |
+| `$NOTICE` | `bright_blue` | Notice or noteworthy content |
+| `$MUTED` | `dim` | Secondary or de-emphasized content |
+| `$HIGHLIGHT` | `bold` | General emphasis |
+| `$CRITICAL` | `bold bright_white on_red` | Critical, urgent attention |
+| `$DEBUG` | `dim bright_magenta` | Diagnostic or debugging content |
+| `$TITLE` | `bold bright_cyan` | Heading or section title |
+| `$BORDER` | `bright_cyan` | Visual divider or boundary |
+
+Import paths are resolved relative to the importing script, so use the path that reaches your copy of `lib/palette.shelly`.
 
 ## Color emission policy
 
