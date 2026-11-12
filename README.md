@@ -1,6 +1,6 @@
 # Shelly — readable automation that scales
 
-![Shelly raven logo](assets/icons/shelly.svg)
+<img src="https://github.com/user-attachments/assets/975333ea-e6c7-421b-9795-089f07211ce6" alt="Shelly — raven logo" width="100%" />
 
 Shelly is a modern scripting language for readable automation. Write clear scripts for files, system commands, structured data, interactive menus, and reusable modules in a fast Rust-based interpreter.
 
