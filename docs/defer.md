@@ -1,8 +1,8 @@
-# Deferred cleanup
+# Guarantee cleanup while Shelly scopes unwind
 
 `defer` registers a block to run when the surrounding scope ends. Registration happens when execution reaches the statement; the block does not run immediately.
 
-## Syntax
+## 🚀 Quick path
 
 ```shelly
 defer
@@ -10,11 +10,11 @@ defer
 end
 ```
 
-`defer` takes no arguments and requires a block. Forms such as `defer cleanup` are rejected. A deferred block has no result. It shares the enclosing scope, so it can read and update values there—and its updates are visible to later code in that scope.
+## 📖 Syntax and scope
 
-## Order and scope
+`defer` takes no arguments and requires a block. `defer cleanup` is invalid. A deferred block has no result, shares the enclosing scope, and can read or update values visible there.
 
-Deferred blocks run in **last-in, first-out (LIFO)** order, once per enclosing scope.
+Deferred blocks run once per enclosing scope in **last-in, first-out (LIFO)** order:
 
 ```shelly
 defer
@@ -26,13 +26,11 @@ defer
 end
 ```
 
-This prints `second registered, first run`, then `first registered, last run`.
+Each block belongs to its nearest scope. Nested scopes clean up from the inside out. A deferred block executes as its own scope, so a `defer` registered during cleanup runs when that cleanup block ends.
 
-Each block belongs to the nearest scope and does not escape it. Nested scopes clean up from the inside out. A deferred block is executed as its own scope, so a `defer` inside cleanup is also run when that cleanup block ends.
+## 🔁 Every exit path
 
-## Every exit path
-
-The current implementation runs deferred blocks when a scope ends normally or with an ordinary error. It also unwinds them for Shelly’s encoded control signals: `exit`, `return`, `break`, and `continue`. An already-expired active deadline can prevent a deferred statement from starting, so cleanup is not guaranteed after a deadline expires. An outer-scope cleanup can run only when its enclosing deadline remains valid; this does not provide a hard wall-clock guarantee.
+Deferred blocks run when a scope ends normally or with an ordinary error. Shelly also unwinds them for `exit`, `return`, `break`, and `continue`.
 
 ```shelly
 defer
@@ -46,17 +44,24 @@ catch
 end
 ```
 
-`defer` complements [`try`/`catch`](errors.md): use `catch` to recover from an error, and `defer` for work that must happen regardless. In the implementation, control signals are not caught by `try`, but they still trigger deferred cleanup. See [`exit`](exit.md) for process termination behavior.
+An already-expired active deadline can prevent a deferred statement from starting. Outer cleanup also requires its enclosing deadline to remain valid, so cleanup is not a hard wall-clock guarantee.
 
-## Cleanup errors and outcomes
+`defer` complements [`try`/`catch`](errors.md): use `catch` to recover from an error and `defer` for work that must happen regardless. Control signals are not caught by `try`, but they still trigger deferred cleanup. See [Exit](exit.md) for process termination.
 
-Cleanup is attempted in LIFO order. If one deferred block fails, later deferred blocks are skipped. If the scope already had an ordinary error or control signal, that earlier outcome remains authoritative; the cleanup error does not replace it. If the scope would otherwise succeed, the first cleanup error makes it fail.
+## ⚠️ Cleanup errors and outcomes
 
-Keep deferred blocks small and reliable. They run only when their scope unwinds, so many registrations, expensive cleanup, or cleanup that itself fails can make control flow harder to follow—and can prevent remaining cleanup from running.
+Cleanup is attempted in LIFO order. If one deferred block fails, later deferred blocks are skipped.
 
-## Next steps
+| Scope outcome | Result when cleanup fails |
+| --- | --- |
+| Already had an error or control signal | The earlier outcome remains authoritative |
+| Would otherwise succeed | The first cleanup error makes the scope fail |
 
-- [Error handling](errors.md) for recoverable failures and control signals.
-- [Exit](exit.md) for explicit process termination.
-- [Language Guide](language.md) for the syntax overview.
-- [Documentation index](index.md) for the book-like reference map.
+Keep deferred blocks small and reliable. Many registrations, expensive cleanup, or cleanup that fails can make control flow harder to follow and prevent remaining cleanup from running.
+
+## Related guides
+
+- [Error handling](errors.md) — recover from ordinary failures.
+- [Exit](exit.md) — terminate the process and unwind cleanup.
+- [Functions](functions.md) — understand function scope boundaries.
+- [Language overview](language.md) — review Shelly syntax.

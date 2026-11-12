@@ -1,10 +1,8 @@
-# Logging
+# Trace a script block with logs
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+Use a `log` block to record structured lifecycle and action markers while normal terminal output remains visible.
 
-Use a `log` block when you want a structured trace of a script section without hiding normal output.
+## Quick path
 
 ```shelly
 log "deploy"
@@ -13,104 +11,32 @@ log "deploy"
 end
 ```
 
-## Syntax
+The identifier is required and is evaluated like other expressions. Nested blocks are allowed, and `shelly check` validates structure without running it.
 
-```shelly
-log "identifier"
-    # statements
-end
-```
+## Log files
 
-- An identifier expression is required; a missing expression (`log`) is rejected.
-- The identifier is evaluated like other Shelly string/value expressions, so variables and interpolation can provide the name. An explicit empty string (`log ""`) is accepted and sanitizes to the fallback name `log`.
-- Blocks close with `end` and can contain nested blocks, including nested `log` blocks.
-- `shelly check` validates `log` structure without running the block.
-
-## Storage
-
-Shelly creates a `logs/` directory next to the running script.
-
-Each identifier writes to one file per UTC day:
+Shelly creates `logs/` beside the running script and writes one UTC-dated file per identifier:
 
 ```text
 logs/<sanitized-identifier>-YYYY-MM-DD.log
 ```
 
-Sanitization keeps ASCII letters, digits, `_`, and `-`. Other characters become `-`. If the sanitized name is empty, Shelly uses `log`.
+Sanitization keeps ASCII letters, digits, `_`, and `-`; every other character becomes `-`. An empty sanitized name becomes `log`. Thus `team/release!*` becomes `team-release---YYYY-MM-DD.log`, while `log ""` uses `log`.
 
-Examples:
+## Recorded markers
 
-| Identifier | Filename |
-| --- | --- |
-| `deploy` | `deploy-YYYY-MM-DD.log` |
-| `team/release!*` | `team-release---YYYY-MM-DD.log` |
-| `🔥` | `--YYYY-MM-DD.log` |
-
-Here `🔥` sanitizes to `-`, then the date separator adds the second `-`. A missing identifier expression (`log`) is rejected before a filename is created; an explicit empty identifier (`log ""`) is accepted and uses the sanitizer's `log` fallback.
-
-## Dynamic identifiers
-
-```shelly
-$target = "production"
-
-log "deploy-$target"
-    shellout "deploying $target"
-end
-```
-
-The identifier can use variables and interpolation. This writes to a file like `logs/deploy-production-YYYY-MM-DD.log`.
-
-## Recorded lines
-
-Each line starts with a UTC timestamp. A block records lifecycle lines:
-
-```text
-2026-01-01T12:00:00Z --- deploy ---
-2026-01-01T12:00:00Z ENTER
-2026-01-01T12:00:00Z shellout: starting
-2026-01-01T12:00:00Z command: printf ["running"]
-2026-01-01T12:00:00Z EXIT ok
-```
-
-Shelly currently records selected action markers inside the block:
+Each line begins with a UTC timestamp. Entries include lifecycle lines such as `ENTER` and `EXIT ok`, plus selected actions:
 
 - `shellout: ...`
 - `command: PROGRAM [ARGS]`
-- file commands: `create`, `copy`, `move`, `rename`, `read`, `write`, path `remove`, and file `append`
-- nested `log: ...` entry markers in the outer log
+- file actions: `create`, `copy`, `move`, `rename`, `read`, `write`, path `remove`, and file `append`
+- nested `log: ...` entry markers
 
-Collection mutations such as list or dictionary `append` and `remove` do not add action markers.
+List and dictionary mutations do not add action markers. Nested logs write their own files. Ordinary errors record `ERROR <message>` and still fail normally; control signals such as `exit`, `break`, `continue`, and `return` are not swallowed.
 
-If an ordinary error happens, the log records `ERROR <message>` and the script still fails normally. Control signals such as `exit`, `break`, `continue`, and `return` are not swallowed; when practical, the log records an `EXIT control ...` line before propagating the signal.
+## Errors and limits
 
-## Nested log blocks
-
-```shelly
-log "deploy"
-    shellout "deploy start"
-
-    log "deploy-tests"
-        command npm test
-    end
-
-    shellout "deploy end"
-end
-```
-
-The outer log records a nested `log: deploy-tests` marker. The nested block writes its own `logs/deploy-tests-YYYY-MM-DD.log` file.
-
-## Errors inside logs
-
-```shelly
-log "build"
-    shellout "running tests"
-    command false
-end
-```
-
-The `build` log records an `ERROR ...` line, and the script still fails normally.
-
-To handle the error and keep logging the recovery path, combine `log` with `try` / `catch`:
+A missing identifier expression (`log`) is rejected; an explicit empty string is accepted. Use [try/catch](errors.md) to log recovery separately:
 
 ```shelly
 try -> $error
@@ -124,10 +50,4 @@ catch
 end
 ```
 
-## What is not captured
-
-This first version does not capture full stdout or stderr from external commands. `shellout` and `command` output still goes to the terminal as usual. Logging levels are not configurable; the fixed markers above are recorded whenever their actions occur.
-
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+Logging does not capture complete stdout or stderr from external commands. Levels are not configurable, and recorded markers are fixed. See [Secrets](secrets.md) for redaction behavior when secret values appear in messages.

@@ -1,12 +1,19 @@
-# Shelly language guide
+# 🚀 Write and run your first Shelly script
 
-[Documentation index](index.md) · [Deferred cleanup](defer.md) · [Time and date](index.md#use-the-standard-library)
+Use this guide to learn Shelly's core syntax, values, control flow, and process model while keeping scripts easy to validate and run.
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+[Documentation index](index.md) · [Commands and input](commands.md) · [Project structure](project-structure.md) · [Editor support](editor-support.md)
 
-Shelly scripts use the `.shelly` extension. One instruction per line. No semicolons.
+## 🚀 First success
+
+Save this as `hello.shelly`, then run `shelly hello.shelly`:
+
+```shelly
+$name = "Ada"
+shellout "Hello $name"
+```
+
+Shelly scripts use the `.shelly` extension, one instruction per line, and no semicolons.
 
 ````shelly
 $name = "Ada"
@@ -20,7 +27,7 @@ text block
 ```
 ````
 
-## A practical automation
+## 🛠️ A practical automation
 
 This small script combines the usual pieces: positional input, a file predicate, a direct process call with captures, and a result check.
 
@@ -65,7 +72,7 @@ See [commands.md](commands.md), [files.md](files.md), and [conditionals.md](cond
 - `watch <program> <args...> -> $line ... end` streams stdout line events serially until the child exits; stderr is not exposed as events.
 - Bare `wait` blocks until normal process interruption; it takes no arguments.
 
-## A short control-flow progression
+## 📖 A short control-flow progression
 
 Build up from a condition, to visiting each value, to moving repeated work into a function:
 
@@ -89,7 +96,7 @@ call announce($names[1])
 
 See [conditionals.md](conditionals.md), [for.md](for.md), and [functions.md](functions.md) for variations.
 
-## Values at a glance
+## 📖 Values at a glance
 
 Lists and dictionaries use one-based list access; JSON conversion lets a text payload become a Shelly value and back.
 
@@ -103,7 +110,7 @@ shellout $name
 
 For the full collection and JSON contracts, see [lists.md](lists.md), [dictionaries.md](dictionaries.md), and [json.md](json.md).
 
-## Command versus shell
+## 🛠️ Command versus shell
 
 Use `command` for argv execution. Use `shell` only when a shell feature such as a pipeline or redirection is required:
 
@@ -114,7 +121,7 @@ shell "printf '%s\\n' hello | tr a-z A-Z" -> $out
 
 The second form is shell/platform dependent; see [commands.md](commands.md).
 
-## Reference
+## 📖 Reference
 
 | Topic | Guide |
 | --- | --- |
@@ -140,7 +147,7 @@ The second form is shell/platform dependent; see [commands.md](commands.md).
 | Modules | [modules.md](modules.md) |
 | Project structure | [project-structure.md](project-structure.md) |
 
-## Choose a route
+## 🚀 Choose a route
 
 - **CLI and input:** [commands.md](commands.md)
 - **Files:** [files.md](files.md)
@@ -148,7 +155,7 @@ The second form is shell/platform dependent; see [commands.md](commands.md).
 - **Failures:** [errors.md](errors.md)
 - **Editor support:** [editor-support.md](editor-support.md)
 
-## Check and run
+## 🚀 Check and run
 
 With no path, `shelly check` reads `Shelly.toml`, resolves `[project].entry`, and validates the manifest entry without running it or executing its commands. Checking also walks every reachable `import` and `include`, so missing dependencies, transitive-file errors, and import/include cycles are reported without executing any file:
 
@@ -190,18 +197,14 @@ From source:
 cargo run -- path/to/script.shelly
 ```
 
-## Not implemented yet
+## ⚠️ Not implemented yet
 
 - Nested lists.
 - Ordered string filters.
 - Multi-index, range, or filter mutation targets.
 - Exporting normal variables.
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
-
-## Dictionaries
+## 📖 Dictionaries
 
 Use `{}` for keyed data. Simple keys can be identifiers; other keys use quoted strings.
 

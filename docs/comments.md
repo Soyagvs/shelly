@@ -1,52 +1,54 @@
-# Comments
+# Explain Shelly code without changing it
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+Comments help people understand a Shelly script. Shelly ignores them, so they document intent without changing runtime behavior.
 
-Comments are notes for people reading a script. Shelly ignores them, so they help explain *why* something exists without changing what the script does.
+## 🚀 Quick path
 
 ```shelly
 # Greet the person running this script #
 shellout "hello"
 ```
 
-## When to use comments
+## 📖 Syntax and rules
 
-Use a comment when the intent is not obvious from the code: explain a decision, a limitation, or a surprising requirement. Do not repeat what a clear instruction already says.
+| Form | Meaning |
+| --- | --- |
+| `# note #` | One-line comment |
+| `#` … `#` | Block comment spanning multiple lines |
+| `#` inside a string | Ordinary string text |
+
+- Comments open with `#` and close with `#`.
+- A one-line comment opens and closes on the same line.
+- A block comment may span multiple lines.
+- An unclosed comment is an error.
+- Use comments for decisions, limitations, or surprising requirements; do not repeat clear code.
 
 ```shelly
 # The API accepts dates only in UTC. #
 $DATE_FORMAT = "UTC"
 
-# Avoid: this only repeats the instruction. #
+# Avoid comments that merely repeat the instruction. #
 shellout "ready"
 ```
 
-## Rules
-
-- Comments open with `#` and close with `#`.
-- A one-line comment opens and closes on the same line.
-- A block comment may span many lines.
-- An unclosed comment is an error.
-- `#` inside a string is normal text.
-
-## Block comments
+## 🧩 Block comments and strings
 
 ```shelly
 #
 This whole block is ignored.
-Use it for longer notes.
+Use it for a longer note.
 #
 shellout "after the comment"
 ```
 
-## Strings are safe
+A `#` in a quoted string is printed as text:
 
 ```shelly
 shellout "# this prints as text #"
 ```
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+## Related guides
+
+- [Language overview](language.md) — learn Shelly syntax in context.
+- [Strings](strings.md) — work with quoted text.
+- [Documentation index](index.md) — browse the complete reference.

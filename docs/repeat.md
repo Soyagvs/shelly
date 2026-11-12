@@ -1,10 +1,8 @@
-# Repeat loops
+# Repeat a block a fixed number of times
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+Use `repeat` for a non-negative integer count. The optional binding exposes a temporary 1-based iteration number.
 
-`repeat` runs a block a fixed number of times.
+## 🚀 Quick path
 
 ```shelly
 repeat 3
@@ -12,19 +10,34 @@ repeat 3
 end
 ```
 
-## Rules
+## 📖 Syntax and rules
 
-- `repeat count` starts the loop and `end` closes it.
-- The count is a numeric expression. A non-negative integer literal, mutable variable, constant, or arithmetic expression is accepted; for example, `repeat 3`, `repeat $BASE`, and `repeat $BASE + 1`.
-- Counts must resolve to non-negative integers. `repeat 0` is valid and skips the body.
-- `repeat count -> $var` optionally binds the current iteration number.
-- Assignments to ordinary variables inside the loop persist after the loop.
-- `break` exits the nearest enclosing loop; `continue` skips to the next iteration of the nearest enclosing loop.
-- Nested `if`, `repeat`, `while`, and `for` blocks are supported.
+```shelly
+repeat COUNT
+    ...
+end
 
-## Index binding
+repeat COUNT -> $index
+    ...
+end
+```
 
-The index is **1-based**: it is set to `1` at the start of the first iteration and increases by one at the start of each later iteration. The binding is temporary: the loop saves the variable before entering, sets it for each iteration, and restores the saved value after the loop. An assignment to that variable in the body can affect the remainder of the current iteration, but is replaced by the next iteration's index and never escapes the loop. Restoration also occurs for a zero-iteration loop, `break`, or an error; if the variable did not exist before the loop, it is removed afterward.
+`COUNT` may be a numeric variable, constant, or arithmetic expression. It must resolve to a non-negative integer; `repeat 0` skips the body. Assignments to ordinary variables persist after the loop. Nested `if`, `repeat`, `while`, and `for` blocks are supported.
+
+The count must be complete and valid. Negative, fractional, missing, and malformed counts are rejected:
+
+```text
+repeat -1       # negative count
+repeat 1.5      # fractional count
+repeat $missing # unresolved variable
+repeat          # missing count
+repeat 2 +      # malformed expression
+repeat 2 words  # trailing text
+```
+
+## 🔢 Index binding
+
+The index is 1-based. Shelly saves the destination before the loop, sets it for each iteration, and restores it afterward—including zero iterations, `break`, or an error. If it did not exist before the loop, it is removed. An assignment in the body affects only the remainder of that iteration.
 
 ```shelly
 $turn = "outside"
@@ -34,7 +47,7 @@ end
 shellout "after=$turn"
 ```
 
-This prints `turn 1`, `turn 2`, `turn 3`, then `after=outside`. Nested loops can use distinct bindings; each binding is restored independently:
+This prints `turn 1`, `turn 2`, `turn 3`, then `after=outside`. Nested loops can use distinct bindings and restore each independently.
 
 ```shelly
 repeat 2 -> $row
@@ -44,33 +57,9 @@ repeat 2 -> $row
 end
 ```
 
-## Numeric counts
+## 🛠️ Control flow and errors
 
-Counts may use numeric variables, constants, and arithmetic expressions:
-
-```shelly
-$extra = 1
-$BASE = 2
-
-repeat $BASE + $extra
-    shellout "again"
-end
-```
-
-The expression must be complete and must evaluate to an integer. Negative, fractional, missing, and malformed counts are rejected. These are invalid examples (shown as text, not runnable Shelly):
-
-```text
-repeat -1       # negative count
-repeat 1.5       # fractional count
-repeat $missing  # unresolved count variable
-repeat           # missing count
-repeat 2 +       # malformed expression
-repeat 2 words   # trailing text
-```
-
-## Control flow and errors
-
-`break` and `continue` affect only the nearest loop, including when loops are nested. A `break` in an inner loop leaves that inner loop and execution continues in the outer loop; a `continue` advances only the inner loop. Using either statement when no loop is active is an error (`break outside loop` or `continue outside loop`).
+`break` exits the nearest loop; `continue` skips to its next iteration. In nested loops, each affects only the nearest loop. Either statement outside a loop is an error.
 
 ```shelly
 repeat 2 -> $outer
@@ -86,6 +75,8 @@ repeat 2 -> $outer
 end
 ```
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+## Related guides
+
+- [While loops](while.md) and [For loops](for.md) — condition- and collection-based loops.
+- [Conditionals](conditionals.md) — branch inside a loop.
+- [Lists](lists.md) — values for collection-based iteration.

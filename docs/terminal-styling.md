@@ -1,79 +1,56 @@
-# Terminal styling
+# Style terminal values safely
 
-Terminal styling v1 adds a safe, value-producing `style(...)` expression. It is intended for values passed to `shellout`, not for arbitrary terminal control.
+Use `style(...)` to add a constrained terminal style to a value passed to `shellout`. It produces a value; it is not a general terminal-control protocol, and Markdown presentation never emits ANSI escapes.
 
-## Syntax
-
-```shelly
-style(STYLE, VALUE)
-```
-
-`STYLE` and `VALUE` are ordinary Shelly expressions. The first must evaluate to a non-empty style descriptor; the second is converted to a scalar value. A descriptor is one or more vocabulary names separated by commas and/or whitespace. The result is a styled scalar that can be assigned, interpolated, nested, or passed directly to `shellout`.
+## 🚀 Quick path
 
 ```shelly
 $name = "Ada"
 $label = style("bold,bright_cyan", "Hello $name")
 shellout $label
 shellout style("white on_blue", "status: ready")
-$nested = style("underline", style("red", "warning"))
-shellout $nested
 ```
 
-The expression uses existing expression/call syntax. No external editor grammar change is required for `style(...)`.
+The form is `style(STYLE, VALUE)`. Both arguments are ordinary Shelly expressions. `STYLE` must evaluate to a non-empty descriptor; `VALUE` is converted to a scalar. Styled values can be assigned, interpolated, nested, or passed to `shellout`.
 
-## Safe style vocabulary
+## Safe vocabulary
 
-The descriptor accepts only these finite names:
+Descriptors contain one or more names separated by commas and/or whitespace:
 
-- Foreground: `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white`.
-- Bright foreground: `bright_black`, `bright_red`, `bright_green`, `bright_yellow`, `bright_blue`, `bright_magenta`, `bright_cyan`, `bright_white`.
-- Background: `on_black`, `on_red`, `on_green`, `on_yellow`, `on_blue`, `on_magenta`, `on_cyan`, `on_white`.
-- Bright background: `on_bright_black`, `on_bright_red`, `on_bright_green`, `on_bright_yellow`, `on_bright_blue`, `on_bright_magenta`, `on_bright_cyan`, `on_bright_white`.
-- Attributes: `bold`, `dim`, `italic`, `underline`, `blink`, `reverse`, `strikethrough`, `reset`.
+| Role | Names |
+| --- | --- |
+| Foreground | `black`, `red`, `green`, `yellow`, `blue`, `magenta`, `cyan`, `white` |
+| Bright foreground | `bright_black` through `bright_white` using the same color names |
+| Background | `on_black` through `on_white` |
+| Bright background | `on_bright_black` through `on_bright_white` |
+| Attributes | `bold`, `dim`, `italic`, `underline`, `blink`, `reverse`, `strikethrough`, `reset` |
 
-Names can be combined, for example `"bold red on_white"`. Shelly emits a reset after the value. Raw ANSI escape sequences, numeric codes, unknown names, empty descriptors, and empty tokens are rejected in the `STYLE` descriptor. `VALUE` is ordinary data and may already contain terminal control bytes; `style` validates the descriptor but does not sanitize general output.
+For example, `"bold red on_white"` is valid. Shelly emits a reset after the value. Raw ANSI sequences, numeric codes, unknown names, empty descriptors, and empty tokens are rejected. `style` validates the descriptor but does not sanitize terminal control bytes already present in `VALUE`.
 
-## Palette library
+## Palette roles
 
-Semantic names are ordinary exported constants in the importable library `lib/palette.shelly`; they are not native style names.
+`lib/palette.shelly` exports semantic descriptors as ordinary constants, not additional native style names:
 
 ```shelly
 import "lib/palette.shelly"
-
 shellout style($SUCCESS, "completed")
 shellout style($WARNING, "check configuration")
 shellout style($ERROR, "failed")
-shellout style($INFO, "details")
-shellout style($NOTICE, "notice")
-shellout style($MUTED, "less important")
-shellout style($HIGHLIGHT, "important")
-shellout style($CRITICAL, "action required")
-shellout style($DEBUG, "debug details")
-shellout style($TITLE, "section title")
-shellout style($BORDER, "separator")
 ```
 
-The palette catalog contains these generic aliases:
-
-| Alias | Descriptor | Intended role |
+| Constant | Role | Descriptor |
 | --- | --- | --- |
-| `$SUCCESS` | `bright_green` | Successful or completed state |
-| `$WARNING` | `bright_yellow` | Caution or attention-needed state |
-| `$ERROR` | `bright_red` | Error or failed state |
-| `$INFO` | `bright_cyan` | Informational content |
-| `$NOTICE` | `bright_blue` | Notice or noteworthy content |
-| `$MUTED` | `dim` | Secondary or de-emphasized content |
-| `$HIGHLIGHT` | `bold` | General emphasis |
-| `$CRITICAL` | `bold bright_white on_red` | Critical, urgent attention |
-| `$DEBUG` | `dim bright_magenta` | Diagnostic or debugging content |
-| `$TITLE` | `bold bright_cyan` | Heading or section title |
-| `$BORDER` | `bright_cyan` | Visual divider or boundary |
+| `$SUCCESS` | completed state | `bright_green` |
+| `$WARNING` | caution | `bright_yellow` |
+| `$ERROR` | failure | `bright_red` |
+| `$INFO` | information | `bright_cyan` |
+| `$MUTED` | secondary content | `dim` |
+| `$CRITICAL` | urgent attention | `bold bright_white on_red` |
+| `$TITLE` | section title | `bold bright_cyan` |
 
-Import paths are resolved relative to the importing script, so use the path that reaches your copy of `lib/palette.shelly`.
+See the palette module for the remaining generic aliases. Resolve the import path relative to the importing script.
 
-## Color emission policy
-
-Use the CLI option:
+## Color, NO_COLOR, and output
 
 ```text
 shelly --color auto SCRIPT
@@ -81,39 +58,24 @@ shelly --color always SCRIPT
 shelly --color never SCRIPT
 ```
 
-`auto` is the default and emits ANSI only when stdout is a TTY. `always` emits ANSI even when stdout is redirected. `never` strips styling. `NO_COLOR` takes precedence over every policy, including `--color always`; when it is present, styled output is emitted without ANSI. The option accepts only `auto`, `always`, or `never`; any other value is an error.
+`auto` is the default and emits ANSI only when stdout is a TTY. `always` emits ANSI when redirected; `never` emits plain text. `NO_COLOR` takes precedence over every policy, including `always`, and disables ANSI. Only `auto`, `always`, and `never` are accepted.
 
-Consequently, redirecting `auto` output produces plain text, while redirecting `always` output preserves ANSI unless `NO_COLOR` is set:
+Color policy controls terminal emission, not descriptor validation. Prefer `never` for consumers requiring plain text and `always` only for consumers that explicitly support ANSI. These runtime rules are separate from portable Markdown styling: documentation colors or headings do not change Shelly output.
 
-```text
-shelly --color auto report.shelly > report.txt
-shelly --color always report.shelly > report.ansi.txt
-```
+## Check, dry-run, and redaction
 
-Color policy affects terminal emission, not the value-level validation performed by `style`.
+`check` validates reachable modules without executing scripts, so it produces no styled script output. `--dry-run` skips effectful actions and produces no `shellout` output. With `--audit-log`, simulated actions are recorded; styling itself is not an effect to execute or audit.
 
-## Check, dry-run, and audit
+Normal redaction still applies. Values from the secret facility remain redacted in stdout, stderr, audit logs, and errors; adding ANSI styling cannot reveal them.
 
-`check` validates scripts and their reachable modules without executing them, so it produces no styled script output. `--dry-run` does not execute effectful actions and produces no `shellout` output, including styled output. With `--audit-log`, dry-run records the simulated actions in the audit file; styling itself is not an effect to execute or audit.
+## Errors and non-goals
 
-```text
-shelly check report.shelly
-shelly --dry-run --audit-log report.jsonl report.shelly
-```
+Common errors include `style requires exactly two arguments`, `style requires a nonempty style descriptor`, `malformed style token`, and `unknown style token: NAME`. Appearance varies with terminal theme, font, platform, and accessibility settings.
 
-The audit log and diagnostics use Shelly's normal redaction behavior. Values obtained through the secret facility remain redacted when styled; adding ANSI styling cannot reveal the underlying secret in stdout, stderr, or audit/error output.
+v1 does not support arbitrary ANSI injection, RGB/256-color/truecolor syntax, hyperlinks, cursor control, terminal capability detection beyond the stdout TTY check, native semantic aliases, a `print` command, or editor grammar changes.
 
-## Portability and errors
+## Related guides
 
-ANSI support depends on the terminal or consumer. The vocabulary maps to conventional ANSI SGR colors and attributes, but exact appearance varies by terminal theme, font, platform, and accessibility settings. `auto` relies on whether stdout is a TTY; pipelines, files, CI logs, and other redirected destinations are therefore plain by default. Prefer `never` when a downstream consumer requires plain text and `always` only when the consumer explicitly supports ANSI.
-
-Typical errors include:
-
-- `style requires exactly two arguments` for a missing or extra argument;
-- `style requires a nonempty style descriptor` for an empty descriptor;
-- `malformed style token` for an empty token; and
-- `unknown style token: NAME` for a name outside the vocabulary.
-
-## Explicit non-goals
-
-v1 does not add a `print` command, native semantic palette aliases, arbitrary ANSI escape injection, RGB/256-color/truecolor syntax, hyperlinks or cursor control, terminal capability detection beyond the stdout TTY check, or external editor grammar changes. Styling is not a general-purpose terminal protocol; use normal Shelly commands and platform-specific tools for behavior outside this vocabulary.
+- [Commands](commands.md) — CLI options and output behavior.
+- [Dry run and audit](dry-run.md) — simulation boundaries.
+- [Secrets](secrets.md) — redaction behavior.

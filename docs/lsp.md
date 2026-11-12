@@ -1,68 +1,67 @@
-# Shelly LSP
+# Connect an editor to Shelly LSP
 
-`shelly-lsp` is Shelly's stdio language server. It reads Language Server Protocol (LSP) messages from standard input and writes JSON-RPC responses and notifications to standard output.
+Use `shelly-lsp` for diagnostics, navigation, completion, hover, rename, and safe document formatting over stdio. The editor owns the LSP/JSON-RPC stream; the server never executes Shelly scripts.
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+## 🚀 Quick path
 
-## Setup
-
-For a plain-language setup, see the [editor support quickstart](editor-support.md). Make `shelly-lsp` available on your `PATH`, then configure your editor to start exactly:
+Put `shelly-lsp` on `PATH` and configure the client to start exactly:
 
 ```sh
 shelly-lsp
 ```
 
-Do not pass a script path or pipe script output into it: the editor owns the LSP/JSON-RPC stream. The server never executes Shelly scripts. Positions use the LSP UTF-16 convention; clients should send UTF-16 character offsets and must not assume byte offsets. The server clamps malformed or stale internal byte spans to safe UTF-8 boundaries.
+Do not pass a script path or pipe script output into the process. For editor-specific setup, see [Editor support](editor-support.md).
 
-## Document and workspace model
+## Document and workspace boundaries
 
-The server chooses its workspace root in this order: the first `workspaceFolders` URI, then `rootUri`. If neither is supplied, the parent directory of the first opened file is used. A root is optional: LSP can still serve an opened document without one, but workspace-wide features need a valid root.
+The workspace root is selected in this order:
 
-When a root is available, the server loads `.shelly` and `.shl` files from disk recursively. `Shelly.toml` is optional for LSP and is not required to build this workspace view. Open documents are overlays: their current editor text replaces the matching disk file, including unsaved files. External changes never overwrite an open overlay. After `textDocument/didClose`, the disk version is restored when it can be read.
+1. the first `workspaceFolders` URI;
+2. `rootUri`; or
+3. the parent directory of the first opened file.
 
-URIs must be local `file://` URIs (or `localhost`) and resolved paths must stay lexically under the workspace root. Existing paths are canonicalized; unsaved paths are not required to exist. Other URI authorities and paths outside the root are ignored for workspace analysis.
+A root is optional for an opened document, but workspace-wide features require one. With a root, Shelly recursively loads `.shelly` and `.shl` files; `Shelly.toml` is optional.
 
-Diagnostics analyze the current document together with the workspace file set. `import` and `include` targets are resolved relative to the importing file and use the same workspace-safe path rules. Workspace diagnostics, symbols, definitions, references, and rename are limited to files in that workspace; references return at most three results. Static analysis does not run scripts or evaluate runtime behavior.
+Open documents are authoritative overlays: current editor text, including unsaved text, replaces the matching disk file. External changes do not overwrite an open overlay. After `textDocument/didClose`, the readable disk version becomes authoritative again.
 
-A `use` line suppresses diagnostics for that document. This is a protocol behavior, not evidence that imported files were checked.
+Only local `file://` URIs (or `localhost`) are accepted. Resolved paths must remain lexically under the workspace root. Existing paths are canonicalized; unsaved paths need not exist. Other URI authorities and outside-root paths are ignored for workspace analysis. `import` and `include` resolve relative to the importing file under the same rules.
 
-## Supported scope and non-goals
+## Positions, diagnostics, and watching
 
-Shelly LSP v1 provides:
+Clients must send LSP UTF-16 character offsets, not byte offsets. Shelly clamps malformed or stale internal byte spans to safe UTF-8 boundaries.
 
-- push diagnostics for open documents;
-- completion and hover;
-- workspace-scoped definition and references;
-- document and workspace symbols; and
-- rename edits for supported names.
+Diagnostics are pushed after `didOpen` and `didChange` through `textDocument/publishDiagnostics`. The target document and other open workspace files use their overlays; closing a document republishes diagnostics for its disk fallback when readable. A `use` line suppresses diagnostics for that document; it does not prove imported files were checked.
 
-Diagnostics are sent as `textDocument/publishDiagnostics` notifications after `didOpen` and `didChange`. The diagnostic pass includes the current open-document overlay for the target and other open workspace files, mapped through local `file://` URIs; unsaved buffers therefore take precedence over disk content. Closing a document republishes diagnostics for its disk fallback when available. The server watches workspace `.shelly` and `.shl` files and refreshes its disk-backed workspace view when handling subsequent LSP messages. The watcher queue is bounded and non-blocking: overflow triggers a full reconciliation, while an incomplete scan preserves the last known state rather than treating inaccessible paths as deletions. It does not provide pull or workspace diagnostics. Open-document overlays remain authoritative until close.
+The server watches workspace `.shelly` and `.shl` files and refreshes its disk-backed view while handling later LSP messages. The watcher queue is bounded and non-blocking. Overflow triggers full reconciliation; an incomplete scan preserves the last known state instead of treating inaccessible paths as deletions. Open overlays remain authoritative until close.
 
-Formatting is supported through `textDocument/formatting`. It returns a full-document edit using the same safe transformations as `shelly fmt`; malformed documents return no formatting edit. Clients should apply the returned full-document edit and preserve UTF-16 ranges. The server also exposes exactly two constrained code actions: `Format document` (`source.format`) and `Replace legacy use with import` (`quickfix`) for a top-level line beginning with `use `. Code actions are deliberately narrow and do not execute code.
+## Supported features and limits
 
-Rename is deliberately limited: a rename whose `newName` contains `x` is refused with JSON-RPC error `-32602` (`ambiguous rename`). Unknown requests with an ID receive error `-32601` (`Method not found`).
+| Feature | Boundary |
+| --- | --- |
+| Diagnostics | Push notifications; no pull or workspace diagnostics |
+| Completion and hover | Static analysis only |
+| Definitions, references, symbols | Workspace-scoped; references return at most three results |
+| Rename | Supported names only; a `newName` containing `x` returns `-32602` (`ambiguous rename`) |
+| Formatting | Full-document edit using the same safe transformations as `shelly fmt` |
+| Code actions | Exactly `Format document` (`source.format`) and top-level `use ` replacement (`quickfix`) |
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+Malformed documents return no formatting edit. Clients should apply the full-document edit while preserving UTF-16 ranges. Unknown requests with an ID return `-32601` (`Method not found`). Code actions are narrow and never execute code.
 
-## Concrete protocol exchange
+## Minimal protocol lifecycle
 
-Messages use normal LSP `Content-Length` framing. A minimal lifecycle is:
+Messages use normal LSP `Content-Length` framing:
 
 ```text
 --> {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}
 <-- {"jsonrpc":"2.0","id":1,"result":{"capabilities":{"textDocumentSync":1}}}
 --> {"jsonrpc":"2.0","method":"initialized","params":{}}
---> {"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///demo.shelly","languageId":"shelly","version":1,"text":"break\n"}}}
-<-- {"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///demo.shelly","diagnostics":[{"range":{"start":{"line":0,"character":0},"end":{"line":0,"character":0}},"severity":1,"message":"unexpected break","source":"shelly"}]}}
---> {"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":"file:///demo.shelly","version":2},"contentChanges":[{"text":"shellout \"ok\"\n"}]}}
-<-- {"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///demo.shelly","diagnostics":[]}}
 --> {"jsonrpc":"2.0","id":2,"method":"shutdown","params":null}
 <-- {"jsonrpc":"2.0","id":2,"result":null}
 --> {"jsonrpc":"2.0","method":"exit","params":null}
 ```
 
-See the [Language Guide](language.md) for syntax and the [editor support quickstart](editor-support.md) for client setup.
+## Related guides
+
+- [Formatting](formatting.md) — command-line formatting and `fmt --check`.
+- [Editor support](editor-support.md) — client configuration.
+- [Language guide](language.md) — syntax and static analysis context.

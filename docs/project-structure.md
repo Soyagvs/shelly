@@ -1,10 +1,10 @@
-# Project structure
+# 🚀 Choose a Shelly project structure
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+Start with one runnable script, then adopt the manifest and folders that make a growing project easier to understand.
 
-## Initialize a project
+[Documentation index](index.md) · [Language guide](language.md) · [Commands and input](commands.md) · [Editor support](editor-support.md)
+
+## 🚀 Initialize a project
 
 A single `.shelly` file is enough when you have one small script and do not need project metadata, tests, or a standard layout. Run it directly:
 
@@ -47,14 +47,14 @@ Specialized folders are optional, not prescribed. A project may add folders such
 
 Import and include paths are resolved relative to the file that contains the statement. For example, a file in `modules/release/` uses `../shared.shelly` to reach another module under `modules/`.
 
-## Which command should I use?
+## 🧭 Which command should I use?
 
 - **Run one file directly:** `shelly path/to/script.shelly`. This is the simplest choice and does not need `Shelly.toml`.
 - **Run the project entry point:** `shelly run`. This reads `Shelly.toml` in the current directory and uses `[project].entry`.
 - **Check without executing:** `shelly check path/to/script.shelly` checks an explicitly named file and does not need a manifest. `shelly check` with no path reads `Shelly.toml` in the current directory.
 - **Run project tests:** `shelly test`. This uses the test settings in `Shelly.toml` in the current directory, so a manifest is required.
 
-## Shelly.toml
+## 📖 Shelly.toml
 
 The required `[project]` fields are `name`, `version`, and `entry`. The optional `[test]` table controls test discovery: `directory` defaults to `tests`, and `pattern` defaults to `*_test.shelly`.
 
@@ -102,7 +102,7 @@ The separator is mandatory before forwarded arguments; `shelly run --dry-run` is
 shelly --dry-run main.shelly
 ```
 
-## Tests
+## ✅ Tests
 
 Create a self-contained test script at `tests/name_test.shelly` after initialization. It defines the values it uses, but it still runs inside the Shelly project and its `Shelly.toml` when invoked by `shelly test`:
 
@@ -119,7 +119,7 @@ Tests are ordinary Shelly scripts. `shelly test` recursively discovers `*_test.s
 
 `assertEqual` compares values, `assertTrue` requires a truthy value, `assertFalse` requires a falsey value, and `assertContains` checks that a collection contains a value.
 
-## Rules
+## 🛠️ Rules
 
 - Keep the entry point obvious: use `main.shelly` for project-style scripts.
 - Use `import` for reusable files that `export` constants or functions.
@@ -128,7 +128,7 @@ Tests are ordinary Shelly scripts. `shelly test` recursively discovers `*_test.s
 - Put command entry points in `scripts/`; keep shared code outside them.
 - Add `modules/` or domain folders only when generic folders stop being clear.
 
-## Tiny scripts
+## 🚀 Tiny scripts
 
 Use one file when the script has one job and no shared helpers.
 
@@ -144,7 +144,7 @@ if exists $TARGET
 end
 ```
 
-## Small modular projects
+## 📖 Small modular projects
 
 Use `main.shelly` plus a few imported modules when helpers become reusable.
 
@@ -177,7 +177,7 @@ export fn printReport($path) {
 }
 ```
 
-## Medium projects
+## 📖 Medium projects
 
 Separate startup setup from reusable modules. `setup/` files are good `include` targets because they intentionally execute.
 
@@ -219,7 +219,7 @@ import "../consts/app.shelly"
 shellout "cleaning $APP_NAME"
 ```
 
-## Advanced projects
+## 🛠️ Advanced projects
 
 For large automation, group by domain. Keep each domain's public API in exported files, and keep entry points thin.
 
@@ -261,7 +261,7 @@ export fn planRelease($mode) {
 }
 ```
 
-## Import versus include
+## 📖 Import versus include
 
 Use structure to make intent visible.
 
@@ -281,7 +281,3 @@ shellout "$heading in $mode"
 ```
 
 In plain language, `import` brings reusable exported values or functions into a script without treating the imported file as startup code. Use `include` when you deliberately want the target file to run as part of the current script and share its scope. See [Modules](modules.md) for the detailed behavior and API rules.
-
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>

@@ -1,37 +1,47 @@
-# Test read mocks
+# Test scripts with virtual file reads
 
-Shelly v1 supports one test-only mock effect:
+Mocks are test-only declarations for replacing a supported read with known text. They help a `shelly test` file exercise logic without creating or mutating the requested file.
+
+## Quick path
 
 ```shelly
 mock read "fixtures/input.txt" returns "virtual content"
 read "./fixtures/input.txt" -> $text
 ```
 
-The declaration must use a literal path and a literal response. It is valid only while a file is launched by `shelly test`; ordinary `shelly script.shelly`, `shelly run`, and `shelly --dry-run script.shelly` reject `mock` declarations. Each test file gets a fresh registry; declarations never leak to another test file.
+The declaration uses a literal path and literal response. It is valid only while the file is launched by `shelly test`; ordinary script execution, `shelly run`, and `shelly --dry-run script.shelly` reject `mock` declarations.
 
-## Matching and safety
+## Matching rules
 
-Read mock keys use the same script-relative path normalization as `read`: `.` segments are removed and `..` moves to the parent. Matching is exact after that normalization; variables, wildcards, prefixes, and filesystem aliases do not match. A test `read` without an exact matching mock fails closed before filesystem access, with an error naming the safe requested key. A matching mock returns its virtual text and never creates or mutates a file.
-
-Valid:
+- Each test file gets a fresh registry; declarations do not leak between files.
+- Paths use the same script-relative normalization as `read`: `.` segments disappear and `..` moves to the parent.
+- Matching is exact after normalization. Variables, wildcards, prefixes, and filesystem aliases do not match.
+- A test read without an exact mock fails closed before filesystem access and names the safe requested key.
+- A matching mock returns virtual text and does not create or mutate a file.
 
 ```shelly
 mock read "data/../input.txt" returns "ok"
 read "input.txt" -> $value
 ```
 
-Invalid:
+## Invalid declarations
 
 ```shelly
-mock read $path returns "ok"       # target must be a literal
-mock read "input.txt" returns $x   # response must be a literal
-mock read "input.txt" returns "ok" # duplicate keys are rejected
+mock read $path returns "ok"       # path must be literal
+mock read "input.txt" returns $x   # response must be literal
+mock read "input.txt" returns "ok" # duplicate normalized key
 ```
 
-(The last example is invalid only when the same normalized key is declared twice.)
+A duplicate normalized key is rejected only when the same key is declared twice.
 
-## Scope and limitations
+## Limits and boundaries
 
-V1 supports only `read` and the text response above. `size`, `exists`, `files`, archive operations, `shell`, `watch`, temporary paths, and stdin are unsupported and still use their normal behavior (or their separate test restrictions). HTTP and command mocks are separate features and are not read mocks. Mocking does not broaden filesystem permissions or alter normal scripts.
+Shelly v1 supports only `read` mocks with text responses. `size`, `exists`, `files`, archive operations, `shell`, `watch`, temporary paths, and stdin are not covered by read mocks and retain their normal behavior or separate test restrictions. HTTP and command mocks are not read mocks. Mocking does not broaden filesystem permissions or change ordinary scripts.
 
-Dry-run remains independent: it records supported effects instead of performing them, but is not a mock environment and does not enable test-only declarations.
+Dry-run is independent: it records supported effects instead of performing them and does not enable test-only declarations.
+
+## Related guides
+
+- [Dry-run and audit logs](dry-run.md) — planning without execution.
+- [Testing commands](commands.md) — command-line entry points.
+- [Files and paths](files.md) — real filesystem operations.

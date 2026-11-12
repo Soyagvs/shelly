@@ -1,6 +1,8 @@
-# Native pipelines
+# Capture output from direct-argv process pipelines
 
-Shelly supports block-form native pipelines:
+Use a `pipeline` block to pass buffered stdout through native process stages and capture the final stdout in one variable. This v1 feature is deliberately not a shell: every stage must be a direct-argv `command` line.
+
+## Quick path
 
 ```shelly
 pipeline -> $result
@@ -10,36 +12,11 @@ end
 shellout $result
 ```
 
-Each stage must be a direct-argv `command` line. Shelly passes only the stage's
-stdout to the next stage's stdin; stderr is never chained. The final stdout is
-captured in the destination variable. Pipeline execution uses pipefail
-semantics: a non-zero stage fails the whole pipeline, including when a later
-stage would otherwise succeed.
+Shelly passes only each stage's stdout to the next stage's stdin. Stderr is never chained. The final stdout is captured in the destination variable.
 
-## Errors and safety
+## Stage rules
 
-A failure identifies the pipeline stage and command, and retains captured
-stdout/stderr in structured process-error details for error handlers and
-reporting. Timeouts apply to each stage and inherit an enclosing `timeout`.
-Deferred blocks still run during unwinding. `shell` is intentionally forbidden
-inside a pipeline: shell parsing, expansion, and redirection are not part of
-this feature. Use explicit argv arguments instead.
-
-Pipeline arguments use Shelly's normal command-atom rules; they are not shell
-source. No shell operators, redirections, or implicit environment expansion are
-supported. stdout is buffered between stages, so this v1 implementation is not
-streaming and is unsuitable for unbounded output. Each stage's stdin is closed
-immediately after its buffered input is written, including when that input is
-empty, so stages receive EOF deterministically.
-
-## Dry run and audit
-
-`--dry-run` records the planned direct-argv process stages and does not spawn
-processes. The result variable is marked unavailable, because no output exists
-to capture. Audit output therefore describes the plan rather than pretending a
-pipeline ran.
-
-## Examples
+Each stage must be a direct-argv `command` line. Pipeline arguments use Shelly command-atom rules, not shell source.
 
 ```shelly
 pipeline -> $lines
@@ -49,7 +26,13 @@ end
 shellout $lines
 ```
 
-A failing stage is reported instead of being hidden:
+`shell` is forbidden inside a pipeline. Shell parsing, expansion, operators, redirections, and implicit environment expansion are not supported. Use explicit argv arguments instead. A stage that tries to capture output or use shell syntax is rejected.
+
+## Buffering and failure
+
+Stages run one at a time with stdout buffered between stages, so this v1 implementation is not streaming and is unsuitable for unbounded output. Shelly writes the buffered input to each stage, closes stdin—even for empty input—and waits for EOF deterministically.
+
+Pipefail semantics apply: any non-zero stage fails the whole pipeline, even if a later stage succeeds. The error identifies the stage and command and retains captured stdout and stderr in structured process-error details for handlers and reporting.
 
 ```shelly
 pipeline -> $result
@@ -58,5 +41,16 @@ pipeline -> $result
 end
 ```
 
-This reports stage 1's status and captured output. It does not permit replacing
-`command` with `shell`.
+This reports stage 1's status and captured output; replacing `command` with `shell` is not allowed.
+
+## Timeouts and dry-run
+
+A timeout after a stage applies to that stage. An enclosing [timeout](timeouts.md) supplies an inherited deadline, and deferred blocks still run while the error unwinds. There is no streaming or unbounded-output exception to these limits.
+
+With `--dry-run`, Shelly validates the direct-argv stages and records planned process actions without spawning them. The destination variable is unavailable because no output exists to capture; the audit log describes the plan, not a completed pipeline. See [Dry-run and audit logs](dry-run.md).
+
+## Related guides
+
+- [Commands](commands.md) — direct process invocation.
+- [Timeouts](timeouts.md) — command and block deadlines.
+- [Error handling](errors.md) — structured process failures.

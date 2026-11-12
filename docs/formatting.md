@@ -1,59 +1,50 @@
-# Shelly formatting
+# Format Shelly code safely
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+Use `shelly fmt` to normalize `.shelly` and `.shl` layout without changing program meaning. This page covers the command-line workflow and its boundary with editor formatting.
 
-Shelly includes a safe formatter for `.shelly` and `.shl` source files. It changes layout, not program meaning.
+## 🚀 Quick path
 
-## Format a file
+Format one file:
 
 ```sh
 shelly fmt path/to/script.shelly
 ```
 
-The accepted argument order is:
+Check formatting in CI without writing:
 
-```text
-shelly fmt [--check] <path>
+```sh
+shelly fmt --check path/to/script.shelly
 ```
 
-`--check` must come before the path. The path must be the final argument; `shelly fmt <path> --check` is rejected with the usage message. Exactly one path is required.
+The accepted form is `shelly fmt [--check] <path>`: `--check` comes before the path, exactly one path is required, and the path must be last.
 
-Without `--check`, the formatter rewrites the file only when the result differs. With `--check`, it never writes: it exits successfully when the file is already formatted and exits unsuccessfully with a message telling you to run `shelly fmt <path>` when it differs. Read, parse, and write failures are errors.
-
-## What is changed
+## What changes
 
 The formatter:
 
-- normalizes line endings to LF;
+- converts line endings to LF;
 - trims surrounding whitespace from ordinary code lines;
-- uses four spaces per nested block;
-- preserves a final newline (and adds one to non-empty output); and
-- preserves strings, comments, multiline strings, and expression text rather than interpreting or rewriting them.
+- uses four spaces for nested blocks; and
+- preserves a final newline for non-empty output.
 
-It does not rename identifiers, evaluate expressions, reorder statements, change literals, expand globs, or otherwise transform program logic. Formatting is idempotent: formatting an already formatted file makes no further change.
+Strings, comments, multiline strings, and expression text are preserved rather than interpreted or rewritten. Formatting is idempotent: an already formatted file does not change again.
 
-Formatting is conservative and safe: the formatter parses enough structure to balance blocks and recognize quoted/commented text before writing. It refuses malformed input, including unterminated quoted or multiline strings, unterminated comments or blocks, and unmatched block terminators. A malformed file is not mutated, even without `--check`.
+> **Note:** Formatting never renames identifiers, evaluates expressions, reorders statements, changes literals, expands globs, or otherwise changes program logic.
 
-## UTF-8 and limits
+## Checks and errors
 
-Source files are read as UTF-8. A file that is not valid UTF-8 is rejected and is not rewritten. Unicode text in valid strings and comments is preserved; positions used by the LSP are UTF-16 positions.
+Without `--check`, Shelly rewrites the file only when the formatted result differs. With `--check`, it never writes: an already formatted file succeeds; a difference fails with a message directing you to run `shelly fmt <path>`.
 
-There is no configured line-count, character-count, or file-size limit in the formatter. Practical limits are the available memory and filesystem capacity. The LSP's workspace watcher uses a bounded event queue; if it overflows, it performs a full workspace reconciliation rather than silently accepting a partial view.
+Read, parse, and write failures are errors. Malformed input—including unterminated strings, multiline strings, or comments, unterminated blocks, and unmatched block terminators—is rejected and not mutated, even without `--check`.
 
-## Examples
+## Encoding and limits
 
-Format and rewrite a file:
+Source is read as UTF-8. Invalid UTF-8 is rejected and not rewritten. Unicode in valid strings and comments is preserved. There is no configured line-count, character-count, or file-size limit; practical limits are available memory and filesystem capacity.
 
-```sh
-shelly fmt examples/hello.shelly
-```
+Editor positions use UTF-16 because that is the LSP convention. The formatter itself operates on the document text; see [LSP reference](lsp.md) for overlay, URI, and watcher boundaries.
 
-Check it in CI without changing it:
+## Related guides
 
-```sh
-shelly fmt --check examples/hello.shelly
-```
-
-For editor formatting through `shelly-lsp`, see the [LSP reference](lsp.md).
+- [LSP reference](lsp.md) — editor formatting and document/workspace behavior.
+- [Editor support](editor-support.md) — client setup.
+- [Language guide](language.md) — Shelly syntax.

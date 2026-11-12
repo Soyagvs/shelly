@@ -42,12 +42,13 @@ chmod +x "$MOCK_BIN/uname" "$MOCK_BIN/curl"
 PAYLOAD=$TEST_ROOT/payload
 mkdir -p "$PAYLOAD"
 printf '#!/bin/sh\nexit 0\n' > "$PAYLOAD/shelly"
-chmod +x "$PAYLOAD/shelly"
+printf '#!/bin/sh\nexit 0\n' > "$PAYLOAD/shelly-lsp"
+chmod +x "$PAYLOAD/shelly" "$PAYLOAD/shelly-lsp"
 ARCHIVE=$TEST_ROOT/shelly-linux-x86_64.tar.gz
-tar -czf "$ARCHIVE" -C "$PAYLOAD" shelly
+tar -czf "$ARCHIVE" -C "$PAYLOAD" shelly shelly-lsp
 
 run_install() {
-  HOME=$1 INSTALL_DIR=$2 SHELL=$3 PATH="$4" SHELLY_TEST_ARCHIVE="$ARCHIVE" \
+  HOME=$1 INSTALL_DIR=$2 SHELL=$3 PATH="$4" SHELLY_VERSION=0.0.0 SHELLY_TEST_ARCHIVE="$ARCHIVE" \
     sh "$ROOT/install.sh" >"$5" 2>&1
 }
 

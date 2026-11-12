@@ -1,10 +1,8 @@
-# While loops
+# Repeat while a condition is true
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+Use `while` when the next iteration depends on a condition evaluated before the loop body.
 
-`while` repeats a block while its condition is true.
+## 🚀 Quick path
 
 ```shelly
 $count = 0
@@ -17,14 +15,9 @@ end
 shellout "Done at $count"
 ```
 
-## Conditions
+## 📖 Conditions and rules
 
-A `while` condition follows the same rules as an [if condition](conditionals.md):
-
-- A value can be tested for truthiness, or compared with `==`, `!=`, `>`, `>=`, `<`, or `<=`.
-- `not`, `and`, and `or` are supported and short-circuit in that order.
-- Parentheses group expressions and may be nested.
-- Predicates include `exists`, `contains`, and `matches`; selectors can also produce a truthy or falsey result.
+A `while` condition follows the same rules as an [if condition](conditionals.md): truthiness, comparisons, predicates, `not`, `and`, `or`, and nested parentheses. Conditions short-circuit. Selectors can also produce a truthy or falsey result.
 
 ```shelly
 while ($enabled and not contains $blocked $name)
@@ -35,15 +28,7 @@ while ($enabled and not contains $blocked $name)
 end
 ```
 
-An empty condition, empty `()`, unmatched parentheses, malformed text, missing predicate arguments, unterminated regex, or invalid regex is rejected.
-
-## Rules and scope
-
-- `while condition` starts the loop; `end` closes it.
-- The condition is checked before every iteration. If it is false initially, the body is skipped.
-- A `while` loop has no loop-variable binding and creates no scope. Assignments made in its body persist after the loop.
-- `break` exits the nearest loop; `continue` skips to the next iteration of the nearest loop.
-- `if`, `repeat`, `while`, and `for` blocks may be nested. A nested loop's control statements affect only that nested loop.
+The condition is checked before every iteration; a false initial condition skips the body. The loop has no loop-variable binding and creates no scope, so assignments persist. Nested control-flow blocks are supported.
 
 ```shelly
 $outer = 0
@@ -57,36 +42,34 @@ end
 shellout "$outer" # 2
 ```
 
-A loop may execute at most 10,000 iterations. The 10,000th iteration is allowed; if the condition would start an 10,001st iteration, execution stops with an iteration-limit error rather than running that body. `break` can end the loop before the limit.
+`break` exits the nearest loop and `continue` advances its next iteration. Both are errors outside a loop.
 
-## Examples
+## ⏱️ Iteration limit
 
-### Truthy loop
+A loop may execute at most 10,000 iterations. The 10,000th is allowed; attempting an 10,001st iteration stops with an iteration-limit error before its body runs. `break` can end the loop earlier.
+
+## ✅ More examples
 
 ```shelly
 $enabled = true
-
 while $enabled
     shellout "once"
     $enabled = false
 end
 ```
 
-### Predicate and selector condition
-
 ```shelly
 $numbers = [1, 3, 5]
 $limit = 2
-
 while $numbers[>$limit]
     shellout "has values above $limit"
     $limit = $limit + 10
 end
 ```
 
-## Invalid forms
+## ⚠️ Errors
 
-These forms are rejected:
+An empty condition, empty `()`, unmatched parentheses, malformed text, missing predicate arguments, unterminated regex, invalid regex, or missing `end` is rejected.
 
 ```text
 while                 # empty condition
@@ -101,6 +84,7 @@ break                 # outside a loop
 continue              # outside a loop
 ```
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+## Related guides
+
+- [Conditionals](conditionals.md) and [Predicates](predicates.md) — condition syntax and checks.
+- [Repeat loops](repeat.md) and [For loops](for.md) — other loop forms.

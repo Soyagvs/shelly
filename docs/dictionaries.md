@@ -1,6 +1,27 @@
-# Dictionaries
+# Store keyed values in dictionaries
 
-A dictionary stores keyed values. Values may be scalars, lists, or other dictionaries. Lists can also contain dictionaries and nested lists; see [Lists](lists.md) for list indexing and list-specific mutation rules.
+Dictionaries map keys to scalars, lists, and other dictionaries. This guide covers access paths, copying, mutation, and dictionary helpers.
+
+## 🚀 At a glance
+
+```shelly
+$user = {
+    name: "Ada"
+    age: 32
+    tags: ["language", "design"]
+    address: { city: "Buenos Aires" }
+}
+
+shellout $user.name
+shellout $user.address.city
+```
+
+- Use dot access for simple identifier keys.
+- Use brackets for quoted, dynamic, spaced, or punctuated keys.
+- Paths can mix dictionary steps and one-based list indexes.
+- Only a mutable lowercase root can be mutated.
+
+## Create, access, and copy
 
 ```shelly
 $user = {
@@ -12,13 +33,23 @@ $user = {
     address: { city: "Buenos Aires" }
 }
 
-shellout $user.name
 shellout $user["first-name"]
-shellout $user.address.city
 shellout $user.tags[1]
 ```
 
-Assigning a dictionary or list copies its value; it does not create an implicit alias. Changing one variable does not change the other. Empty dictionaries are false in conditions; non-empty dictionaries are true.
+Dot keys must be simple identifiers. Brackets accept quoted keys or an expression whose value is the key:
+
+```shelly
+$key = "first-name"
+$country = "argentina"
+$data = { pais: { argentina: { city: "Buenos Aires" } } }
+
+shellout $user[$key]
+shellout $data.pais[$country].city
+shellout $data["pais"]["argentina"].city
+```
+
+Assigning a dictionary or list copies its value. Empty dictionaries are false in conditions; non-empty dictionaries are true:
 
 ```shelly
 $empty = {}
@@ -32,62 +63,47 @@ set $first.name "Grace"
 # $second.name is still "Ada"
 ```
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+## Paths and mutation
 
-## Keys and paths
+A path's intermediate segments must already exist and have the required collection type. Lists do not auto-expand. Mutation commands use whitespace-separated arguments; a top-level comma is rejected.
 
-Use dot access for simple identifier keys. Use brackets for quoted keys or dynamic keys. A bracket key is a string or an expression whose value is used as the key. Paths can mix dots, dictionary brackets, and list indexes, and can reach nested values.
-
-```shelly
-$key = "first-name"
-$country = "argentina"
-$data = { pais: { argentina: { city: "Buenos Aires" } } }
-
-shellout $user[$key]
-shellout $data.pais[$country].city
-shellout $data["pais"]["argentina"].city
-```
-
-Dot keys must be simple identifiers. Use brackets for spaces, punctuation, reserved words, or dynamic keys. Quoted bracket keys preserve commas and spaces, for example `$data["a, key"]`. A path's intermediate segments must already exist and have the required collection type: a dictionary key for a dictionary step, or an existing one-based list index for a list step. Lists do not auto-expand.
-
-Mutation commands use whitespace-separated arguments. A top-level comma is rejected, while commas inside quoted values and quoted bracket keys are literal. For example, `set $user.name "Ada", $user.age 32` is invalid; use one command per line. `set` creates or replaces a terminal dictionary key, `delete` removes an existing terminal key, and `set` may store a scalar, list, or dictionary there. `append` can target a nested list and accepts scalar, list, or dictionary values; `prepend` remains top-level-only and scalar-only. See [Lists](lists.md) for the capability table and list mutation details.
-
-## Mutation
-
-Only a mutable, lowercase variable can be the root of a mutation. A path may traverse nested dictionaries and lists, but every traversed intermediate value must already exist. Mutation through a constant or an expression is rejected.
-
-`set PATH VALUE` creates the terminal dictionary key when it is missing, or replaces it when it already exists. It does not create missing intermediate dictionaries, list indexes, or list entries. Assignment with a path (`$dict.key = VALUE`) replaces an existing terminal key; it does not create a missing key. Both forms replace the value at that terminal location rather than merging dictionaries. `delete PATH` removes an existing terminal dictionary key and errors when the key is missing. List insertion, replacement, and deletion follow the rules in [Lists](lists.md).
+- `set PATH VALUE` creates or replaces a terminal dictionary key.
+- Assignment with a path replaces an existing terminal key but cannot create one.
+- `delete PATH` removes an existing terminal dictionary key.
+- `append` can target a nested list and accepts scalar, list, or dictionary values.
+- `prepend` is top-level-only and scalar-only; see [Lists](lists.md).
 
 ```shelly
 $data = { profile: {}, "a, key": {items: ["old"]} }
-set $data.profile.name "Ada"       # creates name
-$data.profile.name = "Grace"       # replaces name
+set $data.profile.name "Ada"
+$data.profile.name = "Grace"
 set $data["a, key"].items[1] "x, y"
 append $data["a, key"].items "z z"
 delete $data["a, key"].items[1]
 set $data.profile {
     name: "Ada"
     age: 32
-} # replaces the whole value
-# set $data.missing.name "x"        # error: missing intermediate key
-# $data.profile.missing = "x"       # error: assignment cannot create a key
+}
 delete $data.profile.name
 ```
 
-Dictionary mutation changes only the targeted mutable root and its reachable value. It does not mutate a separately assigned copy, and it does not change an unrelated dictionary or list. `append` can mutate a list reached through a dictionary path, subject to the value and root rules in [Lists](lists.md); dictionary paths do not make list `prepend`, filters, or scalar-list helpers applicable.
+The following fail because an intermediate key is missing or assignment cannot create a key:
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+```text
+set $data.missing.name "x"
+$data.profile.missing = "x"
+```
+
+Mutation through a constant or expression is rejected. Dictionary paths do not make list `prepend`, filters, or scalar-list helpers applicable.
 
 ## Helpers
 
-- `keys $dict -> $keys` returns dictionary keys in deterministic order.
-- `values $dict -> $values` returns values in that same order; nested values remain dictionaries or lists.
-- `isDict $value -> $ok` reports whether a value is a dictionary.
-- `len $dict` returns the number of keys. (`len` also supports strings and lists; see [helpers](helpers.md).)
+| Helper | Result |
+| --- | --- |
+| `keys $dict -> $keys` | Dictionary keys in deterministic order. |
+| `values $dict -> $values` | Values in the same order; nested values stay nested. |
+| `isDict $value -> $ok` | Whether the value is a dictionary. |
+| `len $dict -> $count` | Number of keys. |
 
 ```shelly
 $data = { b: [2, 1], a: { name: "Ada" } }
@@ -100,4 +116,10 @@ len $data -> $count
 shellout $count
 ```
 
-For conditions and other value behavior, see [Conditionals](conditionals.md) and [Variables](variables.md). For JSON conversion of nested dictionaries and lists, see [JSON](json.md). For command argument and mutation syntax, see [Commands](commands.md).
+`len` also supports strings and lists; see [Helpers](helpers.md). For JSON conversion, see [JSON helpers](json.md). For conditions and variable behavior, see [Conditionals](conditionals.md) and [Variables](variables.md).
+
+## Related topics
+
+- [Lists](lists.md) — indexes, selectors, and collection mutation.
+- [JSON helpers](json.md) — nested dictionary conversion.
+- [Commands](commands.md) — command argument and capture syntax.

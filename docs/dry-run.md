@@ -1,31 +1,48 @@
-# Dry-run and audit logs
+# Review planned script effects without running them
 
-Retry blocks execute their body once during dry-run. They do not repeat effects or claim repeated successful executions in the audit log.
+Use `--dry-run` to validate a Shelly script and review its planned actions in execution order without performing script effects. Add an audit log when you need machine-readable JSON Lines for review.
 
-Use `shelly --dry-run SCRIPT` to validate a script and print its planned actions in execution order. Parallel blocks retain serial audit/planning behavior; real execution uses bounded task-local concurrency. No script effect is performed; normal reads used to parse and validate the script remain permitted. A final summary is printed after successful execution.
+## Quick path
 
-## Audit files
+```sh
+shelly --dry-run examples/deploy.shelly staging
+shelly --dry-run --audit-log review.jsonl examples/deploy.shelly staging
+```
 
-`shelly --dry-run --audit-log PATH SCRIPT [ARGS...]` additionally writes JSON Lines. `--audit-log` is accepted only immediately after `--dry-run`, requires one path, and cannot be repeated or placed after the script. The audit file is the sole dry-run filesystem write. It is opened with create-new semantics: an existing path is never overwritten. Open and write failures are reported as errors. Terminal records are written first; Shelly then attempts `sync_all()`. If synchronization fails, Shelly exits with an error even when a terminal `complete` record is already present. This does not guarantee durability against OS, filesystem, storage-device, or hardware failures, and the exact guarantees depend on the platform and filesystem. Failed runs write and sync a terminal `error` record when possible, never a `complete` record. The file is created during preflight, so a later script error can leave a partial log; a script that fails before preflight creates no log.
+The audit option must appear immediately after `--dry-run`, takes exactly one path, and must precede the script path. Dry-run accepts a direct script path; top-level commands such as `init`, `fmt`, `update`, `test`, and project `run` are rejected.
 
-Each line is one serde-serialized object:
+## What dry-run does
+
+- Validates syntax, paths, command arguments, URLs, and other safe observations.
+- Prints planned actions in execution order.
+- Plans or blocks mutations, archive creation, temporary paths, process and shell execution, HTTP requests, logging destinations, interactive input, `wait`, and `watch` without performing them.
+- Keeps parallel planning serial and marks execution-only results, such as pipeline output and parallel results, unavailable.
+- Runs retry bodies once for planning; it does not repeat effects or claim repeated successes.
+
+Normal reads needed to parse and validate a script remain allowed. Dry-run does not follow command output or create a mock environment. Extensions can still perform unsupported behavior, so review the explicit action list and audit file.
+
+## Audit log contract
+
+`--audit-log PATH` creates a JSON Lines file with create-new semantics. An existing path is never overwritten. The file is the sole dry-run filesystem write and is created during preflight, so a later script error can leave a partial log; a failure before preflight creates no log.
+
+Each record has `schema: "shelly.audit.v1"`, `version: 1`, and a monotonic `seq`. Action records use `event: "action"` and `status: "planned"`; a successful run ends with `event: "summary"` and `status: "complete"`. Failed runs write an `error` terminal record when possible and never a `complete` record.
 
 ```json
 {"schema":"shelly.audit.v1","version":1,"seq":1,"event":"action","action":"write","status":"planned","data":{"path":"/tmp/out"}}
 {"schema":"shelly.audit.v1","version":1,"seq":2,"event":"summary","action":"summary","status":"complete","data":{"counts":{"write":1}}}
 ```
 
-`seq` is monotonic and records match human output order. Action data identifies only the command program and argument count; raw command arguments are never recorded. HTTP method and redacted URL, paths, capture names, and blocking reasons may also be recorded. Payloads, shell source, HTTP bodies and headers, credentials, environment values, and captured output are never audit data. Captures unavailable in dry-run are reported as unavailable rather than fabricated, including values that would otherwise be stale.
+Action data is deliberately bounded: command records identify the program and argument count, not raw arguments. HTTP method and redacted URL, paths, capture names, and blocking reasons may be recorded. Payloads, source, HTTP bodies and headers, credentials, environment values, and captured output are not audit data.
 
-## What is blocked
+## Durability and errors
 
-File mutation, archive creation, temporary paths, process execution, shell execution, HTTP requests, logging destinations, interactive input, `wait`, and `watch` are planned or blocked without performing effects. Syntax, paths, command arguments, URLs, and other safe observations are still validated. Read-only observations may inspect the script and required metadata, but dry-run never writes those observations or follows a command's output. Unsupported top-level dry-run commands (`init`, `fmt`, `update`, `test`, and project `run`) are rejected; dry-run is for a script path.
+Terminal records are written first, then Shelly attempts `sync_all()`. A synchronization failure is an error even if a `complete` record is already present. Successful synchronization is not a guarantee against OS, filesystem, storage-device, or hardware failure; the exact durability depends on the platform and filesystem. Open and write failures are reported as errors.
 
-Errors and parser limits are reported normally. Dry-run does not promise that external state remains unchanged if a script invokes unsupported behavior through an extension; use the audit log and the explicit action list for review.
+> **Note:** An audit log proves what Shelly recorded and synchronized; it does not prove that planned actions were safe on every external system.
 
-Examples:
+## Related guides
 
-```sh
-shelly --dry-run examples/deploy.shelly staging
-shelly --dry-run --audit-log review.jsonl examples/deploy.shelly staging
-```
+- [Pipelines](pipeline.md) — direct-argv process stages and dry-run output.
+- [Parallel tasks](parallel.md) — bounded concurrency and planned task records.
+- [Testing with mocks](mocks.md) — test-only virtual reads, separate from dry-run.
+- [Error handling](errors.md) — catchable runtime failures.

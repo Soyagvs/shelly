@@ -1,10 +1,8 @@
-# Functions
+# Build reusable Shelly functions
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+Functions package behavior into named, reusable blocks. Define them with `fn`, invoke them with `call`, and optionally return one scalar value.
 
-Functions define reusable blocks with `fn name(...) {` and `}`.
+## 🚀 Quick path
 
 ```shelly
 fn greet($name, $prefix = "Hola") {
@@ -15,24 +13,29 @@ call greet("Ada")
 call greet("Ada", "Hello")
 ```
 
-## Rules
+## 📖 Syntax and rules
 
-- Function definitions start with `fn name(...) {` and close with `}`.
-- Functions are called with `call name(args)`.
+```shelly
+fn name($required, $optional = "default") {
+    return $optional
+}
+
+call name("value") -> $result
+```
+
+- Definitions start with `fn name(...) {` and close with `}`.
+- Calls use `call name(args)`; arguments are positional and comma-separated.
 - Use `fn name() {` and `call name()` when there are no parameters.
-- Parameters use `$` variable syntax and arguments are positional.
-- Definitions and calls use comma-separated values inside parentheses.
-- Default parameters must come after all required parameters. A default is used when that argument is omitted.
-- Function scope is local by default; values passed to parameters and values copied from outer scope are independent values.
-- Use `global` to copy selected outer variables or constants into the function. It does not create a writable alias.
-- `return value` exits the current function early and returns one scalar value.
-- Capture a returned value with `call function(args) -> $result`.
-- Calling a returning function without `->` is allowed and discards the result.
-- A call with `->` must receive a return value; a function that reaches its closing brace without returning is an error.
+- Parameters use `$` variable syntax. Required parameters must precede defaulted parameters.
+- Default values apply when the argument is omitted.
+- A function has local scope by default. Parameters and values copied from outer scope are independent values.
+- `return value` exits the current function and returns one scalar value.
+- Capture a return with `call function(args) -> $result`; without `->`, a return value is discarded.
+- A call with `->` must receive a return value. Reaching `}` without `return` is an error for such a call.
 
-## Local scope and global copies
+## 🔎 Scope, globals, and recursion
 
-Variables created or assigned in a function are local, even when an outer variable has the same name. `global` explicitly copies an outer value into the function. Reassigning the name, or mutating a copied collection, does not update the outer variable. Constants copied with `global` remain immutable.
+Variables assigned in a function are local, even if an outer variable has the same name. `global` copies selected outer values into the function; it does not create a writable alias. Mutating a copied collection or assigning the name does not update the outer value. Copied constants remain immutable.
 
 ```shelly
 $outside = "outer"
@@ -48,19 +51,9 @@ shellout $outside
 # outer
 ```
 
-A global declaration may list several identifiers (`global $APP, $MODE`) and every identifier must already exist in the outer scope. Globals are declarations inside a function, not call arguments.
+A declaration may list several existing identifiers: `global $APP, $MODE`. It must be inside a function and cannot be empty.
 
-## Defaults and recursion
-
-Required parameters must precede defaulted parameters:
-
-```shelly
-fn greet($name, $prefix = "Hola") {
-    shellout "$prefix $name"
-}
-```
-
-Functions may call themselves. Each call gets a new local scope and its own parameter values, so recursion stops only when the function's condition returns or otherwise exits.
+Functions may call themselves. Each call receives a new local scope:
 
 ```shelly
 fn countdown($n) {
@@ -68,16 +61,13 @@ fn countdown($n) {
         return "done"
     end
     shellout $n
-    # A recursive call is an ordinary function call.
     call countdown($n - 1)
 }
 
 call countdown(3)
 ```
 
-## Return values and capture
-
-`return` exits the current function immediately. The value is captured with the same arrow binding used by other operations:
+## ↩️ Return values and control flow
 
 ```shelly
 fn label($name) {
@@ -88,42 +78,13 @@ call label("Ada") -> $message
 shellout $message
 ```
 
-A return can be ignored when the call is used for its effects:
+The destination after `->` must be one mutable variable, not a constant, path, or expression. `return` affects only the current function. `break` and `continue` affect the nearest loop in that function and cannot cross a function boundary. A control signal outside its valid function or loop context is an error; control signals are not converted into caught errors.
 
-```shelly
-call label("Ada")
-```
+## ⚠️ Rejected syntax and errors
 
-The destination after `->` must be one variable. Capturing into a constant, a path, or any other expression is rejected. Capturing from a function that finishes without `return` is also rejected; without a destination, that same no-return function call is valid.
+The checker rejects duplicate names, missing braces, missing or extra arguments, a required parameter after a default parameter, invalid parameter or argument syntax, empty or unknown `global` declarations, text after a global identifier, unknown function calls, and invalid return destinations. `return` outside a function is also invalid.
 
-## Control-flow boundaries
-
-- `return` affects only the current function. It may be used from inside a conditional or loop and skips the rest of that function.
-- `break` exits the nearest enclosing `repeat`, `while`, or `for` loop in the current function.
-- `continue` skips to the next iteration of the nearest enclosing loop in the current function.
-- `break` and `continue` cannot cross a function boundary to control a caller's loop. If the function returns with either signal and no loop exists inside that function, the call fails with an outside-loop error.
-- `return` outside a function is an error. Control signals are not converted into ordinary caught errors.
-
-## Rejected syntax and errors
-
-The checker rejects malformed definitions and calls, including duplicate function names, missing closing braces, missing or extra arguments, a required parameter after a default parameter, and invalid parameter or argument syntax. It also rejects an empty `global` declaration, unknown globals, and text after a global identifier. A function call must name a known function, and a return destination must be a variable.
-
-## Global access
-
-```shelly
-$APP = "Shelly"
-
-fn greet($name) {
-    global $APP
-    shellout "hello $name from $APP"
-}
-
-call greet("Ada")
-```
-
-## Export and import
-
-Functions can be shared from a module with `export fn`; another file receives them with `import`:
+## 📦 Export functions from modules
 
 ```shelly
 # functions/greetings.shelly
@@ -139,8 +100,11 @@ call greet("Ada") -> $message
 shellout $message
 ```
 
-`import` loads exported functions (and exported constants) without running private top-level code in the imported file. Normal variables cannot be exported. Use [`modules.md`](modules.md) for the complete import/include behavior.
+`import` loads exported functions and constants without running private top-level code. See [Modules](modules.md) for import and include behavior.
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+## Related guides
+
+- [Modules](modules.md) — share functions across files.
+- [Error handling](errors.md) — recover from ordinary runtime errors.
+- [Deferred cleanup](defer.md) — clean up when function scopes unwind.
+- [Control flow](conditionals.md) — branch inside a function.

@@ -1,6 +1,8 @@
-# `parallel`
+# Run independent tasks with bounded parallelism
 
-`parallel limit N -> $results` runs named `task` blocks and stores a structured dictionary keyed by task name. Results are ordered deterministically by declaration order (the dictionary formatter also sorts keys).
+Use `parallel` to run named `task` blocks concurrently while limiting the number of task-local workers. Shelly stores structured results by task name and aggregates them deterministically.
+
+## Quick path
 
 ```shelly
 parallel limit 2 -> $results
@@ -13,8 +15,36 @@ parallel limit 2 -> $results
 end
 ```
 
-Task variable state is isolated and restored after each task. If a task fails, pending tasks are not launched; already-running tasks are waited for, and the command returns an aggregate result/error. Shelly does not cancel processes or create process groups, so a running child may outlive failure handling. Task bodies run concurrently with at most `limit` task-local workers. Results and errors are collected in declaration order. On the first observed failure, pending tasks are not launched; already-started tasks are joined. Shelly does not cancel running tasks or their child processes.
+`limit` must be a positive integer. The destination receives a dictionary keyed by task name; results and errors are collected in declaration order, and dictionary formatting sorts keys.
 
-In dry-run mode no task executes. The parallel operation and each task are emitted to the audit stream, and `$results` is unavailable because no execution result exists.
+## Execution behavior
 
-Timeouts and `defer` use the normal enclosing interpreter scope. A timeout remains an error and deferred cleanup runs before the task result is collected.
+- Task state is isolated and restored after each task.
+- At most `limit` tasks run at once.
+- A task failure prevents pending tasks from launching.
+- Tasks already started are waited for and joined.
+- Shelly does not cancel running tasks or their child processes, and does not create process groups. A child may outlive failure handling.
+- The operation returns an aggregate result or error after started tasks finish.
+
+Timeouts and `defer` use the enclosing interpreter scope. A timeout remains an error, and deferred cleanup runs before that task result is collected.
+
+## Dry-run behavior
+
+In dry-run mode, no task executes. Shelly emits the parallel operation and each task to the audit stream, then marks `$results` unavailable because no execution result exists. See [Dry-run and audit logs](dry-run.md).
+
+## Reference
+
+| Item | Rule |
+| --- | --- |
+| Syntax | `parallel limit N -> $results` with named `task` blocks |
+| Worker bound | No more than `N` task-local workers |
+| Ordering | Declaration order for collection; sorted keys when formatted |
+| Failure | Pending tasks are not launched; started tasks are joined |
+| Cancellation | None for tasks or child processes |
+| Result | Structured dictionary in normal execution; unavailable in dry-run |
+
+## Related guides
+
+- [Timeouts](timeouts.md) — inherited deadlines and cleanup.
+- [Error handling](errors.md) — inspect and recover from failures.
+- [Dry-run and audit logs](dry-run.md) — planned parallel actions.

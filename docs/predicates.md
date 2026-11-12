@@ -1,26 +1,20 @@
-# Predicates
+# Check values with predicates
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+Predicates are built-in boolean checks. Use them in conditions, combine them with logical operators, or capture their result with `->`.
 
-Predicates are built-in boolean checks. Use them directly in `if` / `elif` conditions, combine them with logical operators, or capture the result with `->`. See [lists](lists.md), [dictionaries](dictionaries.md), and [strings](strings.md) for value types, and [conditionals](conditionals.md#predicates) for control-flow context.
-
-## Quick reference
+## 🚀 Quick reference
 
 | Form | Result |
 | --- | --- |
-| `exists "path"` | `true` when the file or directory exists. |
-| `not exists "path"` | `true` when the file or directory is missing. |
+| `exists "path"` | File or directory exists. |
+| `not exists "path"` | File or directory is missing. |
 | `contains $value "thing"` | Type-specific containment check. |
 | `matches $value /pattern/` | Rust-regex substring match. |
-| `exists "path" -> $var` | Captures the boolean result in `$var`. |
-| `contains $value "thing" -> $var` | Captures the boolean result in `$var`. |
-| `matches $value /pattern/ -> $var` | Captures the boolean result in `$var`. |
+| Any form followed by `-> $var` | Captures `true` or `false`. |
 
-## File and directory checks
+## 📁 Check files
 
-`exists` accepts one **quoted string path**. The path is resolved relative to the Shelly script file, not the directory where `shelly` was launched.
+`exists` accepts one quoted path, resolved relative to the Shelly script file rather than the launch directory. Missing paths return `false`; globs are not expanded.
 
 ```shelly
 if exists "README.md"
@@ -32,15 +26,15 @@ if not exists "tmp/output.txt"
 end
 ```
 
-Missing paths return `false`; they do not stop the script. An unquoted path, a variable, or extra arguments are rejected. `exists` does not expand globs.
+An unquoted path, variable, or extra argument is rejected.
 
-## Containment checks
+## 🔎 Check containment
 
-`contains` takes a value and a search value. The search value is evaluated normally (so a quoted string or a defined variable can be used). If the evaluated search item or key is absent, or no item matches, the result is `false`; reading an undefined value while evaluating either argument is an error.
+`contains` takes a value and a search value. The search value is evaluated normally.
 
-- **Strings:** substring containment; `contains "hello" "ell"` is true.
-- **Lists:** exact item containment. Each list item is rendered and compared to the search text; it is not a substring check.
-- **Dictionaries:** key containment. The search text is compared to dictionary keys; values are not searched.
+- **Strings:** substring containment (`contains "hello" "ell"` is true).
+- **Lists:** exact containment of a rendered item, not a substring.
+- **Dictionaries:** key containment; values are not searched.
 
 ```shelly
 $names = ["Ana", "Luis", "Mora"]
@@ -51,11 +45,11 @@ if contains $names "Luis" and contains $labels "owner"
 end
 ```
 
-A missing search item, missing dictionary key, or non-matching list item returns `false`. An undefined variable used as the searched value or search expression is an evaluation error, not a `false` result. Missing arguments or malformed two-argument forms are rejected.
+A missing search item, dictionary key, or matching list item returns `false`. An undefined value used in either argument is an evaluation error. Missing or malformed arguments are rejected.
 
-## Capture boolean results
+## 🧾 Capture a result
 
-Append `-> $variable` to any predicate to store its boolean result. The destination must be a plain variable, not a constant, indexed value, member expression, or literal. Capture stores a boolean value (`true` or `false`), and the arrow must be at the end of the predicate.
+Append `-> $variable` to store a boolean. The destination must be a plain mutable variable, and the arrow must be at the end.
 
 ```shelly
 exists "README.md" -> $hasreadme
@@ -67,11 +61,11 @@ if $hasreadme and $mentionsshell
 end
 ```
 
-Do not put `->` inside a predicate argument or use more than one destination. Predicate capture is distinct from assignments and does not capture matched text or a dictionary value.
+Capture does not store matched text or dictionary values. Do not put `->` inside an argument or use more than one destination.
 
-## Regular-expression matching
+## 🔤 Match regular expressions
 
-`matches` accepts a scalar or list and a slash-delimited Rust `regex` pattern. Matching is by substring unless `^` and `$` anchors are used. A scalar is tested directly; a list succeeds when **any** rendered element matches. Dictionary values are rejected.
+`matches` accepts a scalar or list and a slash-delimited Rust `regex` pattern. Matching is by substring unless anchored with `^` and `$`; a list succeeds when any rendered item matches. Dictionary values are rejected.
 
 ```shelly
 if matches $name /(?i)^[a-z]+$/
@@ -79,13 +73,11 @@ if matches $name /(?i)^[a-z]+$/
 end
 ```
 
-The `/` characters delimit the regex; they are not part of the pattern. Escape a literal delimiter as `\/`. Regex escaping and Shelly string escaping are different: `\\d` in a regex literal means the regex digit class, while a backslash in a quoted Shelly string follows that string's escaping rules. `matches` does not accept a quoted pattern in place of `/pattern/`.
+The slashes delimit the pattern; escape a literal delimiter as `\/`. Regex escaping and Shelly string escaping differ: `\\d` in a regex literal means the digit class. Character classes, ranges, quantifiers, and inline flags such as `(?i)` are supported. Backreferences and look-around are not supported by Rust regex. A quoted pattern is not accepted. Unterminated or invalid regex syntax is rejected.
 
-Character classes and ranges (`[a-z]`, `\\d`), quantifiers (`+`, `*`, `?`, `{2,4}`), and inline flags such as `(?i)` are supported. Invalid regex syntax is rejected. Rust regex intentionally does not support backreferences, look-around, or other non-regular constructs; numeric ranges are regex text, not numeric comparisons.
+## 🧩 Compose predicates
 
-## Compose predicates
-
-Logical priority is `not`, then `and`, then `or`. Use parentheses when grouping makes the condition clearer.
+Logical priority is `not`, then `and`, then `or`; use parentheses for clarity. Predicate operators short-circuit.
 
 ```shelly
 if exists "README.md" and contains $names "Luis"
@@ -97,10 +89,9 @@ if not exists "dist/app" or contains $message "rebuild"
 end
 ```
 
-## Include is not containment
+`include` loads and runs another Shelly file; it is not containment. Use `contains` for values and `exists` for quoted script-relative paths. See [Files](files.md).
 
-`include` loads and runs another Shelly file. It does not check whether a string, list, or dictionary contains a value. Use `contains` for containment and `exists` for a quoted, script-relative path. See [files](files.md) for file-loading behavior.
+## Related guides
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+- [Conditionals](conditionals.md) — use predicates in control flow.
+- [Lists](lists.md), [Dictionaries](dictionaries.md), and [Strings](strings.md) — values being checked.

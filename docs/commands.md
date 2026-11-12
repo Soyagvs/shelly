@@ -1,18 +1,26 @@
-# Commands and input
+# 🛠️ Run commands and handle input
+
+Use Shelly's built-in output, input, argument, file, and process commands to turn a script into a reliable automation. Start with the quick examples below, then use the reference details for capture and error behavior.
+
+[Documentation index](index.md) · [Language guide](language.md) · [Project structure](project-structure.md) · [Editor support](editor-support.md)
+
+## 🚀 First success
+
+```shelly
+ask "Name? " -> $name
+command printf "hello %s\\n" $name -> $out
+shellout $out
+```
 
 For script validation and redacted JSONL action records, see [dry-run and audit logs](dry-run.md). For environment-only secret capture and safe command usage, see [Environment-only secrets](secrets.md).
 
-## `shelly --version` and `shelly-lsp --version`
+## 📌 Version and update commands
 
 Both binaries print their own installed package version and exit without starting script or LSP processing (for example, `shelly 3.8.2` and `shelly-lsp 3.8.2`).
 
-## `shelly update`
+### `shelly update`
 
 `shelly update` is a manual-only command; it does not run automatically. It downloads the latest versioned GitHub Release asset for Linux x86_64, macOS x86_64/aarch64, or Windows x86_64, including both `shelly` and `shelly-lsp`, and verifies the archive's SHA-256 checksum sidecar. It prints the actual versions reported by both installed binaries before updating and, after synchronous replacement, prints their versions again. A missing, malformed, failed, or legacy binary is reported as unavailable or unknown rather than inferred from the release tag. It requires permission to replace the installed binaries. GitHub network access and checksum validation cover the downloaded archive, not OS trust. On Windows replacement is handed to a helper after exit; the command reports the replacement as pending and restart Shelly after the handoff.
-
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
 
 Shelly has built-in commands for output, input, prompts, collection mutation, and system shell execution.
 
@@ -39,7 +47,7 @@ hasArg "--dry-run" -> $dryrun
 args -> $all
 ```
 
-## Rules
+## 📖 Command rules
 
 - `shellout` prints a value and adds a newline.
 - `shellin` reads one stdin line into a variable.
@@ -59,7 +67,7 @@ args -> $all
 - `create`, `copy`, `move`, `rename`, `remove`, `read`, `write`, `append`, `isFile`, `isDir`, `size`, `tempFile`, `tempDir`, and `files` cover common file automation; see [files.md](files.md).
 - `command` is the bridge to OS tools such as `mv`, `cp`, `git`, or `curl`.
 
-## External process waiting
+## ⏳ External process waiting
 
 `watch <program> <args...> -> $line` starts one external process and runs its block once for each stdout line, in order:
 
@@ -72,7 +80,7 @@ end
 The child is waited for after stdout reaches EOF, and the block finishes when the child exits. Stderr is not converted into events. A read, handler, spawn, or non-zero-exit error stops the watcher and cleans up the child; the error can be handled with `try` / `catch`. The `$line` binding is restored after the block. `wait` with no arguments blocks indefinitely until normal process interruption (Ctrl+C); it does not create a child or scheduler.
 - Standard helpers such as `trim`, `join`, `toNumber`, `basename`, `now`, and `randomInt` transform values without shelling out; see [helpers.md](helpers.md).
 
-## Output
+## 📤 Output
 
 ```shelly
 $name = "Ada"
@@ -93,7 +101,7 @@ line two
 ```
 ````
 
-## Input
+## 📥 Input
 
 ```shelly
 ask "Favorite color? " -> $color
@@ -101,7 +109,7 @@ choose "Favorite color?" ["red", "blue"] -> $color
 shellin $line
 ```
 
-## Script arguments
+## 🧭 Script arguments
 
 Arguments are the values after the script path in `shelly script.shelly ...`; they do not include `shelly` or the script path.
 
@@ -119,7 +127,7 @@ end
 
 `arg` is 1-based. Missing positions store `""`. `hasArg` checks exact equality against the evaluated value.
 
-## Predicate capture
+## ✅ Predicate capture
 
 Predicate capture stores a boolean result in a variable.
 
@@ -130,7 +138,7 @@ contains $name "gus" -> $hasgus
 
 See [predicates.md](predicates.md) for full `exists`, `contains`, and logical composition details.
 
-## Standard helpers
+## 🧰 Standard helpers
 
 ```shelly
 trim "  Ada  " -> $name
@@ -141,7 +149,7 @@ randomInt 1 6 -> $roll
 
 See [helpers.md](helpers.md) for all helper commands.
 
-## Log blocks
+## 🧾 Log blocks
 
 ```shelly
 log "build"
@@ -152,7 +160,7 @@ end
 
 `log` writes structured markers to `logs/build-YYYY-MM-DD.log` while normal output still goes to the terminal. See [logging.md](logging.md) for storage rules and limitations.
 
-## System commands
+## 🖥️ System commands
 
 ```shelly
 command printf hello
@@ -168,7 +176,3 @@ shellout "command finished with code $code and stderr: $err"
 `command <program> <args...>` executes directly, so arguments are not interpreted as shell syntax. Quoted atoms remain one argument and variables are evaluated as arguments. Add `timeout SECONDS` after the arguments to bound that process; see [Timeouts](timeouts.md). Without capture it streams stdout/stderr and fails the script on a non-zero exit; its process error has `kind`, `message`, `program`, `args`, and `code`, but no captured output fields. A one-variable capture buffers stdout and stderr until process exit, trims trailing newlines, and also fails on a non-zero exit; that process error includes `stdout` and `stderr`. `shell "..."` uses the same capture behavior and reports shell failures with captured `stdout` and `stderr`. Successful captures and three-variable captures require stdout and stderr to be valid UTF-8. A one-variable capture on a non-zero command or shell failure uses lossy UTF-8 conversion for the captured output. Use three captures when the script should inspect failure itself; stdout and stderr are buffered until exit and trimmed, and `$code` is the process exit code or `1` when no code is available. Use `shell "..."` for pipelines or redirections; it is shell/platform dependent.
 
 For portable file work, prefer Shelly path commands such as `write "file" $text`, `append "file" $text`, `read "file" -> $text`, `size "file" -> $bytes`, and `copy "from" "to"`; see [files.md](files.md). Tests can replace exact `read` inputs with virtual text; see [test read mocks](mocks.md). Use `command` when you need an OS-specific tool.
-
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>

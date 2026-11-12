@@ -1,6 +1,8 @@
-# JSON helpers
+# Convert JSON text and Shelly values
 
-Shelly can convert between JSON text and Shelly values. Both helpers take exactly one argument; the result is captured with `->`:
+Shelly's JSON helpers convert JSON text to Shelly dictionaries and lists, then serialize those values back to compact JSON. Both helpers take exactly one argument and capture their result with `->`.
+
+## 🚀 At a glance
 
 ```shelly
 $text = "{\"users\":[{\"name\":\"Ada\"}],\"empty\":null}"
@@ -9,21 +11,47 @@ shellout $data.users[1].name
 jsonStringify $data -> $json
 ```
 
+The first list item is `$data.users[1]` because Shelly indexes lists from `1`.
+
 ## Mapping and access
 
-- JSON objects become dictionaries, and JSON arrays become lists. Both may be nested recursively.
-- JSON strings, numbers, and booleans become scalar text (`true` and `false` are lowercase).
-- JSON `null` becomes an empty scalar.
-- List indexes are **one-based**, so `$data.users[1].name` selects the first user. Use dot or bracket dictionary access for nested keys; see [Dictionaries](dictionaries.md) and [Lists](lists.md).
+| JSON value | Shelly value |
+| --- | --- |
+| Object | Dictionary |
+| Array | List |
+| String, number, boolean | Scalar text; booleans are lowercase |
+| `null` | Empty scalar |
 
-`jsonStringify` recursively converts dictionaries and lists. For scalar values, the text `true` or `false` becomes a JSON boolean, numeric text becomes a JSON number, and empty text becomes JSON `null`; other text becomes a JSON string. This coercion means scalar-looking text is not always preserved as a JSON string.
+Mappings recurse through nested objects and arrays. Use dot or bracket dictionary access and one-based list indexes; see [Dictionaries](dictionaries.md) and [Lists](lists.md).
 
-**Limitation: null and empty text are lossy.** After parsing, JSON `null` and an empty JSON string are both empty Shelly scalars; stringifying either emits `null`.
+`jsonStringify` recursively converts dictionaries and lists. Scalar coercion is:
 
-Conversions recursively copy their values. They do not create aliases to an existing nested dictionary or list. After parsing or assignment, normal mutation rules apply: mutate only through a mutable lowercase variable root, and see [Dictionaries](dictionaries.md#mutation) and [Lists](lists.md#mutation).
+| Shelly scalar text | JSON output |
+| --- | --- |
+| `true` or `false` | Boolean |
+| Numeric text | Number |
+| Empty text | `null` |
+| Other text | JSON string |
 
-Output is compact JSON. There is no pretty-print or formatting option.
+> **Note:** JSON `null` and an empty JSON string both become empty Shelly scalars after parsing. Stringifying either emits `null`; this distinction is lossy.
+
+Conversions recursively copy their values and do not create aliases to existing nested collections. After conversion, normal mutation rules apply: mutate only through a mutable lowercase variable root. See [Dictionaries](dictionaries.md#paths-and-mutation) and [Lists](lists.md#mutation-rules).
 
 ## Arguments, destinations, and errors
 
-The forms are exactly `jsonParse TEXT -> $variable` and `jsonStringify VALUE -> $variable`. The destination must be a mutable variable, not a path, constant, or expression. Invalid argument counts are reported as `jsonParse expects 1 argument(s)` or `jsonStringify expects 1 argument(s)`; an invalid destination reports `<helper> destination must be a variable`. Invalid JSON reports `jsonParse failed` followed by the parser message. See [Variables](variables.md) for mutable variables and [Helpers](helpers.md) for command conventions.
+The exact forms are:
+
+```shelly
+jsonParse TEXT -> $variable
+jsonStringify VALUE -> $variable
+```
+
+The destination must be a mutable variable, not a path, constant, or expression. Invalid argument counts report `jsonParse expects 1 argument(s)` or `jsonStringify expects 1 argument(s)`. An invalid destination reports `<helper> destination must be a variable`; invalid JSON reports `jsonParse failed` followed by the parser message.
+
+Output is compact JSON. There is no pretty-print or formatting option.
+
+## Related topics
+
+- [Variables](variables.md) — mutable capture destinations.
+- [Lists](lists.md) and [Dictionaries](dictionaries.md) — access and mutation rules.
+- [Helpers](helpers.md) — command and result conventions.

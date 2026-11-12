@@ -1,50 +1,42 @@
-# Exit
+# Stop a Shelly process with an exit status
 
-[Documentation index](index.md) · [Error handling](errors.md) · [Deferred cleanup](defer.md)
+`exit` terminates the whole Shelly process and sets its process exit status. Active [defer](defer.md) blocks unwind first; cleanup does not turn the control signal into an ordinary error.
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
-
-`exit` terminates the whole Shelly process and sets its process exit status. Any [`defer`](defer.md) blocks in active scopes unwind first; cleanup does not turn an explicit control signal into an ordinary error.
+## 🚀 Quick path
 
 ```shelly
-exit
-exit 0
-exit 1
+exit       # success, equivalent to exit 0
+exit 1     # general failure
 ```
 
-## Rules
+## 📖 Syntax and status rules
 
-- `exit` is the same as `exit 0`; zero reports success.
-- A non-zero status reports failure. `1` is the general failure status.
-- The form is `exit` or `exit <expression>`: at most one expression is allowed.
+The form is `exit` or `exit <expression>`, with at most one expression.
+
+- No expression is the same as `exit 0`; zero reports success.
+- A non-zero status reports failure; `1` is the general failure status.
 - The expression must evaluate to an integer from `0` through `255`.
-- Literals, numeric expressions, variables, and constants are valid expressions.
-- `exit` propagates past functions and enclosing blocks; it stops the whole script, not only the current scope.
-
-These forms are rejected:
-
-```shelly
-exit -1       // outside the valid range
-exit 256      // outside the valid range
-exit "1"      // not an integer
-exit 1 2      // more than one argument
-```
-
-## Expressions
+- Literals, numeric expressions, variables, and constants are valid.
+- `exit` propagates through functions and enclosing blocks and stops the whole script.
 
 ```shelly
 $code = 0
 exit $code
-```
 
-```shelly
 $BASE = 1
 exit $BASE + 1
 ```
 
-## Inside blocks
+## ⚠️ Rejected forms
+
+```shelly
+exit -1       # outside the valid range
+exit 256      # outside the valid range
+exit "1"      # not an integer
+exit 1 2      # more than one argument
+```
+
+## 🧩 Inside blocks and error handling
 
 ```shelly
 repeat 3
@@ -65,8 +57,10 @@ catch
 end
 ```
 
-Deferred blocks still run while `exit` unwinds their active scopes. See [`defer`](defer.md) for cleanup order and failure behavior.
+Deferred blocks still run while `exit` unwinds their active scopes. See [Deferred cleanup](defer.md) for cleanup order and failure behavior.
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+## Related guides
+
+- [Error handling](errors.md) — handle ordinary runtime errors.
+- [Deferred cleanup](defer.md) — run cleanup on termination.
+- [Language overview](language.md) — review control-flow syntax.

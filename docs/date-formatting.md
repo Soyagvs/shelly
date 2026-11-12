@@ -1,55 +1,43 @@
-# Date formatting
+# Format UTC timestamps as text
 
-[Documentation index](index.md) · [Time and date helpers](helpers.md#time)
+Use `formatDate` to turn a strict Shelly UTC timestamp into readable text with six predictable tokens. Formatting is numeric and locale-independent; it does not convert time zones.
 
-`formatDate` turns a Shelly UTC timestamp into readable text. It replaces a small, predictable set of tokens in the pattern you provide. Results are numeric, UTC-only, and not locale-formatted.
-
-<img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-
-## Basic usage
+## Quick path
 
 ```shelly
 formatDate "2025-01-31T12:34:56Z" "YYYY/MM/DD HH:mm:ss" -> $formatted
 ```
 
-The input must use this strict form:
+The input must be exactly `YYYY-MM-DDTHH:mm:ssZ`: fixed-width numeric fields, a literal `T`, and a literal `Z`.
 
-```text
-YYYY-MM-DDTHH:mm:ssZ
-```
-
-It is a UTC timestamp with two digits for each date and time component, a literal `T`, and a literal `Z`. The supported pattern tokens are:
+## Supported tokens
 
 | Token | Meaning |
 | --- | --- |
-| `YYYY` | Four-digit year (0000–9999) |
+| `YYYY` | Four-digit year (`0000`–`9999`) |
 | `MM` | Two-digit month |
 | `DD` | Two-digit day |
-| `HH` | Two-digit hour (UTC, 00–23) |
+| `HH` | Two-digit UTC hour (`00`–`23`) |
 | `mm` | Two-digit minute |
 | `ss` | Two-digit second |
 
-For example, `YYYY-MM-DD` produces `2025-01-31`, while `HH:mm:ss` produces `12:34:56`. `YYYY` parses and formats the input's four year digits; it does not add a calendar era or locale-specific year name.
+For example, `YYYY-MM-DD` produces `2025-01-31`, and `HH:mm:ss` produces `12:34:56`. Literal punctuation, spaces, and non-ASCII text are copied. ASCII letters are reserved: any ASCII alphabetic text other than the six tokens fails. There is no quoting or escaping syntax.
 
-ASCII letters are reserved for tokens: any ASCII alphabetic text other than the six supported tokens fails. Non-letter characters—including punctuation, spaces, and non-ASCII characters—are copied literally; there is no quoting or escaping syntax.
-
-## Formatting `now`
-
-Use `now` to obtain a current UTC timestamp, then format it:
+## Format the current time
 
 ```shelly
 now -> $timestamp
 formatDate $timestamp "YYYY-MM-DD HH:mm:ss" -> $readable
 ```
 
-`timestamp` is an alias for `now`. `today` returns the UTC date without a time component. `formatDate` does not convert to local time: every result uses the UTC values in the input timestamp. See the [Time and date helpers](helpers.md#time) for the related helpers.
+`timestamp` is an alias for `now`; `today` returns the current UTC date without a time component. See [Time helpers](helpers.md#time-random-and-json) for the related standard helpers.
 
 ## Failures
 
-`formatDate` fails clearly when:
+`formatDate` raises an ordinary runtime error when:
 
-- the input is not exactly `YYYY-MM-DDTHH:mm:ssZ` (no offsets, fractions, or other time zones);
-- the timestamp contains invalid date or time values; or
-- the pattern contains unsupported ASCII token letters.
+- the input is not exactly the required UTC form (offsets and fractional seconds are not accepted);
+- date or time values are invalid; or
+- the pattern contains unsupported ASCII letters.
 
-The input year and all other components are numeric and fixed-width: months are `01`–`12`, hours `00`–`23`, minutes and seconds `00`–`59`, and dates must be valid. Use only the six supported tokens listed above. Literal separators such as `/`, `-`, spaces, `:`, and non-ASCII text are allowed in patterns; names, locale formatting, and timezone conversion are not supported.
+Months are `01`–`12`, hours `00`–`23`, and minutes and seconds `00`–`59`; the date must be valid. Use [Error handling](errors.md) when formatting is expected to fail.

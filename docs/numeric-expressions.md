@@ -1,22 +1,24 @@
-# Numeric expressions
+# Calculate values with numeric expressions
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+Numeric expressions evaluate scalar values with floating-point arithmetic. Shelly has no user-visible integer or decimal type: a literal may look integral or decimal, while the surrounding context can require an integer.
 
-A numeric expression is a scalar value evaluated with floating-point arithmetic. It is not a user-visible integer or decimal type: a value can be written as an integer or decimal, while a particular context may require an integer.
+## 🚀 At a glance
 
 ```shelly
 $items = 3
 $price = 10.5
 $total = $items * $price
-
 shellout $total
 ```
 
-## Literals
+- Supported binary operators: `+`, `-`, `*`, `/`.
+- `*` and `/` bind before `+` and `-`; equal-precedence operators run left to right.
+- Parentheses and unary `+` or `-` are supported.
+- Division by zero and invalid operands fail.
 
-Accepted decimal forms include integer-looking numbers and numbers with digits on both sides of the decimal point: `0`, `12`, `12.5`, and `0.25`. Exponential notation, hexadecimal, comma-separated numbers, and a leading-dot form are not numeric literals.
+## Numeric literals
+
+Accepted decimal forms include `0`, `12`, `12.5`, and `0.25`. Exponential notation, hexadecimal, comma-separated numbers, and leading-dot forms are not numeric literals:
 
 ```shelly
 $whole = 12
@@ -24,45 +26,36 @@ $decimal = 12.50
 $small = 0.25
 ```
 
-These are invalid numeric expressions (shown as text, not runnable Shelly):
-
 ```text
-$bad = 1e3       # exponent notation
-$bad = 0x10      # hexadecimal
-$bad = 1,000     # comma-separated number
-$bad = .5        # leading-dot form
+$bad = 1e3
+$bad = 0x10
+$bad = 1,000
+$bad = .5
 ```
 
 ## Operators and evaluation
-
-The supported binary operators are `+`, `-`, `*`, and `/`. Multiplication and division have precedence over addition and subtraction. Operators at the same precedence level evaluate from left to right. Parentheses override precedence. A unary `+` or `-` may prefix an operand, including a parenthesized operand.
 
 ```shelly
 $subtotal = 3 * (12 + 2)
 $change = 50 - $subtotal
 $temperature = -(2 + 3)
-```
-
-For example, a $50 grocery budget with three $12 items and a $2 fee is evaluated as `50 - (3 * 12 + 2)`, leaving `$12`:
-
-```shelly
 $remaining = 50 - (3 * 12 + 2)
 shellout $remaining
 ```
 
-These forms are invalid: unsupported operators, incomplete or adjacent operands, unmatched parentheses, and trailing text all fail.
+The last expression leaves `12`. Unsupported operators, incomplete or adjacent operands, unmatched parentheses, and trailing text fail:
 
 ```text
-$bad = 2 ^ 3       # unsupported operator
-$bad = 2 +         # incomplete expression
-$bad = 2 3         # adjacent operands
-$bad = (2 + 3      # unmatched parenthesis
-$bad = 2 + 3 later # trailing text
+$bad = 2 ^ 3
+$bad = 2 +
+$bad = 2 3
+$bad = (2 + 3
+$bad = 2 + 3 later
 ```
 
 ## Variables and constants
 
-Numeric variables and constants can participate in expressions. A nonnumeric value (such as a string, boolean, list, or dictionary), a collection, or an undefined reference fails when used as an operand. See [variables](variables.md) and [constants](constants.md) for naming, values, and lookup rules.
+Numeric variables and constants can be operands. Strings, booleans, lists, dictionaries, and undefined references cannot:
 
 ```shelly
 $tax = 2.5
@@ -70,18 +63,22 @@ $BASE = 10
 $total = $BASE + $tax
 ```
 
+See [Variables](variables.md) and [Constants](constants.md) for naming and lookup rules.
+
 ## Contexts and limits
 
-Expressions are accepted wherever Shelly needs a numeric value, including:
+Expressions are accepted wherever Shelly needs a numeric value:
 
-- assignments, such as `$total = $price * $count`;
-- [`repeat`](repeat.md) counts, which must be non-negative integers;
-- [`while`](while.md) comparisons, such as `while ($count < 3)`;
-- [list indexes](lists.md), which are one-based integers;
-- [`arg`](commands.md) argument indexes, which are one-based positions;
-- [`exit`](exit.md) codes, which must be integers from `0` through `255`.
+| Context | Additional requirement |
+| --- | --- |
+| Assignment | Any valid numeric result |
+| [`repeat`](repeat.md) count | Non-negative integer |
+| [`while`](while.md) comparison | Numeric comparison operands |
+| [List index](lists.md) | Existing one-based integer |
+| [`arg`](commands.md) index | One-based position |
+| [`exit`](exit.md) code | Integer from `0` through `255` |
 
-A context can therefore reject an otherwise valid fractional or negative result. Division by zero always fails.
+A valid expression can therefore be rejected by its context when its result is fractional or negative.
 
 ```shelly
 $count = 1
@@ -96,7 +93,7 @@ end
 
 ## Output and precision
 
-Integral results print without `.0`; non-integral results print as decimals. Ordinary floating-point precision limits apply, so calculations involving fractional values can have the usual small rounding differences of floating-point arithmetic.
+Integral results print without `.0`; non-integral results print as decimals. Ordinary floating-point precision limits apply.
 
 ```shelly
 $result = 6 / 2
@@ -106,9 +103,11 @@ shellout $result
 This prints `3`, not `3.0`. Division by zero is invalid:
 
 ```text
-$bad = 10 / 0       # division by zero
+$bad = 10 / 0
 ```
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+## Related topics
+
+- [Variables](variables.md) and [Constants](constants.md) — numeric values and names.
+- [Lists](lists.md) — one-based indexes and ranges.
+- [Repeat loops](repeat.md), [While loops](while.md), and [Exit](exit.md) — numeric contexts.

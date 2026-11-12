@@ -1,8 +1,16 @@
-# Editor support quickstart
+# 🚀 Add Shelly editor support
+
+Install `shelly-lsp` and connect it to VS Code or Neovim to see diagnostics, symbols, and other language features while you edit `.shelly` files.
+
+[Documentation index](index.md) · [Language guide](language.md) · [Commands and input](commands.md) · [Project structure](project-structure.md)
+
+## 🚀 First success
+
+Open a `.shelly` file, introduce an obvious syntax mistake, and confirm that your editor shows a diagnostic. Remove it to verify the connection.
 
 Shelly can point out many mistakes while you type. This help is for both first-time users and people who do not want to learn editor internals.
 
-## What the corrector does
+## 📖 What the language server does
 
 The Shelly corrector is the `shelly-lsp` program. Your editor sends it the open `.shelly` file, and it sends back diagnostics (underlined problems), suggestions, and information about symbols. It does **not** run your script or its commands.
 
@@ -10,7 +18,7 @@ You need `shelly-lsp` installed and available as `shelly-lsp` in your terminal. 
 
 > **Easy setup:** use the steps below for [VS Code](https://github.com/Soyagvs/shelly-vscode) or [Neovim](https://github.com/Soyagvs/shelly-nvim). [LSP reference](lsp.md) explains the protocol and the complete feature scope. Mason is not an installation option yet; the Shelly package has not been published to the upstream Mason registry.
 
-## VS Code
+## 🧩 VS Code
 
 1. Install the [Shelly VS Code extension](https://github.com/Soyagvs/shelly-vscode).
 2. Install Shelly from a release archive, and make sure the archive's directory is on your `PATH`.
@@ -24,7 +32,7 @@ If nothing appears:
 - Confirm the file name ends in `.shelly` and that the Shelly extension is enabled.
 - Check **View → Output**, select the Shelly extension or language-server channel, and look for a startup error.
 
-## Neovim
+## 🧩 Neovim
 
 1. Install [`shelly-nvim`](https://github.com/Soyagvs/shelly-nvim) by following its README.
 2. Install Shelly, including `shelly-lsp`, and put `shelly-lsp` on your `PATH`.
@@ -39,7 +47,7 @@ If nothing appears:
 - Check `:messages` for the actionable warning emitted when the executable cannot be started.
 - Make sure the buffer is backed by a `.shelly` file, not an unnamed or differently named buffer.
 
-## What to expect—and what not to expect
+## ⚠️ What to expect—and what not to expect
 
 The language server uses the first `workspaceFolders` URI, then `rootUri`; without either, it falls back to the first opened file's parent. `Shelly.toml` is optional for LSP. With a root, `.shelly` and `.shl` files are loaded from disk recursively, and later external file changes are refreshed automatically while handling LSP messages. An open buffer is an overlay and is never replaced by those disk refreshes; closing the buffer falls back to disk when readable.
 

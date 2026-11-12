@@ -1,10 +1,8 @@
-# Conditionals
+# Choose a path with conditionals
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+Use `if`/`elif`/`else` for truth-based branching, or `case` when one value should dispatch to exact matches.
 
-Use `if`, optional `elif`, optional `else`, and `end` to choose which block runs. Use `case` when one value should dispatch to exact matching branches.
+## 🚀 Quick path
 
 ```shelly
 $enabled = true
@@ -19,20 +17,11 @@ else
 end
 ```
 
-## Rules and scope
+## 📖 Conditions and comparisons
 
-- `if condition` starts a block; `elif` and `else` are optional; `end` closes it.
-- Conditions support comparisons, predicates, `not`, `and`, `or`, and parentheses.
-- Blocks do not create a scope. Assignments made in an `if`, `case`, or nested loop remain available afterward.
-- Nested `if`, `repeat`, `while`, `for`, and `try` blocks are supported.
+Conditions support comparisons, predicates, `not`, `and`, `or`, and parentheses. Supported comparisons are `==`, `!=`, `>`, `>=`, `<`, and `<=`. Equality is exact: there is no implicit case folding or substring matching. Ordered comparisons are numeric when both values are integers; otherwise they are lexicographic text comparisons. Use `contains` for containment.
 
-<p align="center"><img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" /></p>
-
-## Evaluation and comparisons
-
-Supported operators are `==`, `!=`, `>`, `>=`, `<`, and `<=`. Equality and inequality compare values exactly: there is no implicit case folding or substring matching. Ordered comparisons use numeric ordering when both values are integer numbers; otherwise they use lexicographic text ordering. Use `contains` for containment rather than `==`.
-
-`not` binds first, then `and`, then `or`. Operators short-circuit: `and` skips its right side after false, and `or` skips it after true. This can safely guard a later predicate or expression.
+`not` binds first, then `and`, then `or`. Operators short-circuit: `and` skips its right side after false, and `or` skips it after true.
 
 ```shelly
 if $count > 0 and $count < 10
@@ -44,27 +33,17 @@ if ($mode == "dev" or $mode == "test") and not $disabled
 end
 ```
 
-Parentheses group expressions and may nest. **Invalid:** an unmatched `(` or `)`, an empty group, or malformed text inside a group. These forms produce an error rather than a condition result.
+Parentheses may nest. An unmatched parenthesis, empty group, or malformed group is an error.
 
-## Predicates
+## 🔎 Predicates and truthiness
 
-- `exists "path"` is true when the file or directory exists relative to the current script; missing paths are false.
-- `contains $value "thing"` checks a substring in a string, an exact rendered item in a list, or a key in a dictionary.
-- `matches $value /pattern/` performs a Rust-regex substring match. A list matches when any rendered element matches; dictionary values are unsupported. Use `^` and `$` for whole-value matching.
+- `exists "path"` is true when a script-relative file or directory exists; missing paths are false.
+- `contains $value "thing"` checks a string substring, an exact rendered list item, or a dictionary key.
+- `matches $value /pattern/` performs a Rust-regex substring match. Lists match when any rendered element matches; dictionary values are unsupported. Use `^` and `$` for whole-value matching.
 
-```shelly
-if matches $name /(?i)^[a-z]+$/ and contains $names "Luis"
-    shellout "valid"
-end
-```
+A predicate can capture its boolean result with `-> $variable`; see [Predicates](predicates.md).
 
-A predicate may be captured with `-> $variable`; see [predicates.md](predicates.md). **Invalid:** missing predicate arguments, an unterminated `/pattern/`, or an invalid regular expression.
-
-<p align="center"><img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" /></p>
-
-## Truthiness
-
-Scalar values are false only when they are exactly `false`, exactly `0`, or the empty string `""`. Every other scalar string is true (including `"False"`, `"0"`, and whitespace). Non-empty lists and dictionaries are true; empty lists and dictionaries are false, including empty selector/filter results.
+Scalar values are false only when exactly `false`, exactly `0`, or `""`. Other scalar strings are true, including `"False"`, `"0"`, and whitespace. Non-empty lists and dictionaries are true; empty ones are false, including empty selector/filter results.
 
 ```shelly
 $numbers = [1, 3, 5]
@@ -75,9 +54,9 @@ else
 end
 ```
 
-## Case blocks
+## 🧭 Case blocks
 
-`case VALUE` evaluates its value once. The first `when` whose value is exactly equal to it runs, with no fallthrough. `when VALUE or VALUE` supplies alternatives; each alternative is evaluated and compared exactly. `else` runs only when no `when` matches.
+`case VALUE` evaluates its value once. The first exactly equal `when` branch runs, with no fallthrough. `when VALUE or VALUE` supplies alternatives; `else` is optional and runs only when no branch matches.
 
 ```shelly
 $mode = "prod"
@@ -91,10 +70,17 @@ case $mode
 end
 ```
 
-`case` requires at least one `when`; `when` requires at least one value; `else` is optional, may appear once, and must be last. **Invalid:** `when` outside `case`, a missing `end`, `case` without `when`, duplicate `else`, `when` after `else`, comma-separated alternatives, or malformed values.
+`case` needs at least one `when`; `when` needs at least one value. `else` may appear once and must be last. Invalid forms include `when` outside `case`, a missing `end`, duplicate `else`, `when` after `else`, comma-separated alternatives, or malformed values.
 
-<p align="center"><img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" /></p>
+## 🛠️ Blocks, errors, and checks
 
-## `check` versus runtime
+`if` starts a block; `elif` and `else` are optional; `end` closes it. Blocks do not create scope, so assignments remain available afterward. Nested `if`, `repeat`, `while`, `for`, and `try` blocks are supported. Missing predicate arguments, an unterminated pattern, and an invalid regex are errors.
 
-`shelly check` validates conditional syntax, grouping, predicate forms, and block structure without running commands or evaluating filesystem state. It can report malformed expressions and structural errors, but it cannot prove a runtime path exists, a variable is defined at execution time, a regex matches, or a branch will be selected. `shelly run` evaluates conditions, short-circuits them, and reports runtime errors and results.
+`shelly check` validates syntax, grouping, predicates, and block structure without running commands or evaluating filesystem state. `shelly run` evaluates conditions, short-circuits them, and reports runtime errors and results.
+
+## Related guides
+
+- [Predicates](predicates.md) — reusable boolean checks and captures.
+- [While loops](while.md) — repeat while a condition is true.
+- [Repeat loops](repeat.md) and [For loops](for.md) — other control-flow loops.
+- [Choose menus](choose.md) — interactive value selection.

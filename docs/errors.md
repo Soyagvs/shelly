@@ -1,12 +1,8 @@
-# Error handling
+# Recover from ordinary Shelly errors
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+Use `try`, a required `catch`, and `end` when a runtime failure is expected and recoverable. Use [defer](defer.md) when cleanup must run regardless of the outcome.
 
-[Documentation index](index.md) · [Environment-only secrets](secrets.md) · [Archives](archive.md) · [Deferred cleanup](defer.md) · [Timeouts](timeouts.md) · [Exit](exit.md)
-
-Use `try`, a required `catch`, and `end` to handle ordinary runtime errors.
+## 🚀 Quick path
 
 ```shelly
 try -> $error
@@ -16,21 +12,22 @@ catch
 end
 ```
 
-## Retry and transient errors
+If the protected block succeeds, Shelly skips `catch` and continues after `end`. An ordinary error runs `catch`, then execution continues.
 
-`retry <attempts>` preserves the final structured error and retries only known timeout failures. Control-flow signals and ordinary command failures are never retried.
+## 📖 Syntax and rules
 
-## Syntax and rules
+| Form | Meaning |
+| --- | --- |
+| `try` | Catch an error without storing it |
+| `try -> $error` | Store the structured error dictionary |
+| `catch` | Required handler with no condition or destination |
+| `end` | Closes the complete block |
 
-- `try` starts a protected block. You may omit the destination when you do not need to inspect the error.
-- `try -> $error` stores a structured error dictionary before the catch body runs. Every error has `kind` and `message`.
-- `catch` is required exactly once for every `try`. It takes no condition or destination; inspect the captured dictionary in its body.
-- `end` closes the whole `try`/`catch` block.
-- If the try body succeeds, Shelly skips the catch body. An ordinary error runs the catch body, then execution continues after `end`.
-- Try blocks do not create a new scope. The try body and catch body share the surrounding scope, and nested tries use their nearest matching `catch`.
-- The supported headers are exactly `try` and `try -> $variable`. Forms such as `try $error`, `try as $error`, or a non-variable destination are rejected. `catch $error`, conditional catches, and `finally` are not supported.
-
-Without a destination, errors are still caught but are not available through a variable:
+- Every `try` has exactly one `catch`.
+- Captured errors have `kind` and `message`.
+- Try and catch share the surrounding scope; nested tries use their nearest matching catch.
+- Supported headers are exactly `try` and `try -> $variable`.
+- `try $error`, `try as $error`, `catch $error`, conditional catches, and `finally` are rejected.
 
 ```shelly
 try
@@ -40,9 +37,13 @@ catch
 end
 ```
 
-## Structured errors and timeouts
+## 🔎 Structured errors and retries
 
-Process failures include `program`, `args`, `code`, `stdout`, and `stderr` in addition to `kind` and `message`. A timeout is a distinct error with `kind` set to `"timeout"`; it includes `program` and `args`, but does not represent a process exit code or completed output. HTTP failures use `kind` and `message`; network, policy, syntax, and limit failures do not expose a response dictionary. Secret lookup failures include invalid environment names, missing or empty values, and non-text environment values; see [Environment-only secrets](secrets.md). A response with status 400 or higher uses `kind == "http"` and intentionally redacts its status, body, headers, and URL. See [HTTP requests](http.md) for the v1 network and redaction rules, [Timeouts](timeouts.md) for command and block deadlines, and [Commands and input](commands.md) for process and capture behavior.
+Process failures also include `program`, `args`, `code`, `stdout`, and `stderr`. Timeouts have `kind == "timeout"` and include `program` and `args`, but no process exit code or completed output. HTTP failures use `kind` and `message`; network, policy, syntax, and limit failures do not expose a response dictionary.
+
+A response with status 400 or higher has `kind == "http"` and intentionally redacts status, body, headers, and URL. Secret lookup failures include invalid environment names, missing or empty values, and non-text environment values.
+
+`retry <attempts>` preserves the final structured error and retries only known timeout failures. Control signals and ordinary command failures are never retried.
 
 ```shelly
 try -> $error
@@ -54,11 +55,9 @@ catch
 end
 ```
 
-Use [`defer`](defer.md) when cleanup must run for success, errors, or control signals; use `try` when failure is expected and recoverable.
+See [HTTP requests](http.md), [Timeouts](timeouts.md), [Commands and input](commands.md), and [Environment-only secrets](secrets.md) for subsystem details.
 
-Dry-run audit-log write and finalization (`sync_all()`) failures are surfaced as errors. Terminal records are written before synchronization is attempted, so a synchronization failure exits with an error even if a terminal `complete` record is already present. `sync_all()` does not guarantee durability against OS, filesystem, storage-device, or hardware failures; guarantees depend on the platform and filesystem.
-
-## Nested try
+## 🧩 Nested tries and control signals
 
 ```shelly
 try -> $outererror
@@ -72,9 +71,9 @@ catch
 end
 ```
 
-The inner `catch` handles the command failure, so the outer `catch` does not run. If the inner block does not handle an ordinary error, it propagates to the enclosing `try`.
+The inner handler catches the command failure, so the outer handler does not run. An unhandled ordinary error propagates outward.
 
-## Control signals are not caught
+`exit`, `break`, `continue`, and function `return` are control signals, not recoverable errors, so `try` does not catch them:
 
 ```shelly
 try
@@ -84,8 +83,14 @@ catch
 end
 ```
 
-`exit`, `break`, `continue`, and function `return` are control signals, not recoverable errors, so `try` does not catch them. Use [`defer`](defer.md) for cleanup on every exit path; see [`exit`](exit.md) for process termination behavior.
+Use [defer](defer.md) for cleanup on every exit path and [exit](exit.md) for process termination.
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+## 🛠️ Audit finalization
+
+Dry-run audit-log writes and finalization with `sync_all()` can fail. Terminal records are written before synchronization, so a synchronization failure exits with an error even when a terminal `complete` record exists. `sync_all()` cannot guarantee durability against OS, filesystem, storage-device, or hardware failures.
+
+## Related guides
+
+- [Deferred cleanup](defer.md) — run cleanup during unwinding.
+- [Exit](exit.md) — terminate the whole process.
+- [Timeouts](timeouts.md) — understand deadline failures.

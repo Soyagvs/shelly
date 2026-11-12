@@ -1,37 +1,27 @@
-# Choose menus
+# Ask for a choice with an interactive menu
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+Use `choose` to print a numbered menu, read a selection from stdin, and store the selected option value.
 
-`choose` is interactive: it asks a question, prints a numbered menu to stdout, and stores the selected option value.
+## 🚀 Quick path
 
 ```shelly
 choose "Deploy target?" ["staging", "production"] -> $target
 shellout "target=$target"
 ```
 
-Shelly prints:
+Shelly prints a question, numbered options, and `Choose: `. The user may enter the number (`2`) or the exact displayed selection (`production`). The destination receives `production`, not `2`; menu text is stdout only.
 
-```text
-Deploy target?
-1) staging
-2) production
-Choose: 
+## 📖 Syntax and rules
+
+```shelly
+choose "Question" ["A", "B", "C"] -> $choice
 ```
 
-The user may type either the number (`2`) or the exact displayed selection (`production`). The destination receives `production`, not `2`; the menu text is only stdout, while the selected value is stored.
-
-## Rules
-
-- Syntax is `choose "Question" ["A", "B", "C"] -> $choice`.
-- The options may be a list literal or a list expression, and must evaluate to a non-empty list.
-- Nested values are accepted; each option is displayed using its formatted value, and that exact displayed text can be entered.
-- There is no default selection or count limit. The destination after `->` must be a mutable variable.
-- Invalid input repeats the `Choose: ` prompt until the user enters a valid number or exact displayed selection.
-- Because it reads stdin interactively, `choose` is not suitable for noninteractive use: at EOF, an empty input is retried indefinitely.
-
-## Examples
+- Options may be a list literal or list expression and must evaluate to a non-empty list.
+- Nested values are accepted and displayed using their formatted value; that exact displayed text can be entered.
+- The destination must be a mutable variable.
+- There is no default selection or count limit.
+- Invalid input repeats the prompt until a valid number or exact displayed selection is entered.
 
 ```shelly
 $name = "Ada"
@@ -44,6 +34,11 @@ $options = ["small", "medium", "large"]
 choose "Size?" $options -> $size
 ```
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+## ⚠️ Interactive use and errors
+
+`choose` reads stdin and is not suitable for noninteractive use. At EOF, empty input is retried indefinitely. An empty or invalid options value, or a non-mutable destination, is rejected.
+
+## Related guides
+
+- [Conditionals](conditionals.md) — branch on the selected value.
+- [Lists](lists.md) — build and access option lists.

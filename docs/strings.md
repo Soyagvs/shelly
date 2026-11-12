@@ -1,14 +1,28 @@
-# Strings and interpolation
+# Write text with strings and interpolation
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+Strings hold text for commands, files, functions, and other values. This guide shows single-line and multiline syntax, escapes, interpolation, and the boundaries between text and values.
 
-A **string** is text. A value is the expression that supplies it: a quoted string is one value, while a variable, selector, or function result can supply another. See [variables](variables.md), [constants](constants.md), [lists](lists.md), and [dictionaries](dictionaries.md) for those values' own rules. Strings can be passed to [commands](commands.md), [files](files.md), and [functions](functions.md).
+## 🚀 At a glance
 
-## Single-line strings (supported)
+````shelly
+$name = "Ada"
+shellout "hello $name"
 
-Double quotes delimit a single-line string. The closing quote must be on the same physical line; a quoted string cannot continue onto the next line. Single quotes have no delimiter meaning: they are ordinary characters inside the text.
+$banner = ```
+Welcome
+  to Shelly
+```
+shellout $banner
+````
+
+- Double quotes create a single-line string.
+- Triple backticks create a multiline string and preserve body newlines and indentation.
+- Strings interpolate variables, constants, and selectors.
+- Lists and dictionaries are not automatically converted to text.
+
+## Single-line strings
+
+Double quotes delimit a single-line string. The closing quote must be on the same physical line. Single quotes are ordinary characters, not string delimiters.
 
 ```shelly
 $name = "Ada"
@@ -17,7 +31,7 @@ shellout "hello $name from $APP"
 shellout "It's valid text"
 ```
 
-Only these escapes are supported:
+Supported escapes are:
 
 | Escape | Meaning |
 | --- | --- |
@@ -31,11 +45,11 @@ $message = "line one\nline two\t(indented)"
 shellout "She said \"hello\""
 ```
 
-**Invalid forms (do not copy as runnable scripts):** an unescaped newline before the closing quote, an unsupported escape such as `\\q`, a dangling backslash at end of string, or any non-whitespace content after the closing quote. A single-quoted form such as `'Ada'` is not a separate string syntax; the quote characters are ordinary text.
+An unescaped newline, unsupported escape such as `\\q`, dangling backslash, or non-whitespace after the closing quote is invalid. `'Ada'` is text containing quote characters, not a separate string form.
 
-## Multiline strings (supported)
+## Multiline strings
 
-A multiline string opens with unquoted triple backticks (` ``` `) followed only by whitespace. Its closing delimiter is a line whose trimmed text is exactly ` ``` `. Opening and closing delimiter lines are excluded from the value. Every other body newline and indentation is preserved exactly.
+A multiline string opens with unquoted triple backticks followed only by whitespace. Its closing delimiter is a line whose trimmed text is exactly triple backticks. Delimiter lines are excluded; all other body newlines and indentation are preserved.
 
 ````shelly
 $banner = ```
@@ -45,28 +59,7 @@ Welcome
 shellout $banner
 ````
 
-Multiline values are accepted anywhere Shelly accepts a string/value expression, including assignment, [commands](commands.md), [files](files.md), and [function](functions.md) arguments:
-
-````shelly
-write "message.txt" ```
-first line
-second line
-```
-append "message.txt" ```
-third line
-```
-
-fn echo($text) {
-    shellout $text
-}
-call echo (```
-hello
-from a call
-```
-)
-````
-
-The body is text, not Shelly source: comments, braces, and Shelly-looking commands inside it are not executed or parsed. Multiline strings still perform [interpolation](#interpolation), however.
+The body is text, not Shelly source. Comments, braces, and command-looking lines are not executed. Multiline strings still interpolate:
 
 ````shelly
 $name = "Ada"
@@ -76,11 +69,11 @@ shellout this is still literal body text
 ```
 ````
 
-A missing closing delimiter is invalid. A body line that is exactly a delimiter after trimming closes the string there; it therefore cannot be included as content.
+A missing closing delimiter is invalid. A body line that trims to triple backticks closes the string and cannot be included as content.
 
-## Interpolation (supported and rejected forms)
+## Interpolation
 
-Inside a string, `$name` reads a variable or [constant](constants.md). A selector may read a list element, a list selection, or a dictionary entry. Dictionary keys may be quoted. Whitespace before a selector is allowed where the selector remains attached to the name (for example, `$names [1]`).
+Inside a string, `$name` reads a variable or [constant](constants.md). Selectors can read list elements, list selections, or dictionary entries. Dictionary keys may be quoted.
 
 ```shelly
 $names = ["Ana", "Luis", "Mora"]
@@ -92,36 +85,33 @@ shellout "user: $user[\"display name\"]"
 shellout "# is text, not a comment"
 ```
 
-Interpolation also works in multiline strings. It produces text in the surrounding string; it does not turn the surrounding string into a command or otherwise execute its contents.
+Interpolation produces text; it does not execute the surrounding string. These are rejected:
 
-**Rejected interpolation examples (invalid; not runnable scripts):**
+```text
+shellout "$$name"           # legacy $$ syntax
+shellout "$missing"         # undefined name
+shellout "$names[unknown]"  # invalid selector
+shellout "$names"           # whole list is not stringified
+shellout "$user"             # whole dictionary is not stringified
+```
 
-- `shellout "$$name"` — legacy `$$` syntax is unsupported.
-- `shellout "$missing"` — the name must be defined.
-- `shellout "$names[unknown]"` — selectors must be valid for the value and selector syntax.
-- `shellout "$names"` or `shellout "$user"` — a whole list or dictionary is not automatically converted to a string.
-
-For the complete contracts of names and selectors, link to [variables](variables.md), [constants](constants.md), [lists](lists.md), and [dictionaries](dictionaries.md) rather than treating interpolation as a separate data format.
+See [Variables](variables.md), [Constants](constants.md), [Lists](lists.md), and [Dictionaries](dictionaries.md) for name and selector contracts.
 
 ## String versus value
 
-A quoted or multiline string is text, with escapes decoded and interpolations substituted. A bare variable or selector is a value supplied directly to a command or function. Use a string when you need surrounding text; use the value when the receiving command accepts that value directly.
+Use a string when you need surrounding text. Pass a bare variable or selector when the receiving command accepts the value directly:
 
 ```shelly
 $name = "Ada"
-shellout "Hello $name"       # string with interpolation
-shellout $name                # value supplied directly
-write "greeting.txt" "Hi $name\n"  # escapes and interpolation in file text
+shellout "Hello $name"
+shellout $name
+write "greeting.txt" "Hi $name\n"
 ```
 
-See [comments](comments.md) for comment syntax; `#` inside a string is text.
+See [Comments](comments.md) for comment syntax; `#` inside a string is text.
 
-## Limits
+## Limits and related topics
 
-- Shelly has no custom or heredoc delimiter for multiline strings.
+- There is no custom or heredoc delimiter for multiline strings.
 - Multiline content cannot contain a line whose trimmed text is exactly triple backticks.
-- Lists and dictionaries are not automatically stringified; interpolate a selector or use the collection through the appropriate value contract.
-
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&height=2&color=7c3aed" width="100%" alt="purple divider" />
-</p>
+- See [Files](files.md), [Commands](commands.md), [Functions](functions.md), and [JSON helpers](json.md) for string consumers and conversion.
