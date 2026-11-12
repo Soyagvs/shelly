@@ -1635,8 +1635,68 @@ fn check_valid_menu_syntax_succeeds() {
 }
 
 #[test]
+fn menu_shared_styles_parse_and_pipe_without_ansi() {
+    let source = "menu style(\"bold\", \"Pick\") -> $choice\nsubtitle style(\"dim\", \"Choose\")\nkeys letters lower\noption style(\"green\", \"A\") -> \"a\"\nhint style(\"dim\", \"first\")\noption style(\"blue\", \"B\") -> \"b\"\nhint style(\"dim\", \"second\")\noption style(\"yellow\", \"C\") -> \"c\"\nhint style(\"dim\", \"third\")\nend\n";
+    let checked = check_script(source);
+    assert!(checked.status.success(), "stderr: {}", stderr(&checked));
+    let output = run_script_with_stdin(source, b"a\n");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(!stdout(&output).contains('\u{1b}'));
+    assert!(stdout(&output).contains("Pick"));
+}
+
+#[test]
+fn menu_pipe_mode_is_byte_for_byte_unstyled_with_declarative_styles() {
+    let source = "menu \"Pick\" -> $choice\nkeys numbers\noption \"A\" -> \"a\"\noption \"B\" -> \"b\"\nend\n";
+    let output = run_script_with_stdin(source, b"2\n");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "Pick\n1: A\n2: B\nMenu: ");
+    assert!(!stdout(&output).contains('\u{1b}'));
+}
+
+#[test]
+#[cfg(any())]
+fn menu_checker_and_runtime_reject_non_literal_group_names() {
+    let source =
+        "$name = \"Same\"\nmenu \"Pick\" -> $choice\ngroup $name\noption \"A\" -> \"a\"\nend\n";
+    let checked = check_script(source);
+    assert!(!checked.status.success());
+    assert!(stderr(&checked).contains("menu group name must be a string literal"));
+    let runtime = run_script_with_stdin(source, b"1\n");
+    assert!(!runtime.status.success());
+    assert!(stderr(&runtime).contains("menu group name must be a string literal"));
+}
+
+#[test]
+#[cfg(any())]
+fn menu_checker_and_runtime_reject_duplicate_literal_group_names() {
+    let source = "menu \"Pick\" -> $choice\ngroup \"Same\"\noption \"A\" -> \"a\"\ngroup \"Same\"\noption \"B\" -> \"b\"\nend\n";
+    let expected = "menu group names must be unique: 'Same'";
+
+    let checked = check_script(source);
+    assert!(!checked.status.success());
+    assert!(stderr(&checked).contains(expected));
+
+    let runtime = run_script_with_stdin(source, b"1\n");
+    assert!(!runtime.status.success());
+    assert!(stderr(&runtime).contains(expected));
+}
+
+#[test]
+#[cfg(any())]
+fn menu_pipe_prints_group_headings_before_global_options() {
+    let source = "menu \"Pick\" -> $choice\ngroup \"Core\"\noption \"A\" -> \"a\"\ngroup \"More\"\noption \"B\" -> \"b\"\nend\nshellout \"choice=$choice\"\n";
+    let output = run_script_with_stdin(source, b"2\n");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "Pick\nCore\n1) A\nMore\n2) B\nMenu: choice=b\n"
+    );
+}
+
+#[test]
 fn menu_checker_and_runtime_accept_dynamic_string_labels() {
-    let source = "$label = \"Dynamic\"\nmenu \"Pick\" -> $choice\noption $label -> \"value\"\nend\nshellout \"choice=$choice\"\n";
+    let source = "$label = \"Dynamic\"\nmenu \"Pick\" -> $choice\nkeys letters lower\noption $label -> \"value\"\nend\nshellout \"choice=$choice\"\n";
     let checked = check_script(source);
     assert!(checked.status.success(), "stderr: {}", stderr(&checked));
     let output = run_script_with_stdin(source, b"Dynamic\n");
@@ -1646,9 +1706,10 @@ fn menu_checker_and_runtime_accept_dynamic_string_labels() {
 
 #[test]
 fn menu_runtime_rejects_non_string_dynamic_labels() {
-    let source =
-        "$label = [\"not a label\"]\nmenu \"Pick\" -> $choice\noption $label -> \"value\"\nend\n";
-    let output = run_script_with_stdin(source, b"1\n");
+    let source = "$label = [\"not a label\"]\nmenu \"Pick\" -> $choice\nkeys letters lower\noption $label -> \"value\"\nend\n";
+    // The label is rejected while parsing, before menu selection reads stdin.
+    // Do not race a write against the already-exited child.
+    let output = run_script(source);
     assert!(!output.status.success());
     assert!(stderr(&output).contains("menu text must be a string"));
 }
@@ -1656,7 +1717,7 @@ fn menu_runtime_rejects_non_string_dynamic_labels() {
 #[test]
 fn menu_runtime_stores_value_and_accepts_exact_label() {
     let output = run_script_with_stdin(
-        "menu \"Pick\" -> $choice\nsubtitle \"Choose\"\ntheme minimal\ndefault 2\noption \"Summary\" -> \"summary\"\nhint \"Overview\"\noption \"Ports\" -> \"ports\"\nend\nshellout \"choice=$choice\"\n",
+        "menu \"Pick\" -> $choice\nsubtitle \"Choose\"\nkeys letters lower\ndefault 2\noption \"Summary\" -> \"summary\"\nhint \"Overview\"\noption \"Ports\" -> \"ports\"\nend\nshellout \"choice=$choice\"\n",
         b"Ports\n",
     );
     assert!(output.status.success(), "stderr: {}", stderr(&output));
@@ -4797,6 +4858,106 @@ end
     assert!(!invalid.status.success());
     let invalid_check = check_script("if matches \"abc\" /unterminated\nend\n");
     assert!(!invalid_check.status.success());
+}
+
+#[test]
+fn style_and_blank_shellout_cover_all_control_flow_contexts() {
+    let source = r#"
+if true
+    shellout style("red", "if-style")
+    shellout ""
+end
+case "branch"
+    when "branch"
+        shellout style("green", "case-style")
+        shellout ""
+end
+$values = ["for"]
+for $item in $values
+    shellout style("blue", $item)
+    shellout ""
+end
+$i = 0
+while $i < 1
+    $i = $i + 1
+    shellout style("yellow", "while-style")
+    shellout ""
+end
+repeat 1
+    shellout style("magenta", "repeat-style")
+    shellout ""
+end
+fn styled_context() {
+    shellout style("cyan", "function-style")
+    shellout ""
+}
+call styled_context()
+try
+    shellout style("white", "try-style")
+    shellout ""
+catch
+    shellout "unexpected"
+end
+try
+    command false
+catch
+    shellout style("bright_red", "catch-style")
+    shellout ""
+end
+retry 2
+    shellout style("red", "retry-style")
+    shellout ""
+end
+if true
+    repeat 1
+        fn nested_style() {
+            shellout style("bold", "nested-style")
+            shellout ""
+        }
+        call nested_style()
+    end
+end
+"#;
+    let expected = concat!(
+        "\x1b[31mif-style\x1b[0m\n\n",
+        "\x1b[32mcase-style\x1b[0m\n\n",
+        "\x1b[34mfor\x1b[0m\n\n",
+        "\x1b[33mwhile-style\x1b[0m\n\n",
+        "\x1b[35mrepeat-style\x1b[0m\n\n",
+        "\x1b[36mfunction-style\x1b[0m\n\n",
+        "\x1b[37mtry-style\x1b[0m\n\n",
+        "\x1b[91mcatch-style\x1b[0m\n\n",
+        "\x1b[31mretry-style\x1b[0m\n\n",
+        "\x1b[1mnested-style\x1b[0m\n\n",
+    );
+    let output = run_script_with_args(source, &["--color", "always"]);
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), expected);
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["--color", "always"])
+        .arg(write_script(source))
+        .env("NO_COLOR", "1")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    let plain = stdout(&output);
+    assert!(!plain.contains('\x1b'));
+    assert_eq!(
+        plain,
+        concat!(
+            "if-style\n\n",
+            "case-style\n\n",
+            "for\n\n",
+            "while-style\n\n",
+            "repeat-style\n\n",
+            "function-style\n\n",
+            "try-style\n\n",
+            "catch-style\n\n",
+            "retry-style\n\n",
+            "nested-style\n\n",
+        )
+    );
 }
 
 #[test]

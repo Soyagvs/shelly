@@ -1,0 +1,5 @@
+# Menu Simplification v1 task mirror
+
+- Complete: remove theme and group syntax; converge on one compact menu layout while retaining selection, pipe, audit, dry-run, and width guarantees.
+- Shelly canonical docs updated; external editor/example integrations remain out of scope.
+- Focused verification passed; commit only with explicit authorization.

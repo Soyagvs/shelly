@@ -1,0 +1,7 @@
+# Declarative menu TUI v1 tasks
+
+- [x] 1. Map parser/checker/renderer seams and propose safe grammar.
+- [x] 2. Implement typed color roles and bounded spacing with checker/runtime parity.
+- [x] 3. Update the Operations Console showcase and document the contract.
+- [x] 4. Independently verify renderer and deterministic non-TTY behavior.
+- [ ] Follow-up: borders and two-column layout in a separately authorized work unit.

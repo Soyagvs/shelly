@@ -8,6 +8,8 @@
 - Complete: final full regression, documentation checks, and diff check; strict all-target clippy has 33 pre-existing warnings outside Menu UI
 - Blocked: native review preflight stopped because RDD is disabled; no approval exists
 - Pending: commit remains intentionally unauthorized
+- Superseded: separate padded cards were implemented and verified, but user rejected their appearance
+- Complete: literal-only `group "Name"` grammar/checker/runtime parity with deterministic duplicate validation; pipe headings render before their first globally numbered option; reference-style grouped two-column panel layout retained
 - Complete: correction verified for dynamic string labels, runtime non-string rejection, and candidate `src/menu.rs` clippy warnings; remaining clippy warnings are pre-existing outside the menu implementation
 - Complete: final-review corrections verified — pipe input reads one CRLF-safe line without EOF, and runtime directive placement/repetition checks match the checker
 - Complete: dedicated `docs/menu.md` added; all menu references migrated from `choose`, with grammar, TTY/pipe, wrapping, dry-run/audit, and migration diagnostics documented

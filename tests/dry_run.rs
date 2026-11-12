@@ -238,7 +238,7 @@ fn dry_run_capture_destinations_hide_stale_values() {
 #[test]
 fn dry_run_menu_blocks_without_reading_stdin_or_faking_result() {
     let output = run(
-        "menu \"Pick\" -> $choice\noption \"one\" -> \"one\"\noption \"two\" -> \"two\"\nend\n",
+        "menu \"Pick\" -> $choice\noption[a] \"one\" -> \"one\"\noption[b] \"two\" -> \"two\"\nend\n",
     );
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);

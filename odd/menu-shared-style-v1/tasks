@@ -1,0 +1,6 @@
+# Menu Shared Style v1 Tasks
+
+- [x] Add safe styled-text projection and visible-width rendering.
+- [x] Add color-policy, pipe, and ANSI-width regression tests.
+- [ ] Update docs/examples and independently verify.
+- [x] Repair current-source validation for shared style expressions and record the earlier false completion.

@@ -1,0 +1,6 @@
+# Menu key modes v1 tasks
+
+- [x] 1. Add typed key modes with parser/checker parity.
+- [x] 2. Render and select numeric, automatic-letter, and custom keys.
+- [x] 3. Migrate tests, docs, examples, Neovim, and VS Code grammar support.
+- [x] 4. Independently verify safety, behavior, and editor coverage.

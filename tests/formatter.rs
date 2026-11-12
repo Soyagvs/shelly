@@ -50,6 +50,14 @@ fn formatting_is_idempotent() {
 }
 
 #[test]
+fn complete_styled_menu_formats_as_one_block() {
+    let source = "menu style(\"bold\", \"Pick one\") -> $choice\nsubtitle style(\"dim\", \"Choose an option\")\nkeys letters lower\noption[a] style(\"green\", \"First\") -> \"first\"\nhint style(\"dim\", \"first hint\")\nshellout \"\"\noption[b] style(\"blue\", \"Second\") -> \"second\"\nhint style(\"dim\", \"second hint\")\nend\n";
+    let expected = "menu style(\"bold\", \"Pick one\") -> $choice\n    subtitle style(\"dim\", \"Choose an option\")\n    keys letters lower\n    option[a] style(\"green\", \"First\") -> \"first\"\n    hint style(\"dim\", \"first hint\")\n    shellout \"\"\n    option[b] style(\"blue\", \"Second\") -> \"second\"\n    hint style(\"dim\", \"second hint\")\nend\n";
+    assert_eq!(format_source(source).unwrap(), expected);
+    assert_eq!(format_source(expected).unwrap(), expected);
+}
+
+#[test]
 fn modern_functions_indent_nested_blocks_and_following_statements() {
     for declaration in ["fn local {", "export fn public {"] {
         let source = format!(

@@ -39,6 +39,22 @@ use value::{
 const WHILE_ITERATION_LIMIT: usize = 10_000;
 static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+fn is_menu_text_expression(text: &str) -> bool {
+    let text = text.trim();
+    if parse_string_literal(text).is_ok() || parse_var_ref(text).is_ok() {
+        return true;
+    }
+    let Some(inner) = text
+        .strip_prefix("style(")
+        .and_then(|v| v.strip_suffix(')'))
+    else {
+        return false;
+    };
+    split_commas(inner)
+        .map(|parts| parts.len() == 2)
+        .unwrap_or(false)
+}
+
 pub fn run_lsp() {
     lsp::run(check_source);
 }
@@ -1430,7 +1446,13 @@ impl Interpreter {
                         "dry-run unavailable-result: menu requires interactive input".into(),
                     ));
                 }
-                let selected = menu::select(&spec)?;
+                let menu_color = !env::var_os("NO_COLOR").is_some()
+                    && match self.color {
+                        ColorPolicy::Always => true,
+                        ColorPolicy::Never => false,
+                        ColorPolicy::Auto => io::stdout().is_terminal(),
+                    };
+                let selected = menu::select(&spec, menu_color)?;
                 self.vars
                     .insert(spec.destination, spec.options[selected].value.clone());
                 index = next;
@@ -3457,6 +3479,7 @@ impl Interpreter {
         child.stack = self.stack.clone();
         child.imported = self.imported.clone();
         child.deadline = self.deadline;
+        child.color = self.color;
         for (idx, param) in function.params.iter().enumerate() {
             let value = if let Some(text) = arg_texts.get(idx) {
                 self.eval_expr_value(text)?
@@ -5062,7 +5085,8 @@ enum BlockKind {
         option_open: bool,
         saw_hint: bool,
         saw_subtitle: bool,
-        saw_theme: bool,
+        style_roles: u8,
+        style_spacing: bool,
         option_count: usize,
         default: Option<usize>,
     },
@@ -5130,12 +5154,15 @@ impl Checker {
 
     fn check_line(&mut self, line: &str) -> Result<(), String> {
         if let Some(rest) = line.strip_prefix("menu ") {
-            let (title, tail) = split_string_literal_tail(rest.trim())
-                .map_err(|_| "menu syntax is menu \"Title\" -> $destination".to_string())?;
-            parse_string_literal(title)?;
-            let Some(destination) = tail.trim().strip_prefix("->") else {
-                return Err("menu syntax requires -> $destination".to_string());
-            };
+            let (title, destination) = rest
+                .trim()
+                .split_once("->")
+                .ok_or("menu syntax requires -> $destination")?;
+            let title = title.trim();
+            if !is_menu_text_expression(title) {
+                return Err("menu title must be a string expression".to_string());
+            }
+            let destination = destination.trim();
             if destination.trim().is_empty() {
                 return Err("menu syntax requires -> $destination".to_string());
             }
@@ -5149,7 +5176,8 @@ impl Checker {
                 option_open: false,
                 saw_hint: false,
                 saw_subtitle: false,
-                saw_theme: false,
+                style_roles: 0,
+                style_spacing: false,
                 option_count: 0,
                 default: None,
             });
@@ -5158,6 +5186,97 @@ impl Checker {
         if let Some(BlockKind::Menu { .. }) = self.blocks.last() {
             if line == "end" {
                 // handled by the generic end logic below
+            } else if line.starts_with("style ") {
+                return Err("menu style directives were removed; use shared style(...) expressions or shellout \"\" for blank rows".into());
+            } else if line == "shellout \"\"" {
+                return Ok(());
+            } else if line.starts_with("shellout ") {
+                return Err("menu shellout only accepts exactly shellout \"\" as a blank visual row; move commands outside the menu".into());
+            } else if let Some(mode) = line.strip_prefix("keys ") {
+                if !matches!(mode.trim(), "numbers" | "letters lower" | "letters upper") {
+                    return Err("menu keys must be numbers, letters lower, or letters upper".into());
+                }
+                return Ok(());
+            } else if false {
+                let style_roles = &mut 0u32;
+                let style_spacing = &mut false;
+                let mut parts = line[6..].split_whitespace();
+                match parts.next() {
+                    Some("spacing") => {
+                        if *style_spacing {
+                            return Err("style spacing may appear at most once".into());
+                        }
+                        if parts
+                            .next()
+                            .map(|v| !matches!(v, "0" | "1"))
+                            .unwrap_or(true)
+                            || parts.next().is_some()
+                        {
+                            return Err("style spacing must be 0 or 1".into());
+                        }
+                        *style_spacing = true;
+                    }
+                    Some("color") => {
+                        let role = parts
+                            .next()
+                            .ok_or("style color requires a role and named color")?;
+                        let color = parts
+                            .next()
+                            .ok_or("style color requires a role and named color")?;
+                        if parts.next().is_some() {
+                            return Err("style color requires a role and named color".into());
+                        }
+                        if !matches!(
+                            role,
+                            "title" | "subtitle" | "option" | "selected" | "hint" | "prompt"
+                        ) {
+                            return Err(format!("unknown menu color role: {role}"));
+                        }
+                        if !matches!(
+                            color,
+                            "black"
+                                | "red"
+                                | "green"
+                                | "yellow"
+                                | "blue"
+                                | "magenta"
+                                | "cyan"
+                                | "white"
+                                | "bright_black"
+                                | "bright_red"
+                                | "bright_green"
+                                | "bright_yellow"
+                                | "bright_blue"
+                                | "bright_magenta"
+                                | "bright_cyan"
+                                | "bright_white"
+                        ) {
+                            return Err(format!("unknown named menu color: {color}"));
+                        }
+                        let bit = match role {
+                            "title" => 1,
+                            "subtitle" => 2,
+                            "option" => 4,
+                            "selected" => 8,
+                            "hint" => 16,
+                            _ => 32,
+                        };
+                        if *style_roles & bit != 0 {
+                            return Err(format!(
+                                "menu color role may appear at most once: '{role}'"
+                            ));
+                        }
+                        *style_roles |= bit;
+                    }
+                    _ => return Err("style requires color or spacing".into()),
+                }
+                return Ok(());
+            } else if let Some(rest) = line.strip_prefix("group ") {
+                let _ = rest;
+                return Err(
+                    "menu group was removed; remove it because menus use one global option list"
+                        .to_string(),
+                );
             } else if let Some(rest) = line.strip_prefix("option ") {
                 let Some(BlockKind::Menu {
                     saw_option,
@@ -5176,7 +5295,7 @@ impl Checker {
                     .split_once("->")
                     .ok_or("menu option requires -> VALUE_EXPR")?;
                 let label = label.trim();
-                if parse_string_literal(label).is_err() && parse_var_ref(label).is_err() {
+                if !is_menu_text_expression(label) {
                     return Err("menu option label must be a string expression".to_string());
                 }
                 if value.trim().is_empty() {
@@ -5202,8 +5321,9 @@ impl Checker {
                 if *saw_hint {
                     return Err("menu option may have at most one hint".to_string());
                 }
-                parse_string_literal(rest.trim())
-                    .map_err(|_| "menu hint must be a string expression".to_string())?;
+                if !is_menu_text_expression(rest.trim()) {
+                    return Err("menu hint must be a string expression".to_string());
+                }
                 *saw_hint = true;
                 return Ok(());
             } else if let Some(rest) = line.strip_prefix("subtitle ") {
@@ -5221,30 +5341,16 @@ impl Checker {
                 if *saw_subtitle {
                     return Err("menu subtitle may appear at most once".to_string());
                 }
-                parse_string_literal(rest.trim())
-                    .map_err(|_| "menu subtitle must be a string expression".to_string())?;
+                if !is_menu_text_expression(rest.trim()) {
+                    return Err("menu subtitle must be a string expression".to_string());
+                }
                 *saw_subtitle = true;
                 return Ok(());
-            } else if let Some(rest) = line.strip_prefix("theme ") {
-                let Some(BlockKind::Menu {
-                    saw_option,
-                    saw_theme,
-                    ..
-                }) = self.blocks.last_mut()
-                else {
-                    unreachable!()
-                };
-                if *saw_option {
-                    return Err("menu theme must appear before the first option".to_string());
-                }
-                if *saw_theme {
-                    return Err("menu theme may appear at most once".to_string());
-                }
-                if !matches!(rest.trim(), "panel" | "minimal") {
-                    return Err("menu theme must be panel or minimal".to_string());
-                }
-                *saw_theme = true;
-                return Ok(());
+            } else if line.starts_with("theme ") {
+                return Err(
+                    "menu theme was removed; remove it because menus use one fixed compact layout"
+                        .to_string(),
+                );
             } else if let Some(rest) = line.strip_prefix("default ") {
                 let Some(BlockKind::Menu {
                     saw_option,
@@ -6066,7 +6172,7 @@ fn apply_style(style: &str, value: &str) -> Result<String, String> {
     Ok(format!("\x1b[{}m{}\x1b[0m", codes.join(";"), value))
 }
 
-fn strip_ansi(value: &str) -> String {
+pub(crate) fn strip_ansi(value: &str) -> String {
     let mut out = String::new();
     let mut chars = value.chars();
     while let Some(ch) = chars.next() {

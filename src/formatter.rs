@@ -174,7 +174,9 @@ fn is_open(line: &str) -> bool {
     line.starts_with("export fn ")
         || matches!(
             first_word(line),
-            "if" | "for"
+            "menu"
+                | "if"
+                | "for"
                 | "while"
                 | "repeat"
                 | "function"

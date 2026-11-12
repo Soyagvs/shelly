@@ -1,0 +1,7 @@
+# Menu Composition v1 Tasks
+
+- [x] Remove menu-only styling; add declarative blank rows.
+- [x] Repair explicit-key fixtures and resize redraw accounting.
+- [ ] Migrate documentation and examples.
+- [ ] Update editor integrations.
+- [x] Independently verify all affected core behavior; editor integrations remain outside this slice.
