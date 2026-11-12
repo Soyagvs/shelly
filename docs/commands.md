@@ -40,7 +40,10 @@ shellout $data
 ```shelly
 shellout "hello"
 ask "Name? " -> $name
-choose "Color?" ["red", "blue"] -> $color
+menu "Color?" -> $color
+    option "red" -> "red"
+    option "blue" -> "blue"
+end
 command pwd -> $cwd
 arg 1 -> $name
 hasArg "--dry-run" -> $dryrun
@@ -52,7 +55,7 @@ args -> $all
 - `shellout` prints a value and adds a newline.
 - `shellin` reads one stdin line into a variable.
 - `ask` prints a prompt, reads one line, and stores it with `->`.
-- `choose` prints a numbered menu, accepts a number or exact option text, and stores the selected value; see [choose.md](choose.md).
+- `menu` renders a TTY menu or a numbered pipe-mode prompt and stores the selected value; see [menu.md](menu.md).
 - `command <program> <args...>` runs a program directly, without shell parsing. Bare words, quoted argument atoms, and variables each become argv arguments. This is the allowed way to pass a captured environment secret as an argv value; see [Environment-only secrets](secrets.md). Add `timeout SECONDS` to set a per-process deadline; see [Timeouts](timeouts.md).
 - `shell "..."` explicitly runs text through the system shell; use it for pipelines and redirections. Shell syntax is platform dependent.
 - `arg N -> $var`, `hasArg VALUE -> $var`, and `args -> $var` read arguments passed after the script path.
@@ -105,7 +108,10 @@ line two
 
 ```shelly
 ask "Favorite color? " -> $color
-choose "Favorite color?" ["red", "blue"] -> $color
+menu "Favorite color?" -> $color
+    option "red" -> "red"
+    option "blue" -> "blue"
+end
 shellin $line
 ```
 

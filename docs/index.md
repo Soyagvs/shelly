@@ -24,7 +24,7 @@ Use this index to move from a first successful script to focused language and au
 - [Standard helpers](helpers.md) — text, lists, conversion, paths, commands, random, and values. See also the [time and date helpers](helpers.md#time-random-and-json).
 - [Files](files.md) · [Archives](archive.md) · [HTTP requests](http.md) · [Logging](logging.md) · [Timeouts](timeouts.md) · [Retry](retry.md) · [Native pipelines](pipeline.md) · [Parallel tasks](parallel.md)
 - [Date formatting](date-formatting.md) — `formatDate`, tokens, UTC input, and failures.
-- [Choose menus](choose.md) · [Commands and input](commands.md) · [Terminal styling](terminal-styling.md) · [Environment-only secrets](secrets.md) · [Test read mocks](mocks.md) · [Dry-run and audit logs](dry-run.md)
+- [Menu blocks](menu.md) · [Commands and input](commands.md) · [Terminal styling](terminal-styling.md) · [Environment-only secrets](secrets.md) · [Test read mocks](mocks.md) · [Dry-run and audit logs](dry-run.md)
 
 ## 🔧 Automate and customize
 

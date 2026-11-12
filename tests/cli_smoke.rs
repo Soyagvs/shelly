@@ -1614,156 +1614,64 @@ end
 }
 
 #[test]
-fn choose_by_number_stores_selected_value_and_prints_menu() {
-    let output = run_script_with_stdin(
-        r#"
-choose "Pick one" ["A", "B", "C"] -> $choice
-shellout "choice=$choice"
-"#,
-        b"2\n",
-    );
-
-    assert!(output.status.success(), "stderr: {}", stderr(&output));
-    assert_eq!(
-        stdout(&output),
-        "Pick one\n1) A\n2) B\n3) C\nChoose: choice=B\n"
-    );
+fn choose_is_rejected_with_menu_migration() {
+    let output = run_script(r#"choose "Pick one" ["A"] -> $choice"#);
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("use a menu block instead"));
 }
 
 #[test]
 fn choose_by_exact_text_stores_selected_value() {
-    let output = run_script_with_stdin(
-        r#"
-choose "Pick one" ["A", "B"] -> $choice
-shellout $choice
-"#,
-        b"B\n",
-    );
-
-    assert!(output.status.success(), "stderr: {}", stderr(&output));
-    assert_eq!(stdout(&output), "Pick one\n1) A\n2) B\nChoose: B\n");
-}
-
-#[test]
-fn choose_eof_returns_input_closed_error() {
-    let output = run_script_with_stdin(
-        r#"
-choose "Pick one" ["A", "B"] -> $choice
-"#,
-        b"",
-    );
-
-    assert!(!output.status.success(), "stderr: {}", stderr(&output));
-    assert!(
-        stderr(&output).contains("choose input closed"),
-        "stderr: {}",
-        stderr(&output)
-    );
-}
-
-#[test]
-fn choose_invalid_input_reprompts_then_accepts_valid_input() {
-    let output = run_script_with_stdin(
-        r#"
-choose "Pick one" ["A", "B"] -> $choice
-shellout $choice
-"#,
-        b"nope\n1\n",
-    );
-
-    assert!(output.status.success(), "stderr: {}", stderr(&output));
-    assert_eq!(stdout(&output), "Pick one\n1) A\n2) B\nChoose: Choose: A\n");
-}
-
-#[test]
-fn choose_empty_option_list_fails() {
-    let output = run_script(r#"choose "Pick one" [] -> $choice"#);
-
+    let output = run_script(r#"choose "Pick one" ["A", "B"] -> $choice"#);
     assert!(!output.status.success());
-    assert!(stderr(&output).contains("choose options must not be empty"));
+    assert!(stderr(&output).contains("use a menu block instead"));
 }
 
 #[test]
-fn choose_choice_stores_wrapped_value_not_label() {
+fn check_valid_menu_syntax_succeeds() {
+    let output = check_script("menu \"Pick one\" -> $choice\noption \"A\" -> \"a\"\nend\n");
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+}
+
+#[test]
+fn menu_checker_and_runtime_accept_dynamic_string_labels() {
+    let source = "$label = \"Dynamic\"\nmenu \"Pick\" -> $choice\noption $label -> \"value\"\nend\nshellout \"choice=$choice\"\n";
+    let checked = check_script(source);
+    assert!(checked.status.success(), "stderr: {}", stderr(&checked));
+    let output = run_script_with_stdin(source, b"Dynamic\n");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stdout(&output).contains("choice=value"));
+}
+
+#[test]
+fn menu_runtime_rejects_non_string_dynamic_labels() {
+    let source =
+        "$label = [\"not a label\"]\nmenu \"Pick\" -> $choice\noption $label -> \"value\"\nend\n";
+    let output = run_script_with_stdin(source, b"1\n");
+    assert!(!output.status.success());
+    assert!(stderr(&output).contains("menu text must be a string"));
+}
+
+#[test]
+fn menu_runtime_stores_value_and_accepts_exact_label() {
     let output = run_script_with_stdin(
-        r#"
-choose "Pick one" [choice("Visible", "stored")] -> $choice
-shellout "choice=$choice"
-"#,
-        b"1\n",
+        "menu \"Pick\" -> $choice\nsubtitle \"Choose\"\ntheme minimal\ndefault 2\noption \"Summary\" -> \"summary\"\nhint \"Overview\"\noption \"Ports\" -> \"ports\"\nend\nshellout \"choice=$choice\"\n",
+        b"Ports\n",
     );
-
     assert!(output.status.success(), "stderr: {}", stderr(&output));
-    assert!(stdout(&output).contains("choice=stored"));
+    assert!(stdout(&output).contains("choice=ports"));
 }
 
 #[test]
-fn check_validates_choose_choice_and_default() {
-    for (source, expected) in [
-        (
-            r#"choose "Pick one" [choice("Visible", "stored")] default 1 -> $choice"#,
-            None,
-        ),
-        (
-            r#"choose "Pick one" ["A"] default 0 -> $choice"#,
-            Some("default must be at least 1"),
-        ),
-        (
-            r#"choose "Pick one" ["A"] default 2 -> $choice"#,
-            Some("default 2 is out of range for 1 option"),
-        ),
-        (
-            r#"choose "Pick one" ["A"] default "x" -> $choice"#,
-            Some("default must be an integer"),
-        ),
-        (
-            r#"choose "Pick one" [choice("", "stored")] -> $choice"#,
-            Some("choice label must be a nonempty string"),
-        ),
+fn menu_rejects_missing_end_and_nested_blocks() {
+    for source in [
+        "menu \"Pick\" -> $choice\noption \"A\" -> \"a\"\n",
+        "menu \"Pick\" -> $choice\nif true\nend\n",
     ] {
         let output = check_script(source);
-        match expected {
-            None => assert!(output.status.success(), "stderr: {}", stderr(&output)),
-            Some(expected) => {
-                assert!(!output.status.success(), "source succeeded: {source}");
-                assert!(
-                    stderr(&output).contains(expected),
-                    "stderr: {}",
-                    stderr(&output)
-                );
-            }
-        }
-    }
-}
-
-#[test]
-fn check_valid_choose_syntax_succeeds() {
-    let output = check_script(r#"choose "Pick one" ["A", "B"] -> $choice"#);
-
-    assert!(output.status.success(), "stderr: {}", stderr(&output));
-}
-
-#[test]
-fn check_validates_choose_invalid_syntax() {
-    for (source, expected) in [
-        (r#"choose "Pick one" ["A"]"#, "choose syntax is choose"),
-        (
-            r#"choose "Pick one" [] -> $choice"#,
-            "choose options must not be empty",
-        ),
-        (
-            r#"choose "Pick one" ["A"] -> $CHOICE"#,
-            "choose destination must be a variable",
-        ),
-    ] {
-        let output = check_script(source);
-
-        assert!(!output.status.success(), "source succeeded: {source}");
-        assert!(
-            stderr(&output).contains(expected),
-            "stderr did not contain {expected:?}: {}",
-            stderr(&output)
-        );
+        assert!(!output.status.success(), "source unexpectedly succeeded");
+        assert!(stderr(&output).contains("menu"));
     }
 }
 

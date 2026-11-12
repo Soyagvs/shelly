@@ -149,10 +149,10 @@ fn render(
         write!(out, "\x1b[{}A", labels.len() + 1)
             .map_err(|e| format!("choose render failed: {e}"))?;
     }
-    writeln!(out, "\r\x1b[2K{question}").map_err(|e| format!("choose render failed: {e}"))?;
+    writeln!(out, "\r\x1b[2K{question}\r").map_err(|e| format!("choose render failed: {e}"))?;
     for (index, label) in labels.iter().enumerate() {
         let marker = if index == state.selected { ">" } else { " " };
-        writeln!(out, "\x1b[2K{marker} {}) {label}", index + 1)
+        writeln!(out, "\r\x1b[2K{marker} {}) {label}\r", index + 1)
             .map_err(|e| format!("choose render failed: {e}"))?;
     }
     out.flush()
@@ -173,6 +173,27 @@ mod tests {
         state.apply(MenuEvent::Up);
         assert_eq!(state.selected, 2);
     }
+    #[test]
+    fn render_ends_each_menu_line_with_crlf() {
+        let mut output = Vec::new();
+        let state = MenuState::new(2, None);
+        render(
+            &mut output,
+            "Pick one",
+            &["first".into(), "second".into()],
+            &state,
+            false,
+        )
+        .unwrap();
+
+        assert!(
+            output
+                .split(|byte| *byte == b'\n')
+                .filter(|line| !line.is_empty())
+                .all(|line| line.starts_with(b"\r") && line.ends_with(b"\r"))
+        );
+    }
+
     #[test]
     fn escape_is_not_selection() {
         let mut state = MenuState::new(2, None);

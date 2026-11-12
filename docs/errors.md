@@ -39,7 +39,7 @@ end
 
 ## 🔎 Structured errors and retries
 
-Process failures also include `program`, `args`, `code`, `stdout`, and `stderr`. Timeouts have `kind == "timeout"` and include `program` and `args`, but no process exit code or completed output. HTTP failures use `kind` and `message`; network, policy, syntax, and limit failures do not expose a response dictionary. `choose` reports `choose cancelled` for TTY Escape cancellation and `choose input closed` when non-TTY stdin reaches EOF.
+Process failures also include `program`, `args`, `code`, `stdout`, and `stderr`. Timeouts have `kind == "timeout"` and include `program` and `args`, but no process exit code or completed output. HTTP failures use `kind` and `message`; network, policy, syntax, and limit failures do not expose a response dictionary. `menu` reports `menu cancelled` for TTY Escape cancellation and `menu input closed` when non-TTY stdin reaches EOF. The removed `choose` command produces a migration diagnostic directing scripts to a `menu` block.
 
 A response with status 400 or higher has `kind == "http"` and intentionally redacts status, body, headers, and URL. Secret lookup failures include invalid environment names, missing or empty values, and non-text environment values.
 

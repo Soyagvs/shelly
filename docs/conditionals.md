@@ -83,4 +83,4 @@ end
 - [Predicates](predicates.md) — reusable boolean checks and captures.
 - [While loops](while.md) — repeat while a condition is true.
 - [Repeat loops](repeat.md) and [For loops](for.md) — other control-flow loops.
-- [Choose menus](choose.md) — interactive value selection.
+- [Menu blocks](menu.md) — interactive value selection.

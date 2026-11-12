@@ -61,7 +61,7 @@ See [commands.md](commands.md), [files.md](files.md), and [conditionals.md](cond
 - `shell "..."` is the explicit, shell/platform-dependent escape hatch for pipelines and redirections. The old `command "..."` syntax was removed.
 - `arg`, `hasArg`, and `args` read command-line arguments passed after the script path.
 - `"..."` is for one-line text; triple backticks are for multiline text.
-- `choose "Question" ["A", "B"] -> $choice` prints an interactive menu and stores the chosen value.
+- `menu "Question" -> $choice` declares an interactive menu and stores the selected value; see [menu.md](menu.md).
 - `log "identifier"` wraps a block with structured file logging in script-relative `logs/`.
 - `exists` and `contains` provide built-in boolean predicates.
 - Standard helpers transform text, lists, values, path strings, time, and random numbers; see [helpers.md](helpers.md) and the [date formatting guide](date-formatting.md).
@@ -135,7 +135,7 @@ The second form is shell/platform dependent; see [commands.md](commands.md).
 | Logging | [logging.md](logging.md) |
 | Files | [files.md](files.md) |
 | Commands and input | [commands.md](commands.md) |
-| Choose menus | [choose.md](choose.md) |
+| Menu blocks | [menu.md](menu.md) |
 | Exit | [exit.md](exit.md) |
 | Error handling | [errors.md](errors.md) |
 | Functions | [functions.md](functions.md) |

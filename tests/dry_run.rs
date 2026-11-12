@@ -236,12 +236,14 @@ fn dry_run_capture_destinations_hide_stale_values() {
 }
 
 #[test]
-fn dry_run_choose_blocks_without_reading_stdin_or_faking_result() {
-    let output = run("choose \"Pick\" [\"one\", \"two\"] -> $choice\n");
+fn dry_run_menu_blocks_without_reading_stdin_or_faking_result() {
+    let output = run(
+        "menu \"Pick\" -> $choice\noption \"one\" -> \"one\"\noption \"two\" -> \"two\"\nend\n",
+    );
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("dry-run unavailable-result"), "{stderr}");
-    assert!(!String::from_utf8_lossy(&output.stdout).contains("Choose:"));
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("Menu:"));
 }
 
 #[test]

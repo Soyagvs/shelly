@@ -1,0 +1,13 @@
+# Menu UI v1 task mirror
+
+- Complete: grammar and structural checker; `choose` now emits a precise migration diagnostic.
+- Complete: runtime model and focused runtime/dry-run/pipe coverage
+- Complete: renderer (panel/minimal themes, display-width wrapping, narrow-width layout, and rendered-line-count redraw)
+- Complete: functional implementation, focused coverage, and validation; legacy ignored choose tests removed
+- Complete: sibling `shelly-example` converted to the canonical menu block; pipe-fed selection reaches the ports branch and dry-run correctly rejects menu input
+- Complete: final full regression, documentation checks, and diff check; strict all-target clippy has 33 pre-existing warnings outside Menu UI
+- Blocked: native review preflight stopped because RDD is disabled; no approval exists
+- Pending: commit remains intentionally unauthorized
+- Complete: correction verified for dynamic string labels, runtime non-string rejection, and candidate `src/menu.rs` clippy warnings; remaining clippy warnings are pre-existing outside the menu implementation
+- Complete: final-review corrections verified — pipe input reads one CRLF-safe line without EOF, and runtime directive placement/repetition checks match the checker
+- Complete: dedicated `docs/menu.md` added; all menu references migrated from `choose`, with grammar, TTY/pipe, wrapping, dry-run/audit, and migration diagnostics documented

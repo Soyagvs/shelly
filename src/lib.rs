@@ -12,12 +12,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod archive;
 mod audit;
-mod choose;
 mod comments;
 pub mod formatter;
 #[doc(hidden)]
 pub mod http;
 pub mod lsp;
+mod menu;
 mod mock;
 mod parser;
 mod secret;
@@ -1421,6 +1421,21 @@ impl Interpreter {
                     .map_err(|error| line_error(line_no, error))?;
                 continue;
             }
+            if line == "menu" || line.starts_with("menu ") {
+                let (spec, next) =
+                    menu::parse_spec(lines, index, &mut |expr| self.eval_expr_value(expr))?;
+                if self.effect(audit::AuditAction::Input { kind: "stdin" })? {
+                    return Err(line_error(
+                        line_no,
+                        "dry-run unavailable-result: menu requires interactive input".into(),
+                    ));
+                }
+                let selected = menu::select(&spec)?;
+                self.vars
+                    .insert(spec.destination, spec.options[selected].value.clone());
+                index = next;
+                continue;
+            }
             self.run_line(line, line_no)
                 .map_err(|error| line_error(line_no, error))?;
             index += 1;
@@ -2295,35 +2310,8 @@ impl Interpreter {
             self.vars.insert(name, Value::Scalar(input));
             return Ok(());
         }
-        if let Some(rest) = line.strip_prefix("choose ") {
-            let (question_text, options_text, destination, default) =
-                parse_choose_capture(rest.trim())?;
-            let question = self.eval_string(question_text)?;
-            let Value::List(options) = self.eval_expr_value(options_text)? else {
-                return Err("choose options must be a list".to_string());
-            };
-            if options.is_empty() {
-                return Err("choose options must not be empty".to_string());
-            }
-            if let Some(default) = default
-                && (default == 0 || default > options.len())
-            {
-                return Err(format!(
-                    "default {default} is out of range for {} option{}",
-                    options.len(),
-                    if options.len() == 1 { "" } else { "s" }
-                ));
-            }
-            if self.effect(audit::AuditAction::Input { kind: "stdin" })? {
-                return Err(
-                    "dry-run unavailable-result: choose requires interactive input".to_string(),
-                );
-            }
-            let labels: Vec<_> = options.iter().map(choose_option_label).collect();
-            let selected = choose::select(&question, &labels, default)?;
-            self.vars
-                .insert(destination, choose_option_value(&options[selected]));
-            return Ok(());
+        if line == "choose" || line.starts_with("choose ") {
+            return Err("choose is no longer supported; use a menu block instead".to_string());
         }
         if let Some(rest) = line.strip_prefix("exists ") {
             return self.capture_predicate(rest.trim(), |this, args| this.eval_exists(args));
@@ -5055,15 +5043,29 @@ struct Checker {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BlockKind {
     If,
-    Case { saw_when: bool, saw_else: bool },
+    Case {
+        saw_when: bool,
+        saw_else: bool,
+    },
     Loop,
     Function,
-    Try { saw_catch: bool },
+    Try {
+        saw_catch: bool,
+    },
     Log,
     Timeout,
     Defer,
     Watch,
     Retry,
+    Menu {
+        saw_option: bool,
+        option_open: bool,
+        saw_hint: bool,
+        saw_subtitle: bool,
+        saw_theme: bool,
+        option_count: usize,
+        default: Option<usize>,
+    },
 }
 
 impl Checker {
@@ -5105,6 +5107,7 @@ impl Checker {
                 BlockKind::Defer => "defer",
                 BlockKind::Watch => "watch",
                 BlockKind::Retry => "retry",
+                BlockKind::Menu { .. } => "menu",
             };
             if matches!(
                 kind,
@@ -5126,6 +5129,150 @@ impl Checker {
     }
 
     fn check_line(&mut self, line: &str) -> Result<(), String> {
+        if let Some(rest) = line.strip_prefix("menu ") {
+            let (title, tail) = split_string_literal_tail(rest.trim())
+                .map_err(|_| "menu syntax is menu \"Title\" -> $destination".to_string())?;
+            parse_string_literal(title)?;
+            let Some(destination) = tail.trim().strip_prefix("->") else {
+                return Err("menu syntax requires -> $destination".to_string());
+            };
+            if destination.trim().is_empty() {
+                return Err("menu syntax requires -> $destination".to_string());
+            }
+            parse_var_ref(destination.trim())
+                .map_err(|_| "menu destination must be a mutable variable".to_string())?;
+            if destination.trim().contains("->") {
+                return Err("menu destination must be a mutable variable".to_string());
+            }
+            self.blocks.push(BlockKind::Menu {
+                saw_option: false,
+                option_open: false,
+                saw_hint: false,
+                saw_subtitle: false,
+                saw_theme: false,
+                option_count: 0,
+                default: None,
+            });
+            return Ok(());
+        }
+        if let Some(BlockKind::Menu { .. }) = self.blocks.last() {
+            if line == "end" {
+                // handled by the generic end logic below
+            } else if let Some(rest) = line.strip_prefix("option ") {
+                let Some(BlockKind::Menu {
+                    saw_option,
+                    option_open,
+                    saw_hint,
+                    option_count,
+                    ..
+                }) = self.blocks.last_mut()
+                else {
+                    unreachable!()
+                };
+                if *option_open {
+                    *option_open = false;
+                }
+                let (label, value) = rest
+                    .split_once("->")
+                    .ok_or("menu option requires -> VALUE_EXPR")?;
+                let label = label.trim();
+                if parse_string_literal(label).is_err() && parse_var_ref(label).is_err() {
+                    return Err("menu option label must be a string expression".to_string());
+                }
+                if value.trim().is_empty() {
+                    return Err("menu option value expression required".to_string());
+                }
+                *saw_option = true;
+                *option_open = true;
+                *saw_hint = false;
+                *option_count += 1;
+                return Ok(());
+            } else if let Some(rest) = line.strip_prefix("hint ") {
+                let Some(BlockKind::Menu {
+                    option_open,
+                    saw_hint,
+                    ..
+                }) = self.blocks.last_mut()
+                else {
+                    unreachable!()
+                };
+                if !*option_open {
+                    return Err("menu hint must immediately follow an option".to_string());
+                }
+                if *saw_hint {
+                    return Err("menu option may have at most one hint".to_string());
+                }
+                parse_string_literal(rest.trim())
+                    .map_err(|_| "menu hint must be a string expression".to_string())?;
+                *saw_hint = true;
+                return Ok(());
+            } else if let Some(rest) = line.strip_prefix("subtitle ") {
+                let Some(BlockKind::Menu {
+                    saw_option,
+                    saw_subtitle,
+                    ..
+                }) = self.blocks.last_mut()
+                else {
+                    unreachable!()
+                };
+                if *saw_option {
+                    return Err("menu subtitle must appear before the first option".to_string());
+                }
+                if *saw_subtitle {
+                    return Err("menu subtitle may appear at most once".to_string());
+                }
+                parse_string_literal(rest.trim())
+                    .map_err(|_| "menu subtitle must be a string expression".to_string())?;
+                *saw_subtitle = true;
+                return Ok(());
+            } else if let Some(rest) = line.strip_prefix("theme ") {
+                let Some(BlockKind::Menu {
+                    saw_option,
+                    saw_theme,
+                    ..
+                }) = self.blocks.last_mut()
+                else {
+                    unreachable!()
+                };
+                if *saw_option {
+                    return Err("menu theme must appear before the first option".to_string());
+                }
+                if *saw_theme {
+                    return Err("menu theme may appear at most once".to_string());
+                }
+                if !matches!(rest.trim(), "panel" | "minimal") {
+                    return Err("menu theme must be panel or minimal".to_string());
+                }
+                *saw_theme = true;
+                return Ok(());
+            } else if let Some(rest) = line.strip_prefix("default ") {
+                let Some(BlockKind::Menu {
+                    saw_option,
+                    default,
+                    ..
+                }) = self.blocks.last_mut()
+                else {
+                    unreachable!()
+                };
+                if *saw_option {
+                    return Err("menu default must appear before the first option".to_string());
+                }
+                if default.is_some() {
+                    return Err("menu default may appear at most once".to_string());
+                }
+                let n: usize = rest
+                    .trim()
+                    .parse()
+                    .map_err(|_| "menu default must be a positive integer".to_string())?;
+                if n == 0 {
+                    return Err("menu default must be a positive integer".to_string());
+                }
+                *default = Some(n);
+                return Ok(());
+            } else {
+                return Err("unexpected line in menu block".to_string());
+            }
+        }
         if let Some(rest) = line.strip_prefix("archive ") {
             let (op, tail) = rest
                 .split_once(char::is_whitespace)
@@ -5361,6 +5508,20 @@ impl Checker {
                     saw_when: false, ..
                 }) => {
                     return Err("case requires at least one when".to_string());
+                }
+                Some(BlockKind::Menu {
+                    saw_option: false, ..
+                }) => {
+                    return Err("menu requires at least one option".to_string());
+                }
+                Some(BlockKind::Menu {
+                    option_count,
+                    default: Some(n),
+                    ..
+                }) if n > option_count => {
+                    return Err(format!(
+                        "menu default {n} is out of range; menu has {option_count} options"
+                    ));
                 }
                 Some(_) => {}
                 None => return Err("unexpected conditional marker".to_string()),
@@ -5631,6 +5792,9 @@ fn validate_statement_form(line: &str) -> Result<(), String> {
             return Err("ask destination must be a variable".to_string());
         }
         return Ok(());
+    }
+    if line == "choose" || line.starts_with("choose ") {
+        return Err("choose is no longer supported; use a menu block instead".to_string());
     }
     if let Some(rest) = line.strip_prefix("choose ") {
         let (_, options_text, _, default) = parse_choose_capture(rest.trim())?;
@@ -6741,29 +6905,6 @@ fn copy_recursive(from: &Path, to: &Path) -> Result<(), String> {
         })
     } else {
         Err(format!("source path does not exist: {}", from.display()))
-    }
-}
-
-fn choose_option_label(option: &Value) -> String {
-    match option {
-        Value::Dict(values) => values
-            .get("label")
-            .and_then(|v| match v {
-                Value::Scalar(s) => Some(s.clone()),
-                _ => None,
-            })
-            .unwrap_or_else(|| format_value(option)),
-        _ => format_value(option),
-    }
-}
-
-fn choose_option_value(option: &Value) -> Value {
-    match option {
-        Value::Dict(values) => values
-            .get("value")
-            .cloned()
-            .unwrap_or_else(|| option.clone()),
-        _ => option.clone(),
     }
 }
 
