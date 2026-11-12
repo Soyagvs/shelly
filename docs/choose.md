@@ -1,6 +1,6 @@
 # Ask for a choice with an interactive menu
 
-Use `choose` to print a numbered menu, read a selection from stdin, and store the selected option value.
+Use `choose` to select an option and store its value. TTYs get a keyboard menu; pipes and other non-TTY input keep the numbered, line-oriented protocol.
 
 ## 🚀 Quick path
 
@@ -9,36 +9,43 @@ choose "Deploy target?" ["staging", "production"] -> $target
 shellout "target=$target"
 ```
 
-Shelly prints a question, numbered options, and `Choose: `. The user may enter the number (`2`) or the exact displayed selection (`production`). The destination receives `production`, not `2`; menu text is stdout only.
+Options are shown with one-based numbers. The destination receives the selected value, not its number.
 
 ## 📖 Syntax and rules
 
 ```shelly
-choose "Question" ["A", "B", "C"] -> $choice
+choose "Question" [choice("Staging", "staging"), choice("Production", "prod")] default 2 -> $target
 ```
 
 - Options may be a list literal or list expression and must evaluate to a non-empty list.
-- Nested values are accepted and displayed using their formatted value; that exact displayed text can be entered.
+- `choice(LABEL, VALUE)` displays `LABEL` and stores `VALUE`. `LABEL` must be non-empty; values may be nested.
+- Without `choice`, an option's formatted value is both its visible label and selected value.
+- `default N` is optional and one-based. It highlights option `N` in a TTY menu; `N` must be at least 1.
 - The destination must be a mutable variable.
-- There is no default selection or count limit.
-- Invalid input repeats the prompt until a valid number or exact displayed selection is entered.
 
-```shelly
-$name = "Ada"
-choose "Hi $name, pick a color" ["red", "blue"] -> $color
-shellout "You picked $color"
-```
+## 🖥️ TTY behavior
 
-```shelly
-$options = ["small", "medium", "large"]
-choose "Size?" $options -> $size
-```
+When stdin and stdout are TTYs, `choose` shows a keyboard menu:
 
-## ⚠️ Interactive use and errors
+- Use Up/Down arrows to move; navigation wraps.
+- Enter confirms the highlighted option. Escape cancels with `choose cancelled`.
+- The default option starts highlighted; without a default, the first option is highlighted.
+- A terminal resize redraws the menu.
 
-`choose` reads stdin and is not suitable for noninteractive use. At EOF, empty input is retried indefinitely. An empty or invalid options value, or a non-mutable destination, is rejected.
+The menu does not use an alternate screen, mouse input, typeahead, or custom Ctrl-C handling. Ctrl-C retains normal process interruption semantics. Rendering remains readable without color: the selection is marked with text, and terminal control sequences are used only for cursor/menu redraw. `NO_COLOR` expectations for Shelly styling remain in force; this menu does not promise additional ANSI color styling.
+
+## 📟 Pipes and non-TTY input
+
+Non-TTY input prints the numbered menu and accepts either a one-based number or an exact visible label. Empty or invalid lines print the prompt again and retry. EOF stops retrying and fails with `choose input closed`.
+
+`--dry-run` reports `dry-run unavailable-result: choose requires interactive input` without prompting or reading stdin.
+
+## ⚠️ Errors
+
+An empty options list, invalid `default N`, or non-mutable destination is rejected. TTY Escape cancellation and non-TTY EOF are reported as errors.
 
 ## Related guides
 
 - [Conditionals](conditionals.md) — branch on the selected value.
 - [Lists](lists.md) — build and access option lists.
+- [Error handling](errors.md) — recover from runtime failures.

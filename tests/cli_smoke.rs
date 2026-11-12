@@ -1645,6 +1645,23 @@ shellout $choice
 }
 
 #[test]
+fn choose_eof_returns_input_closed_error() {
+    let output = run_script_with_stdin(
+        r#"
+choose "Pick one" ["A", "B"] -> $choice
+"#,
+        b"",
+    );
+
+    assert!(!output.status.success(), "stderr: {}", stderr(&output));
+    assert!(
+        stderr(&output).contains("choose input closed"),
+        "stderr: {}",
+        stderr(&output)
+    );
+}
+
+#[test]
 fn choose_invalid_input_reprompts_then_accepts_valid_input() {
     let output = run_script_with_stdin(
         r#"
@@ -1664,6 +1681,59 @@ fn choose_empty_option_list_fails() {
 
     assert!(!output.status.success());
     assert!(stderr(&output).contains("choose options must not be empty"));
+}
+
+#[test]
+fn choose_choice_stores_wrapped_value_not_label() {
+    let output = run_script_with_stdin(
+        r#"
+choose "Pick one" [choice("Visible", "stored")] -> $choice
+shellout "choice=$choice"
+"#,
+        b"1\n",
+    );
+
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stdout(&output).contains("choice=stored"));
+}
+
+#[test]
+fn check_validates_choose_choice_and_default() {
+    for (source, expected) in [
+        (
+            r#"choose "Pick one" [choice("Visible", "stored")] default 1 -> $choice"#,
+            None,
+        ),
+        (
+            r#"choose "Pick one" ["A"] default 0 -> $choice"#,
+            Some("default must be at least 1"),
+        ),
+        (
+            r#"choose "Pick one" ["A"] default 2 -> $choice"#,
+            Some("default 2 is out of range for 1 option"),
+        ),
+        (
+            r#"choose "Pick one" ["A"] default "x" -> $choice"#,
+            Some("default must be an integer"),
+        ),
+        (
+            r#"choose "Pick one" [choice("", "stored")] -> $choice"#,
+            Some("choice label must be a nonempty string"),
+        ),
+    ] {
+        let output = check_script(source);
+        match expected {
+            None => assert!(output.status.success(), "stderr: {}", stderr(&output)),
+            Some(expected) => {
+                assert!(!output.status.success(), "source succeeded: {source}");
+                assert!(
+                    stderr(&output).contains(expected),
+                    "stderr: {}",
+                    stderr(&output)
+                );
+            }
+        }
+    }
 }
 
 #[test]

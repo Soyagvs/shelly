@@ -12,6 +12,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod archive;
 mod audit;
+mod choose;
 mod comments;
 pub mod formatter;
 #[doc(hidden)]
@@ -2295,7 +2296,8 @@ impl Interpreter {
             return Ok(());
         }
         if let Some(rest) = line.strip_prefix("choose ") {
-            let (question_text, options_text, destination) = parse_choose_capture(rest.trim())?;
+            let (question_text, options_text, destination, default) =
+                parse_choose_capture(rest.trim())?;
             let question = self.eval_string(question_text)?;
             let Value::List(options) = self.eval_expr_value(options_text)? else {
                 return Err("choose options must be a list".to_string());
@@ -2303,32 +2305,25 @@ impl Interpreter {
             if options.is_empty() {
                 return Err("choose options must not be empty".to_string());
             }
+            if let Some(default) = default
+                && (default == 0 || default > options.len())
+            {
+                return Err(format!(
+                    "default {default} is out of range for {} option{}",
+                    options.len(),
+                    if options.len() == 1 { "" } else { "s" }
+                ));
+            }
             if self.effect(audit::AuditAction::Input { kind: "stdin" })? {
                 return Err(
                     "dry-run unavailable-result: choose requires interactive input".to_string(),
                 );
             }
-            println!("{question}");
-            for (index, option) in options.iter().enumerate() {
-                println!("{}) {}", index + 1, format_value(option));
-            }
-            loop {
-                print!("Choose: ");
-                io::stdout()
-                    .flush()
-                    .map_err(|error| format!("failed to flush stdout: {error}"))?;
-                let input = read_stdin_line()?;
-                if let Ok(index) = input.parse::<usize>() {
-                    if (1..=options.len()).contains(&index) {
-                        self.vars.insert(destination, options[index - 1].clone());
-                        return Ok(());
-                    }
-                }
-                if let Some(option) = options.iter().find(|option| format_value(option) == input) {
-                    self.vars.insert(destination, option.clone());
-                    return Ok(());
-                }
-            }
+            let labels: Vec<_> = options.iter().map(choose_option_label).collect();
+            let selected = choose::select(&question, &labels, default)?;
+            self.vars
+                .insert(destination, choose_option_value(&options[selected]));
+            return Ok(());
         }
         if let Some(rest) = line.strip_prefix("exists ") {
             return self.capture_predicate(rest.trim(), |this, args| this.eval_exists(args));
@@ -4330,6 +4325,24 @@ impl Interpreter {
 
     fn eval_value_kind(&self, text: &str) -> Result<Value, String> {
         let text = text.trim();
+        if let Some(args) = text.strip_prefix("choice(") {
+            let inner = args
+                .strip_suffix(')')
+                .ok_or_else(|| "malformed choice expression".to_string())?;
+            let parts = split_commas(inner)?;
+            if parts.len() != 2 {
+                return Err("choice requires exactly two arguments".to_string());
+            }
+            let label = self.eval_value(parts[0])?;
+            if label.is_empty() {
+                return Err("choice label must be a nonempty string".to_string());
+            }
+            let value = self.eval_value_kind(parts[1])?;
+            let mut choice = BTreeMap::new();
+            choice.insert("label".to_string(), Value::Scalar(label));
+            choice.insert("value".to_string(), value);
+            return Ok(Value::Dict(choice));
+        }
         if let Some(args) = text.strip_prefix("style(") {
             let inner = args
                 .strip_suffix(')')
@@ -5620,9 +5633,28 @@ fn validate_statement_form(line: &str) -> Result<(), String> {
         return Ok(());
     }
     if let Some(rest) = line.strip_prefix("choose ") {
-        let (_, options_text, _) = parse_choose_capture(rest.trim())?;
+        let (_, options_text, _, default) = parse_choose_capture(rest.trim())?;
         if options_text.trim() == "[]" {
             return Err("choose options must not be empty".to_string());
+        }
+        if let Some(default) = default
+            && let Some(count) = options_text
+                .trim()
+                .strip_prefix('[')
+                .and_then(|s| s.strip_suffix(']'))
+                .map(|s| {
+                    if s.trim().is_empty() {
+                        0
+                    } else {
+                        split_top_level_commas(s).map(|v| v.len()).unwrap_or(0)
+                    }
+                })
+            && default > count
+        {
+            return Err(format!(
+                "default {default} is out of range for {count} option{}",
+                if count == 1 { "" } else { "s" }
+            ));
         }
         return Ok(());
     }
@@ -6407,6 +6439,7 @@ fn split_top_level_commas(input: &str) -> Result<Vec<&str>, String> {
     let mut escaped = false;
     let mut square_depth = 0usize;
     let mut curly_depth = 0usize;
+    let mut paren_depth = 0usize;
     for (i, ch) in input.char_indices() {
         if escaped {
             escaped = false;
@@ -6419,7 +6452,9 @@ fn split_top_level_commas(input: &str) -> Result<Vec<&str>, String> {
             ']' if !in_string => square_depth = square_depth.saturating_sub(1),
             '{' if !in_string => curly_depth += 1,
             '}' if !in_string => curly_depth = curly_depth.saturating_sub(1),
-            ',' if !in_string && square_depth == 0 && curly_depth == 0 => {
+            '(' if !in_string => paren_depth += 1,
+            ')' if !in_string => paren_depth = paren_depth.saturating_sub(1),
+            ',' if !in_string && square_depth == 0 && curly_depth == 0 && paren_depth == 0 => {
                 parts.push(input[start..i].trim());
                 start = i + 1;
             }
@@ -6709,13 +6744,46 @@ fn copy_recursive(from: &Path, to: &Path) -> Result<(), String> {
     }
 }
 
-fn parse_choose_capture(text: &str) -> Result<(&str, &str, String), String> {
+fn choose_option_label(option: &Value) -> String {
+    match option {
+        Value::Dict(values) => values
+            .get("label")
+            .and_then(|v| match v {
+                Value::Scalar(s) => Some(s.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| format_value(option)),
+        _ => format_value(option),
+    }
+}
+
+fn choose_option_value(option: &Value) -> Value {
+    match option {
+        Value::Dict(values) => values
+            .get("value")
+            .cloned()
+            .unwrap_or_else(|| option.clone()),
+        _ => option.clone(),
+    }
+}
+
+fn parse_choose_capture(text: &str) -> Result<(&str, &str, String, Option<usize>), String> {
     let (question, tail) = split_string_literal_tail(text).map_err(|_| {
         "choose syntax is choose \"Question\" [\"A\", \"B\"] -> $choice".to_string()
     })?;
-    let Some((options_text, destination)) = split_capture_arrow(tail.trim()) else {
+    let Some((before_arrow, destination)) = split_capture_arrow(tail.trim()) else {
         return Err("choose syntax is choose \"Question\" [\"A\", \"B\"] -> $choice".to_string());
     };
+    let (options_text, default) =
+        if let Some((options, default_text)) = before_arrow.trim().rsplit_once(" default ") {
+            let default = default_text
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| "default must be an integer".to_string())?;
+            (options.trim(), Some(default))
+        } else {
+            (before_arrow.trim(), None)
+        };
     if !options_text.trim_start().starts_with('[') && !options_text.trim_start().starts_with('$') {
         return Err("choose options must be a list".to_string());
     }
@@ -6727,7 +6795,12 @@ fn parse_choose_capture(text: &str) -> Result<(&str, &str, String), String> {
     if kind != IdentKind::Variable || !extra.trim().is_empty() {
         return Err("choose destination must be a variable".to_string());
     }
-    Ok((question, options_text, name))
+    if let Some(default) = default
+        && default == 0
+    {
+        return Err("default must be at least 1".to_string());
+    }
+    Ok((question, options_text, name, default))
 }
 
 fn parse_files_capture(text: &str) -> Result<(&str, String), String> {
