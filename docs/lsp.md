@@ -26,6 +26,10 @@ Open documents are authoritative overlays: current editor text, including unsave
 
 Only local `file://` URIs (or `localhost`) are accepted. Resolved paths must remain lexically under the workspace root. Existing paths are canonicalized; unsaved paths need not exist. Other URI authorities and outside-root paths are ignored for workspace analysis. `import` and `include` resolve relative to the importing file under the same rules.
 
+## Contextual completion
+
+Completion is available while valid Shelly source is still being written. The server suggests top-level commands and block directives for `menu`, `pipeline`, and `parallel`; lexical declarations and exports from explicitly imported modules; `$result` and `$error` properties; HTTP methods/options; `menu` key modes; and `formatDate` format tokens. Within an unfinished `import "` or `include "` string it offers workspace `.shelly` and `.shl` paths relative to the current file. Runtime-only values are deliberately not guessed.
+
 ## Positions, diagnostics, and watching
 
 Clients must send LSP UTF-16 character offsets, not byte offsets. Shelly clamps malformed or stale internal byte spans to safe UTF-8 boundaries.
