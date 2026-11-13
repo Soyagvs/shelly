@@ -272,14 +272,13 @@ fn parse_line_selection(spec: &MenuSpec, n: usize, input: &str) -> Result<usize,
         return Err("menu input closed".into());
     }
     let text = input.trim_end_matches(['\r', '\n']);
-    if text.chars().count() == 1 {
-        if let Some(i) = spec
+    if text.chars().count() == 1
+        && let Some(i) = spec
             .options
             .iter()
             .position(|o| o.key == text.chars().next().unwrap())
-        {
-            return Ok(i);
-        }
+    {
+        return Ok(i);
     }
     if let Some(i) = spec
         .options
@@ -376,17 +375,9 @@ fn render_at_width(
         }
     };
     let width = width.max(1);
-    lines.extend(
-        wrap_text(&project(&spec.title), width, 0)
-            .into_iter()
-            .map(|line| line),
-    );
+    lines.extend(wrap_text(&project(&spec.title), width, 0));
     if let Some(s) = &spec.subtitle {
-        lines.extend(
-            wrap_text(&project(s), width, 0)
-                .into_iter()
-                .map(|line| line),
-        );
+        lines.extend(wrap_text(&project(s), width, 0));
     }
     let key_width = spec
         .options
@@ -422,11 +413,7 @@ fn render_at_width(
     for _ in 0..spec.blank_rows {
         lines.push(String::new());
     }
-    lines.extend(
-        wrap_text("[Enter] select  [Esc] cancel", width, 0)
-            .into_iter()
-            .map(|line| line),
-    );
+    lines.extend(wrap_text("[Enter] select  [Esc] cancel", width, 0));
     if let Some(previous) = previous_lines {
         write!(out, "\x1b[{}A", previous).map_err(|e| format!("menu render failed: {e}"))?;
     }

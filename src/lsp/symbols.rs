@@ -117,6 +117,17 @@ impl SymbolIndex {
     pub fn resolve(&self, n: &str, pos: usize) -> Option<Scope> {
         self.resolve_at(n, pos)
     }
+    pub fn visible_declarations_at(&self, pos: usize) -> Vec<PublicSymbol> {
+        self.entries
+            .iter()
+            .filter(|entry| {
+                entry.decl
+                    && (entry.scope == Scope::Global || entry.start <= pos)
+                    && !(entry.scope == Scope::Parameter && pos < entry.start)
+            })
+            .map(PublicSymbol::from)
+            .collect()
+    }
     pub fn from_files(root: &Path) -> Result<Self, String> {
         let mut out = Self::default();
         let mut pending = vec![root.to_path_buf()];

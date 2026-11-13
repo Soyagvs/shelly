@@ -60,7 +60,7 @@ pub fn run_lsp() {
 }
 
 pub fn cli_main() {
-    let version = env::args_os().skip(1).next();
+    let version = env::args_os().nth(1);
     if version.as_deref() == Some(std::ffi::OsStr::new("--version")) {
         println!("shelly {}", env!("CARGO_PKG_VERSION"));
         return;
@@ -121,7 +121,7 @@ pub fn cli_main() {
     }
     let audit_path = if dry_run && raw_args.first().is_some_and(|a| a == "--audit-log") {
         raw_args.remove(0);
-        match raw_args.get(0).cloned() {
+        match raw_args.first().cloned() {
             Some(p) if p != "--audit-log" => {
                 raw_args.remove(0);
                 Some(PathBuf::from(p))
@@ -1007,16 +1007,12 @@ fn check_module_graph(
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 enum ColorPolicy {
+    #[default]
     Auto,
     Always,
     Never,
-}
-impl Default for ColorPolicy {
-    fn default() -> Self {
-        Self::Auto
-    }
 }
 
 fn run_script(
@@ -1042,9 +1038,7 @@ fn run_script(
             Ok(()) => audit::finish(&mut interpreter.context),
             Err(error) => {
                 if let Some(writer) = &mut interpreter.context.audit {
-                    if let Err(audit_error) = writer.error(&error) {
-                        return Err(audit_error);
-                    }
+                    writer.error(&error)?;
                 }
                 Err(error)
             }
@@ -1412,6 +1406,61 @@ impl Interpreter {
             if line == "log" {
                 return Err(format!("line {line_no}: log identifier required"));
             }
+            if let Some(rest) = line.strip_prefix("progress ") {
+                let (label_text, destination) = rest.split_once("->").ok_or_else(|| {
+                    line_error(
+                        line_no,
+                        "progress syntax is progress \"LABEL\" -> $result".to_string(),
+                    )
+                })?;
+                let label = self
+                    .eval_string(label_text.trim())
+                    .map_err(|error| line_error(line_no, error))?;
+                let destination = parse_var_ref(destination.trim()).map_err(|_| {
+                    line_error(
+                        line_no,
+                        "progress destination must be a mutable variable".to_string(),
+                    )
+                })?;
+                let (body, next_index) = collect_block(lines, index, "progress")?;
+                if self.context.is_dry_run() {
+                    let mut result = BTreeMap::new();
+                    result.insert(
+                        "status".to_string(),
+                        Value::Scalar("unavailable".to_string()),
+                    );
+                    self.vars.insert(destination, Value::Dict(result));
+                    index = next_index;
+                    continue;
+                }
+                if !io::stdout().is_terminal() {
+                    println!("{label}: started");
+                }
+                let started = Instant::now();
+                let result = self.run_lines(&body);
+                let duration_ms = started.elapsed().as_millis().to_string();
+                let mut status = BTreeMap::new();
+                status.insert("durationMs".to_string(), Value::Scalar(duration_ms));
+                match result {
+                    Ok(()) => {
+                        status.insert("status".to_string(), Value::Scalar("ok".to_string()));
+                        self.vars.insert(destination, Value::Dict(status));
+                        if !io::stdout().is_terminal() {
+                            println!("{label}: 100% ok");
+                        }
+                    }
+                    Err(error) => {
+                        status.insert("status".to_string(), Value::Scalar("error".to_string()));
+                        self.vars.insert(destination, Value::Dict(status));
+                        if !io::stdout().is_terminal() {
+                            println!("{label}: 100% error");
+                        }
+                        return Err(line_error(line_no, error));
+                    }
+                }
+                index = next_index;
+                continue;
+            }
             if let Some(rest) = line.strip_prefix("log ") {
                 let next_index = self
                     .run_log(rest.trim(), lines, index)
@@ -1778,9 +1827,9 @@ impl Interpreter {
         let (count_expr, index_var) = parse_repeat_header(rest)?;
         let count = self.eval_repeat_count(count_expr)?;
         let (body, next_index) = collect_block(lines, start, "repeat")?;
-        let saved_index = index_var.and_then(|name| {
+        let saved_index = index_var.map(|name| {
             let previous = self.vars.get(&name).cloned();
-            Some((name, previous))
+            (name, previous)
         });
 
         let mut loop_result = Ok(());
@@ -2278,6 +2327,18 @@ impl Interpreter {
             let code = self.eval_exit_code(rest.trim())?;
             return Err(exit_signal(code));
         }
+        if line == "clear" {
+            if !self.context.is_dry_run() && io::stdout().is_terminal() {
+                print!("\x1b[2J\x1b[H");
+                io::stdout()
+                    .flush()
+                    .map_err(|error| format!("failed to clear terminal: {error}"))?;
+            }
+            return Ok(());
+        }
+        if line.starts_with("clear ") {
+            return Err("clear takes no arguments".to_string());
+        }
         if line.starts_with('$') {
             return self.assignment(line, line_no);
         }
@@ -2341,21 +2402,21 @@ impl Interpreter {
         if let Some(rest) = line.strip_prefix("matches ") {
             return self.capture_predicate(rest.trim(), |this, args| this.eval_matches(args));
         }
-        if let Some((name, rest)) = split_command_name(line) {
-            if matches!(
+        if let Some((name, rest)) = split_command_name(line)
+            && matches!(
                 name,
                 "assertEqual" | "assertTrue" | "assertFalse" | "assertContains"
-            ) {
-                return self.run_assertion(name, rest.trim());
-            }
+            )
+        {
+            return self.run_assertion(name, rest.trim());
         }
         if let Some(rest) = line.strip_prefix("contains ") {
             return self.capture_predicate(rest.trim(), |this, args| this.eval_contains(args));
         }
-        if let Some((name, rest)) = split_command_name(line) {
-            if is_standard_helper(name) {
-                return self.run_helper(name, rest.trim());
-            }
+        if let Some((name, rest)) = split_command_name(line)
+            && is_standard_helper(name)
+        {
+            return self.run_helper(name, rest.trim());
         }
         if let Some(rest) = line.strip_prefix("files ") {
             return self.collect_files(rest.trim());
@@ -2428,10 +2489,10 @@ impl Interpreter {
             */
         }
         if let Some(rest) = line.strip_prefix("command") {
-            if rest.is_empty() || rest.starts_with(char::is_whitespace) {
-                if rest.trim_start().starts_with('"') {
-                    return Err("legacy command \"...\" syntax is not supported; use command <program> <args...> or shell \"...\"".to_string());
-                }
+            if (rest.is_empty() || rest.starts_with(char::is_whitespace))
+                && rest.trim_start().starts_with('"')
+            {
+                return Err("legacy command \"...\" syntax is not supported; use command <program> <args...> or shell \"...\"".to_string());
             }
             let (command_text, timeout) = split_timeout_suffix(rest.trim())?;
             let (program, args, tail) = self.parse_command_atoms(command_text)?;
@@ -2688,10 +2749,10 @@ impl Interpreter {
         if line == "call" {
             return Err("call requires a function name".to_string());
         }
-        if let Some(name) = line.split_whitespace().next() {
-            if self.functions.contains_key(name) {
-                return Err("function calls must use call".to_string());
-            }
+        if let Some(name) = line.split_whitespace().next()
+            && self.functions.contains_key(name)
+        {
+            return Err("function calls must use call".to_string());
         }
         Err(format!("unknown command or invalid syntax: {line}"))
     }
@@ -2824,7 +2885,7 @@ impl Interpreter {
             response.insert("url".into(), Value::Scalar(url));
             response.insert("headers".into(), Value::Dict(BTreeMap::new()));
             if *status >= 400 {
-                return Err(format!("HTTP request returned a non-success status"));
+                return Err("HTTP request returned a non-success status".to_string());
             }
             self.vars.insert(names[0].clone(), Value::Dict(response));
             return Ok(());
@@ -4884,9 +4945,7 @@ fn parse_collection_path(
     while !rest.trim().is_empty() {
         rest = rest.trim_start();
         if let Some(tail) = rest.strip_prefix('.') {
-            let end = tail
-                .find(|c: char| c == '.' || c == '[')
-                .unwrap_or(tail.len());
+            let end = tail.find(['.', '[']).unwrap_or(tail.len());
             let key = &tail[..end];
             if !is_simple_key(key) {
                 return Err("invalid collection path key".to_string());
@@ -5080,6 +5139,7 @@ enum BlockKind {
     Defer,
     Watch,
     Retry,
+    Progress,
     Menu {
         saw_option: bool,
         option_open: bool,
@@ -5131,6 +5191,7 @@ impl Checker {
                 BlockKind::Defer => "defer",
                 BlockKind::Watch => "watch",
                 BlockKind::Retry => "retry",
+                BlockKind::Progress => "progress",
                 BlockKind::Menu { .. } => "menu",
             };
             if matches!(
@@ -5153,6 +5214,22 @@ impl Checker {
     }
 
     fn check_line(&mut self, line: &str) -> Result<(), String> {
+        if let Some(rest) = line.strip_prefix("progress ") {
+            let (label, destination) = rest
+                .split_once("->")
+                .ok_or("progress syntax is progress \"LABEL\" -> $result")?;
+            if !is_menu_text_expression(label.trim()) {
+                return Err("progress label must be a string expression".to_string());
+            }
+            let destination = destination.trim();
+            parse_var_ref(destination)
+                .map_err(|_| "progress destination must be a mutable variable".to_string())?;
+            if destination.contains("->") {
+                return Err("progress destination must be a mutable variable".to_string());
+            }
+            self.blocks.push(BlockKind::Progress);
+            return Ok(());
+        }
         if let Some(rest) = line.strip_prefix("menu ") {
             let (title, destination) = rest
                 .trim()
@@ -5641,7 +5718,7 @@ impl Checker {
                 .rposition(|kind| *kind == BlockKind::Function);
             let in_loop = self.blocks.iter().enumerate().any(|(index, kind)| {
                 *kind == BlockKind::Loop
-                    && function_boundary.map_or(true, |boundary| index > boundary)
+                    && function_boundary.is_none_or(|boundary| index > boundary)
             });
             if !in_loop {
                 return Err(format!("{line} outside loop"));
@@ -5649,7 +5726,7 @@ impl Checker {
             return Ok(());
         }
         if line == "return" || line.starts_with("return ") {
-            if !self.blocks.iter().any(|kind| *kind == BlockKind::Function) {
+            if !self.blocks.contains(&BlockKind::Function) {
                 return Err("return outside function".to_string());
             }
             if line == "return" {
@@ -6080,6 +6157,12 @@ fn validate_statement_form(line: &str) -> Result<(), String> {
         }
         return Ok(());
     }
+    if line == "clear" {
+        return Ok(());
+    }
+    if line.starts_with("clear ") {
+        return Err("clear takes no arguments".to_string());
+    }
     if line.strip_prefix("shellin").is_some()
         || line.starts_with("import ")
         || line.starts_with("include ")
@@ -6177,7 +6260,7 @@ pub(crate) fn strip_ansi(value: &str) -> String {
     let mut chars = value.chars();
     while let Some(ch) = chars.next() {
         if ch == '\x1b' {
-            while let Some(next) = chars.next() {
+            for next in chars.by_ref() {
                 if next.is_ascii_alphabetic() {
                     break;
                 }
@@ -7347,10 +7430,10 @@ fn validate_condition_parentheses(condition: &str) -> Result<(), String> {
                 if paren_depth == 0 {
                     return Err("unexpected ')' in condition".to_string());
                 }
-                if let Some(open) = previous_open {
-                    if condition[open + 1..index].trim().is_empty() {
-                        return Err("empty parenthesized condition".to_string());
-                    }
+                if let Some(open) = previous_open
+                    && condition[open + 1..index].trim().is_empty()
+                {
+                    return Err("empty parenthesized condition".to_string());
                 }
                 paren_depth -= 1;
                 previous_open = None;

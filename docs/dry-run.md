@@ -18,6 +18,8 @@ The audit option must appear immediately after `--dry-run`, takes exactly one pa
 - Plans or blocks mutations, archive creation, temporary paths, process and shell execution, HTTP requests, logging destinations, interactive input, `wait`, and `watch` without performing them.
 - Keeps parallel planning serial and marks execution-only results, such as pipeline output and parallel results, unavailable.
 - Runs retry bodies once for planning; it does not repeat effects or claim repeated successes.
+- Validates `clear` without changing the screen or emitting terminal control sequences.
+- Validates `progress` blocks without rendering progress; their result destination is marked `{status: "unavailable"}` and the body is not run.
 
 Normal reads needed to parse and validate a script remain allowed. Dry-run does not follow command output or create a mock environment. Extensions can still perform unsupported behavior, so review the explicit action list and audit file.
 

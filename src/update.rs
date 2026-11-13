@@ -388,8 +388,7 @@ pub fn extract(name: &str, b: &[u8], root: &Path) -> Result<(), String> {
         for i in 0..z.len() {
             let mut f = z.by_index(i).map_err(|e| e.to_string())?;
             let mode = f.unix_mode();
-            if !f.is_file() || mode.map_or(false, |m| m & 0o170000 != 0 && m & 0o170000 != 0o100000)
-            {
+            if !f.is_file() || mode.is_some_and(|m| m & 0o170000 != 0 && m & 0o170000 != 0o100000) {
                 return Err("archive contains non-regular entry".into());
             }
             let zip_name = f.name().map_err(|e| e.to_string())?.into_owned();

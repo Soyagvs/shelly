@@ -5019,6 +5019,33 @@ fn color_policy_no_color_precedes_always_and_auto_is_stripped_when_redirected() 
 }
 
 #[test]
+fn progress_runs_a_block_and_reports_a_structured_success_result() {
+    let output = run_script(
+        "progress \"Syncing\" -> $result\n    shellout \"inside\"\nend\nshellout $result.status\n",
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "Syncing: started\ninside\nSyncing: 100% ok\nok\n"
+    );
+}
+
+#[test]
+fn clear_is_valid_and_silent_when_output_is_not_a_terminal() {
+    let output = run_script("clear\nshellout \"after\"\n");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(stdout(&output), "after\n");
+
+    let checked = check_script("clear\n");
+    assert!(checked.status.success(), "stderr: {}", stderr(&checked));
+    assert!(stdout(&checked).is_empty());
+
+    let dry = run_script_with_args("clear\n", &["--dry-run"]);
+    assert!(dry.status.success(), "stderr: {}", stderr(&dry));
+    assert!(stdout(&dry).is_empty());
+}
+
+#[test]
 fn check_and_dry_run_do_not_emit_styled_output() {
     let script = write_script("shellout style(\"red\", \"silent\")\n");
     let checked = std::process::Command::new(env!("CARGO_BIN_EXE_shelly"))

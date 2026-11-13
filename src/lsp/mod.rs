@@ -109,16 +109,16 @@ pub(crate) fn run(check: fn(&str, &str) -> Vec<crate::Diagnostic>) {
             "textDocument/completion" => respond(
                 &mut out,
                 id,
-                json!({"isIncomplete":false,"items":all_names(&workspace.documents,&m["params"]["textDocument"]["uri"])}),
+                json!({"isIncomplete":false,"items":completion(&workspace,&m["params"])}),
             ),
             "textDocument/hover" => {
                 respond(&mut out, id, hover(&workspace.documents, &m["params"]))
             }
             "textDocument/definition" => {
-                respond(&mut out, id, locate(&&workspace, &m["params"], false))
+                respond(&mut out, id, locate(&workspace, &m["params"], false))
             }
             "textDocument/references" => {
-                respond(&mut out, id, locate(&&workspace, &m["params"], true))
+                respond(&mut out, id, locate(&workspace, &m["params"], true))
             }
             "textDocument/formatting" => {
                 respond(&mut out, id, formatting(&workspace.documents, &m["params"]))
@@ -171,20 +171,225 @@ pub(crate) fn run(check: fn(&str, &str) -> Vec<crate::Diagnostic>) {
 fn text<'a>(d: &'a DocumentStore, u: &Value) -> &'a str {
     d.text(u.as_str().unwrap_or("")).unwrap_or("")
 }
-fn all_names(d: &DocumentStore, _: &Value) -> Vec<Value> {
+const COMMAND_COMPLETIONS: &[(&str, &str)] = &[
+    ("progress", "progress \"LABEL\" -> $result ... end"),
+    ("menu", "menu \"TITLE\" -> $choice ... end"),
+    ("try", "try ... catch ... end"),
+    ("retry", "retry COUNT ... end"),
+    ("watch", "watch PROGRAM ARGS -> $line ... end"),
+    ("parallel", "parallel limit COUNT -> $results ... end"),
+    ("pipeline", "pipeline -> $result ... end"),
+    ("clear", "clear"),
+];
+
+const RESULT_PROPERTIES: &[(&str, &str)] = &[
+    ("status", "task outcome"),
+    ("durationMs", "elapsed milliseconds"),
+];
+const ERROR_PROPERTIES: &[(&str, &str)] = &[
+    ("kind", "error category"),
+    ("message", "error message"),
+    ("program", "failed program"),
+    ("args", "program arguments"),
+    ("code", "exit code"),
+    ("stdout", "captured stdout"),
+    ("stderr", "captured stderr"),
+];
+
+const STYLE_DESCRIPTORS: &[&str] = &[
+    "black",
+    "red",
+    "green",
+    "yellow",
+    "blue",
+    "magenta",
+    "cyan",
+    "white",
+    "bright_black",
+    "bright_red",
+    "bright_green",
+    "bright_yellow",
+    "bright_blue",
+    "bright_magenta",
+    "bright_cyan",
+    "bright_white",
+    "bold",
+    "dim",
+    "italic",
+    "underline",
+    "blink",
+    "reverse",
+    "strikethrough",
+    "reset",
+];
+
+fn completion(workspace: &WorkspaceState, params: &Value) -> Vec<Value> {
+    let d = &workspace.documents;
+    let uri = &params["textDocument"]["uri"];
+    let source = text(d, uri);
+    let offset = position(source, &params["position"]);
+    let before = &source[..offset.min(source.len())];
+    if before.rfind("formatDate(").is_some_and(|start| {
+        let args = &before[start + "formatDate(".len()..];
+        !args.contains(')') && args.matches(',').count() == 1
+    }) {
+        return ["YYYY", "MM", "DD", "HH", "mm", "ss"]
+            .into_iter()
+            .map(|label| json!({"label":label,"kind":12,"detail":"date format token"}))
+            .collect();
+    }
+    if before
+        .rfind("import \"")
+        .or_else(|| before.rfind("include \""))
+        .is_some_and(|start| before[start..].matches('"').count() == 1)
+    {
+        let base = workspace
+            .path_for_uri(uri.as_str().unwrap_or(""))
+            .and_then(|path| path.parent().map(Path::to_path_buf));
+        return d
+            .uris()
+            .filter_map(|candidate| workspace.path_for_uri(candidate))
+            .filter(|path| {
+                path.extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| ext == "shelly" || ext == "shl")
+            })
+            .filter_map(|path| match &base {
+                Some(base) => path.strip_prefix(base).ok().map(Path::to_path_buf),
+                None => path.file_name().map(PathBuf::from),
+            })
+            .map(|path| path.to_string_lossy().replace('\\', "/"))
+            .map(|label| json!({"label":label,"kind":17,"detail":"Shelly module"}))
+            .collect();
+    }
+    if before.trim_end().ends_with("http") {
+        return ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
+            .into_iter()
+            .map(|label| json!({"label":label,"kind":13,"detail":"HTTP method"}))
+            .collect();
+    }
+    let line = before.lines().last().unwrap_or("").trim();
+    if line.is_empty()
+        && before
+            .rfind("pipeline ")
+            .is_some_and(|p| before.rfind("\nend").is_none_or(|end| p > end))
+    {
+        return ["command", "end"]
+            .into_iter()
+            .map(|label| json!({"label":label,"kind":14,"detail":"pipeline directive"}))
+            .collect();
+    }
+    if line.is_empty()
+        && before
+            .rfind("parallel ")
+            .is_some_and(|p| before.rfind("\nend").is_none_or(|end| p > end))
+    {
+        return ["task", "end"]
+            .into_iter()
+            .map(|label| json!({"label":label,"kind":14,"detail":"parallel directive"}))
+            .collect();
+    }
+    if line.is_empty()
+        && before
+            .rfind("menu ")
+            .is_some_and(|menu| before.rfind("\nend").is_none_or(|end| menu > end))
+    {
+        return ["subtitle", "keys", "default", "option", "hint", "end"]
+            .into_iter()
+            .map(|label| json!({"label":label,"kind":14,"detail":"menu directive"}))
+            .collect();
+    }
+    if before.trim_end().starts_with("http ") && before.matches('"').count() >= 2 {
+        return ["headers", "body", "timeout", "maxBytes", "-> $response"]
+            .into_iter()
+            .map(|label| json!({"label":label,"kind":13,"detail":"HTTP option"}))
+            .collect();
+    }
+    if before.trim_end().ends_with("keys") {
+        return ["numbers", "letters lower", "letters upper"]
+            .into_iter()
+            .map(|label| json!({"label":label,"kind":13,"detail":"menu key mode"}))
+            .collect();
+    }
+    if before
+        .split_whitespace()
+        .last()
+        .is_some_and(|token| token.starts_with("$result."))
+    {
+        return RESULT_PROPERTIES
+            .iter()
+            .map(|(label, detail)| json!({"label":label,"kind":10,"detail":detail}))
+            .collect();
+    }
+    if before
+        .split_whitespace()
+        .last()
+        .is_some_and(|token| token.starts_with("$error."))
+    {
+        return ERROR_PROPERTIES
+            .iter()
+            .map(|(label, detail)| json!({"label":label,"kind":10,"detail":detail}))
+            .collect();
+    }
+    if before.rfind("style(").is_some_and(|start| {
+        let args = &before[start + "style(".len()..];
+        !args.contains(')') && !args.contains(',')
+    }) {
+        let mut items: Vec<Value> = STYLE_DESCRIPTORS
+            .iter()
+            .map(|label| json!({"label":label,"kind":12,"detail":"Shelly terminal style"}))
+            .collect();
+        items.extend(imported_palette_constants(d, source));
+        return items;
+    }
+    all_names(d, source, offset)
+}
+
+fn imported_palette_constants(d: &DocumentStore, source: &str) -> Vec<Value> {
+    let imports: Vec<&str> = source
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("import "))
+        .filter_map(|path| {
+            path.trim()
+                .strip_prefix('"')
+                .and_then(|p| p.split_once('"').map(|(p, _)| p))
+        })
+        .collect();
+    d.uris()
+        .filter(|uri| imports.iter().any(|path| uri.ends_with(path)))
+        .flat_map(|uri| syntax::parse(d.text(uri).unwrap_or("")).symbols)
+        .filter(|symbol| {
+            symbol.declaration && symbol.exported && symbol.kind == syntax::SymbolKind::Constant
+        })
+        .map(|symbol| json!({"label":format!("${}", symbol.name),"kind":kind(symbol.kind)}))
+        .collect()
+}
+
+fn all_names(d: &DocumentStore, source: &str, offset: usize) -> Vec<Value> {
     let mut v = vec![];
-    for u in d.uris() {
-        for (s, _, _, k, dec) in symbols(d.text(u).unwrap()) {
-            if dec {
-                v.push(json!({"label":s,"kind":kind(k)}))
-            }
+    for symbol in
+        symbols::SymbolIndex::from_parse(syntax::parse(source)).visible_declarations_at(offset)
+    {
+        let label = match symbol.kind {
+            symbols::SymbolKind::Constant => format!("${}", symbol.name),
+            _ => symbol.name.clone(),
+        };
+        v.push(json!({"label":label,"kind":6}));
+        if symbol.kind == symbols::SymbolKind::Variable {
+            v.push(json!({"label":format!("${}", symbol.name),"kind":6}));
         }
     }
+    v.extend(imported_palette_constants(d, source));
     for h in HELPERS {
         if !v.iter().any(|item| item["label"] == h.name) {
             v.push(
                 json!({"label":h.name,"kind":12,"detail":h.signature,"documentation":h.contract}),
             );
+        }
+    }
+    for (label, detail) in COMMAND_COMPLETIONS {
+        if !v.iter().any(|item| item["label"] == *label) {
+            v.push(json!({"label":label,"kind":14,"detail":detail}));
         }
     }
     v
@@ -197,9 +402,7 @@ fn hover(d: &DocumentStore, p: &Value) -> Value {
     let at = position(t, &p["position"]);
     if let Some((n, s, e)) = word_at(t, at) {
         {
-            let contents = helper(&n)
-                .map(|h| markdown_helper(h))
-                .unwrap_or_else(|| n.clone());
+            let contents = helper(&n).map(markdown_helper).unwrap_or_else(|| n.clone());
             json!({"contents":{"kind":"markdown","value":contents},"range":range(t, s, e)})
         }
     } else {
@@ -360,10 +563,10 @@ fn publish(
     let ds = {
         let mut files = std::collections::HashMap::new();
         for uri in workspace.documents.uris() {
-            if let Some(path) = workspace.path_for_uri(uri) {
-                if let Some(text) = workspace.documents.text(uri) {
-                    files.insert(path, text.to_string());
-                }
+            if let Some(path) = workspace.path_for_uri(uri)
+                && let Some(text) = workspace.documents.text(uri)
+            {
+                files.insert(path, text.to_string());
             }
         }
         let diagnostics = crate::check_source_with_files(

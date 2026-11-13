@@ -100,6 +100,160 @@ fn file_uri(path: &std::path::Path) -> String {
 }
 
 #[test]
+fn completion_contexts_offer_format_date_http_and_menu_values() {
+    let mut l = Lsp::start();
+    l.initialize();
+    let uri = "file:///values.shelly";
+    l.open(uri, "formatDate($now, \"Y");
+    let date = l.request(
+        2,
+        "textDocument/completion",
+        json!({"textDocument":doc(uri),"position":pos(0,19)}),
+    );
+    assert!(
+        date["result"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["label"] == "YYYY")
+    );
+    l.open(uri, "http GET \"https://x\" ");
+    let http = l.request(
+        3,
+        "textDocument/completion",
+        json!({"textDocument":doc(uri),"position":pos(0,21)}),
+    );
+    assert!(
+        http["result"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["label"] == "timeout")
+    );
+    l.open(uri, "menu \"Pick\" -> $choice\n    keys");
+    let menu = l.request(
+        4,
+        "textDocument/completion",
+        json!({"textDocument":doc(uri),"position":pos(1,8)}),
+    );
+    assert!(
+        menu["result"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["label"] == "letters lower")
+    );
+}
+
+#[test]
+fn completion_contexts_offer_import_and_include_modules() {
+    let mut l = Lsp::start();
+    l.initialize();
+    l.open("file:///palette.shelly", "export const ERROR = \"red\"\n");
+    let uri = "file:///main.shelly";
+    l.open(uri, "include \"");
+    let include = l.request(
+        2,
+        "textDocument/completion",
+        json!({"textDocument":doc(uri),"position":pos(0,9)}),
+    );
+    assert!(
+        include["result"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["label"] == "palette.shelly")
+    );
+}
+
+#[test]
+fn completion_contexts_offer_known_result_and_error_properties() {
+    let mut l = Lsp::start();
+    l.initialize();
+    let uri = "file:///properties.shelly";
+    l.open(uri, "$result.");
+    let result = l.request(
+        2,
+        "textDocument/completion",
+        json!({"textDocument":doc(uri),"position":pos(0,8)}),
+    );
+    assert!(
+        result["result"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["label"] == "durationMs")
+    );
+    l.open(uri, "$error.");
+    let error = l.request(
+        3,
+        "textDocument/completion",
+        json!({"textDocument":doc(uri),"position":pos(0,7)}),
+    );
+    assert!(
+        error["result"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["label"] == "message")
+    );
+}
+
+#[test]
+fn completion_contexts_offer_block_directives() {
+    let mut l = Lsp::start();
+    l.initialize();
+    let uri = "file:///blocks.shelly";
+    l.open(uri, "pipeline -> $out\n    ");
+    let pipeline = l.request(
+        2,
+        "textDocument/completion",
+        json!({"textDocument":doc(uri),"position":pos(1,4)}),
+    );
+    assert!(
+        pipeline["result"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["label"] == "command")
+    );
+    l.open(uri, "menu \"Pick\" -> $choice\n    ");
+    let menu = l.request(
+        3,
+        "textDocument/completion",
+        json!({"textDocument":doc(uri),"position":pos(1,4)}),
+    );
+    assert!(
+        menu["result"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["label"] == "option")
+    );
+}
+
+#[test]
+fn completion_includes_commands_and_block_signatures() {
+    let mut l = Lsp::start();
+    l.initialize();
+    let uri = "file:///commands.shelly";
+    l.open(uri, "pro");
+    let r = l.request(
+        2,
+        "textDocument/completion",
+        json!({"textDocument":doc(uri),"position":pos(0,3)}),
+    );
+    let items = r["result"]["items"].as_array().unwrap();
+    assert!(
+        items
+            .iter()
+            .any(|i| i["label"] == "progress"
+                && i["detail"].as_str().unwrap().contains("-> $result"))
+    );
+    assert!(items.iter().any(|i| i["label"] == "menu"));
+}
+
+#[test]
 fn completion_in_incomplete_code_returns_items_at_utf16_position() {
     let mut l = Lsp::start();
     l.initialize();
@@ -116,6 +270,60 @@ fn completion_in_incomplete_code_returns_items_at_utf16_position() {
             .unwrap()
             .iter()
             .any(|i| i["label"] == "café")
+    );
+}
+
+#[test]
+fn completion_suggests_style_descriptors_only_in_the_first_style_argument() {
+    let mut l = Lsp::start();
+    l.initialize();
+    let uri = "file:///style-completion.shelly";
+    l.open(uri, "shellout style(\"br");
+    let r = l.request(
+        2,
+        "textDocument/completion",
+        json!({"textDocument":doc(uri),"position":pos(0,18)}),
+    );
+    let items = r["result"]["items"].as_array().unwrap();
+    assert!(items.iter().any(|i| i["label"] == "bright_blue"));
+    assert!(items.iter().any(|i| i["label"] == "bold"));
+
+    l.open(uri, "shellout style(\"bold\", \"va");
+    let second = l.request(
+        3,
+        "textDocument/completion",
+        json!({"textDocument":doc(uri),"position":pos(0,25)}),
+    );
+    assert!(
+        !second["result"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["label"] == "bright_blue")
+    );
+}
+
+#[test]
+fn completion_in_style_includes_exported_palette_constants() {
+    let mut l = Lsp::start();
+    l.initialize();
+    l.open(
+        "file:///palette.shelly",
+        "export const ERROR = \"bold bright_red\"\n",
+    );
+    let uri = "file:///main.shelly";
+    l.open(uri, "import \"palette.shelly\"\nshellout style($E");
+    let r = l.request(
+        2,
+        "textDocument/completion",
+        json!({"textDocument":doc(uri),"position":pos(1,18)}),
+    );
+    assert!(
+        r["result"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|i| i["label"] == "$ERROR")
     );
 }
 
@@ -422,6 +630,23 @@ fn watch_and_wait_forms_are_diagnosed_without_extra_capabilities() {
             .unwrap()
             .iter()
             .any(|d| d["message"] == "watch destination must be a variable")
+    );
+}
+
+#[test]
+fn clear_is_accepted_without_diagnostics_and_rejects_arguments() {
+    let mut l = Lsp::start();
+    l.initialize();
+    let valid = l.open("file:///clear-valid.shelly", "clear\n");
+    assert_eq!(valid["params"]["diagnostics"], json!([]));
+
+    let invalid = l.open("file:///clear-invalid.shelly", "clear now\n");
+    assert!(
+        invalid["params"]["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["message"] == "clear takes no arguments")
     );
 }
 

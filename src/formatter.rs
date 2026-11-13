@@ -103,9 +103,9 @@ fn scan_line(line: &str) -> Result<(String, bool), String> {
     let mut code = String::new();
     let mut quote = false;
     let mut escaped = false;
-    let mut chars = line.char_indices().peekable();
+    let chars = line.char_indices().peekable();
     let mut opens_triple = false;
-    while let Some((i, ch)) = chars.next() {
+    for (i, ch) in chars {
         if !quote && line[i..].starts_with("```") {
             code.push_str("```");
             opens_triple = true;
@@ -175,6 +175,7 @@ fn is_open(line: &str) -> bool {
         || matches!(
             first_word(line),
             "menu"
+                | "progress"
                 | "if"
                 | "for"
                 | "while"

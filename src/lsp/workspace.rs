@@ -117,10 +117,9 @@ impl WorkspaceState {
                 } else if matches!(
                     p.extension().and_then(|x| x.to_str()),
                     Some("shelly" | "shl")
-                ) {
-                    if let Ok(p) = fs::canonicalize(p) {
-                        current.insert(path_uri(&p));
-                    }
+                ) && let Ok(p) = fs::canonicalize(p)
+                {
+                    current.insert(path_uri(&p));
                 }
             }
         }

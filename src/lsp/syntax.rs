@@ -142,7 +142,7 @@ pub fn parse(s: &str) -> ParseResult {
         };
         let scope = if fn_depth.is_none() {
             crate::lsp::symbols::Scope::Global
-        } else if params.contains(word.unwrap_or(&"")) {
+        } else if params.contains(word.unwrap_or("")) {
             crate::lsp::symbols::Scope::Parameter
         } else if depth == fn_depth.unwrap_or(0) {
             crate::lsp::symbols::Scope::Local
@@ -188,23 +188,23 @@ pub fn parse(s: &str) -> ParseResult {
             }
             i += 1
         } else if word == Some("export") {
-            if let Some(T::I(x)) = t.get(i + 1) {
-                if matches!(t.get(i + 2), Some(T::I(_))) {
-                    let k = if &s[x.clone()] == "fn" {
-                        SymbolKind::Function
-                    } else {
-                        SymbolKind::Constant
-                    };
-                    if let Some(T::I(y)) = t.get(i + 2) {
-                        r.symbols.push(Symbol {
-                            name: s[y.clone()].into(),
-                            kind: k,
-                            span: y.clone(),
-                            scope: crate::lsp::symbols::Scope::Global,
-                            declaration: true,
-                            exported: true,
-                        });
-                    }
+            if let Some(T::I(x)) = t.get(i + 1)
+                && matches!(t.get(i + 2), Some(T::I(_)))
+            {
+                let k = if &s[x.clone()] == "fn" {
+                    SymbolKind::Function
+                } else {
+                    SymbolKind::Constant
+                };
+                if let Some(T::I(y)) = t.get(i + 2) {
+                    r.symbols.push(Symbol {
+                        name: s[y.clone()].into(),
+                        kind: k,
+                        span: y.clone(),
+                        scope: crate::lsp::symbols::Scope::Global,
+                        declaration: true,
+                        exported: true,
+                    });
                 }
             }
             i += 1
@@ -234,21 +234,21 @@ pub fn parse(s: &str) -> ParseResult {
                 }
                 j += 1
             }
-        } else if let T::I(x) = &t[i] {
-            if &s[x.clone()] != "export" {
-                r.symbols.push(Symbol {
-                    name: s[x.clone()].into(),
-                    kind: if matches!(t.get(i + 1), Some(T::P('('))) {
-                        SymbolKind::Call
-                    } else {
-                        SymbolKind::Reference
-                    },
-                    span: x.clone(),
-                    scope,
-                    declaration: false,
-                    exported: false,
-                });
-            }
+        } else if let T::I(x) = &t[i]
+            && &s[x.clone()] != "export"
+        {
+            r.symbols.push(Symbol {
+                name: s[x.clone()].into(),
+                kind: if matches!(t.get(i + 1), Some(T::P('('))) {
+                    SymbolKind::Call
+                } else {
+                    SymbolKind::Reference
+                },
+                span: x.clone(),
+                scope,
+                declaration: false,
+                exported: false,
+            });
         }
         i += 1;
     }

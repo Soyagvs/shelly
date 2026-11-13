@@ -38,6 +38,11 @@ shellout $data
 `append "file" VALUE` appends text to a file (creating it as documented in [files.md](files.md)); it is not collection `append PATH VALUE`. Collection mutation value support depends on the target: dictionary `set` and list-index `set` accept scalars, lists, or dictionaries; nested `append` does too. Root `append` accepts scalars or dictionaries but rejects lists, while `prepend` and legacy bracket assignment are scalar-only. Missing intermediate path segments and list indexes are errors.
 
 ```shelly
+clear
+progress "Preparing workspace" -> $result
+    shellout "Running checks"
+end
+shellout $result.status
 shellout "hello"
 ask "Name? " -> $name
 menu "Color?" -> $color
@@ -53,6 +58,8 @@ args -> $all
 ## 📖 Command rules
 
 - `shellout` prints a value and adds a newline.
+- `clear` takes no arguments and clears an interactive terminal before following output is drawn. It emits nothing when output is redirected or during `--dry-run`.
+- `progress "LABEL" -> $result ... end` runs a block with terminal progress feedback. On success it stores `{status: "ok", durationMs: N}` in `$result`; errors store `status: "error"` then propagate to `try` / `catch`. Redirected output is plain text and `--dry-run` stores `status: "unavailable"` without rendering.
 - `shellin` reads one stdin line into a variable.
 - `ask` prints a prompt, reads one line, and stores it with `->`.
 - `menu` renders a TTY menu or a numbered pipe-mode prompt and stores the selected value; see [menu.md](menu.md).
