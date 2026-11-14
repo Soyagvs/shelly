@@ -50,7 +50,7 @@ pub(crate) fn run(check: fn(&str, &str) -> Vec<crate::Diagnostic>) {
                 if let Some(id) = id {
                     send(
                         &mut out,
-                        json!({"jsonrpc":"2.0","id":id,"result":{"capabilities":{"textDocumentSync":1,"completionProvider":{},"hoverProvider":true,"definitionProvider":true,"referencesProvider":true,"renameProvider":{},"documentSymbolProvider":true,"workspaceSymbolProvider":true,"documentFormattingProvider":true,"codeActionProvider":{"codeActionKinds":["quickfix","source.format"]},"diagnosticProvider":{"interFileDependencies":false,"workspaceDiagnostics":false}}}}),
+                        json!({"jsonrpc":"2.0","id":id,"result":{"capabilities":{"textDocumentSync":1,"completionProvider":{},"hoverProvider":true,"definitionProvider":true,"referencesProvider":true,"renameProvider":{},"documentSymbolProvider":true,"workspaceSymbolProvider":true,"documentFormattingProvider":true,"codeActionProvider":{"codeActionKinds":["quickfix","source.format"]}}}}),
                     )
                 }
             }

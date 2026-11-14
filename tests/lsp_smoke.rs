@@ -75,10 +75,7 @@ fn diagnostics_first_lsp_lifecycle_and_zero_based_ranges() {
     let mut lsp = Lsp::start();
     lsp.send(json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"capabilities":{}}}));
     let initialized = lsp.receive();
-    assert_eq!(
-        initialized["result"]["capabilities"]["diagnosticProvider"]["interFileDependencies"],
-        false
-    );
+    assert!(initialized["result"]["capabilities"]["diagnosticProvider"].is_null());
     lsp.send(json!({"jsonrpc":"2.0","method":"initialized","params":{}}));
 
     let uri = "file:///unsaved.shelly";
