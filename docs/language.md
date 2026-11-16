@@ -2,7 +2,7 @@
 
 Use this guide to learn Shelly's core syntax, values, control flow, and process model while keeping scripts easy to validate and run.
 
-[Documentation index](index.md) · [Commands and input](commands.md) · [Project structure](project-structure.md) · [Editor support](editor-support.md)
+[Documentation index](index.md) · [Commands and input](commands.md) · [Terminal tables](tables.md) · [Project structure](project-structure.md) · [Editor support](editor-support.md)
 
 ## 🚀 First success
 
@@ -136,6 +136,7 @@ The second form is shell/platform dependent; see [commands.md](commands.md).
 | Files | [files.md](files.md) |
 | Commands and input | [commands.md](commands.md) |
 | Menu blocks | [menu.md](menu.md) |
+| Terminal tables | [tables.md](tables.md) |
 | Exit | [exit.md](exit.md) |
 | Error handling | [errors.md](errors.md) |
 | Functions | [functions.md](functions.md) |

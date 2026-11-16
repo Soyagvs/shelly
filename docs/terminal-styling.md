@@ -132,5 +132,6 @@ v1 does not support arbitrary ANSI injection, RGB/256-color/truecolor syntax, hy
 ## Related guides
 
 - [Commands](commands.md) — CLI options and output behavior.
+- [Terminal tables](tables.md) — fixed-width tables with styled expression cells.
 - [Dry run and audit](dry-run.md) — simulation boundaries.
 - [Secrets](secrets.md) — redaction behavior.
