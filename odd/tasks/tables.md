@@ -13,9 +13,9 @@ S3. "perfecto . hazlo , y recuerda actualizar shelly-nvim y shelly-vscode para e
 
 T1 | S1 | Shelly parser, block validation, formatter, and focused RED tests | verified: focused formatter + CLI tests; commit `097a16b`
 T2 | S1-S2 | Table model and terminal renderer with border modes and expression cells | verified: focused tests + full `cargo test`; commit `097a16b`
-T3 | S1-S2 | Public behavior tests and language documentation | verified: docs links + focused behavior tests; commit pending
-T4 | S3 | Neovim syntax/indentation and tests | verified: headless structured-syntax test; commit pending
-T5 | S3 | VS Code grammar and tests | verified: focused extension tests + validate + build; commit pending
+T3 | S1-S2 | Public behavior tests and language documentation | verified: docs links + focused behavior tests; commit `da2f751`
+T4 | S3 | Neovim syntax/indentation and tests | verified: headless structured-syntax test; commit `4808768` in `shelly-nvim`
+T5 | S3 | VS Code grammar and tests | verified: focused extension tests + validate + build; commit `84fb614` in `shelly-vscode`
 
 ## Log
 
@@ -24,3 +24,5 @@ L2. Authorized external editor access: `/home/soyagvs/proyectos/personal/shelly-
 L3. Agreed design: basic `table ... end` data tables; `column`, `row`, and `footer`; border modes `ascii`, `unicode`, and `rounded`; ordinary Shelly expressions, including variables, constants, and `style(STYLE, VALUE)`, in cells. The renderer aligns on visible text width and preserves the existing color policy.
 L4. T2 reopened after public verification found a stale ASCII-output expectation: the implementation correctly renders a separator under the header, while one earlier test did not expect it.
 L5. Slice 1: `097a16b feat(tables): add terminal table blocks` (442 authored lines; cohesive behavior and its tests).
+L6. Slice 2: `da2f751 docs(tables): document terminal tables` (86 authored lines, including the tracked feature document).
+L7. Editor work units: `4808768 feat(syntax): highlight table blocks` in `shelly-nvim`; `84fb614 feat(grammar): support table blocks` in `shelly-vscode`.
