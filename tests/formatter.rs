@@ -35,6 +35,15 @@ fn strings_comments_and_multiline_strings_are_preserved() {
 }
 
 #[test]
+fn table_blocks_are_indented_and_validated() {
+    let source = "table\ncolumn \"Name\"\nrow \"Alice\"\nfooter \"Total\"\nend\n";
+    assert_eq!(
+        format_source(source).unwrap(),
+        "table\n    column \"Name\"\n    row \"Alice\"\n    footer \"Total\"\nend\n"
+    );
+}
+
+#[test]
 fn nested_blocks_are_indented() {
     let source = "if true\n shellout \"outer\"\n for $item in $items\n shellout $item\n end\nend\n";
     assert_eq!(

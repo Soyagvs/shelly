@@ -175,6 +175,7 @@ fn is_open(line: &str) -> bool {
         || matches!(
             first_word(line),
             "menu"
+                | "table"
                 | "progress"
                 | "if"
                 | "for"
