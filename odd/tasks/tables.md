@@ -20,7 +20,7 @@ T5 | S3 | VS Code grammar and tests | verified: focused extension tests + valida
 T6 | S4 | Prepare Shelly v3.15.0 on main (merge and version commit) | prepared on main: commit `d339133`
 T7 | S4 | Prepare Neovim v0.7.0 on main (merge and version/tag readiness) | prepared on main: commit `b68e149`
 T8 | S4 | Prepare VS Code v0.7.0 on main and generate the VSIX | verified: `shelly-language-oficial-0.7.0.vsix` SHA-256 `5f41dae92f1ab82be0d1a69c8897eddd825dd4089d3a3661696a51d6c8a722a6`; commit `75331d2`
-T9 | S4 | Run the one-shot release validation, publish exact tags/releases, and independently verify artifacts | in progress
+T9 | S4 | Run the one-shot release validation, publish exact tags/releases, and independently verify artifacts | verified: v3.15.0/v0.7.0 releases and VSIX digest
 
 ## Log
 
@@ -43,3 +43,4 @@ L16. User authorized one fresh coordinated validation attempt using `bash tests/
 L17. The second coordinated validation again completed all Shelly checks successfully, then stopped before remaining probes because `tests/headless-icons.sh` is also not executable (`Permission denied`, exit 126). VS Code validation, VSIX generation, tags, pushes, and publication did not run.
 L18. User authorized one final coordinated validation attempt using `bash` for both non-executable Neovim scripts; no retry follows if this attempt fails.
 L19. Final coordinated validation passed: Shelly format/tests/release packaging/version, Neovim headless suites, and VS Code install/validate/build/test/package/verify-package. Generated VSIX: `shelly-language-oficial-0.7.0.vsix` SHA-256 `5f41dae92f1ab82be0d1a69c8897eddd825dd4089d3a3661696a51d6c8a722a6`.
+L20. Published and independently verified: Shelly `v3.15.0` (8 release assets), Neovim `v0.7.0` (no assets), and VS Code `v0.7.0` with exactly `shelly-language-oficial-0.7.0.vsix` matching the recorded SHA-256. Badge automation advanced each remote main by one commit; local mains are synchronized.
