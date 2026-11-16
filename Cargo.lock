@@ -1050,7 +1050,7 @@ dependencies = [
 
 [[package]]
 name = "shelly"
-version = "3.14.4"
+version = "3.15.0"
 dependencies = [
  "crossterm",
  "flate2",
