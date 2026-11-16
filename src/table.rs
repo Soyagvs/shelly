@@ -133,7 +133,7 @@ pub fn render(t: &Table) -> String {
                 if kind == 0 {
                     t.headers[i].1
                 } else {
-                    Align::Left
+                    t.headers[i].1
                 },
             ));
             out.push(' ');

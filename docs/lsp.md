@@ -68,4 +68,11 @@ Messages use normal LSP `Content-Length` framing:
 
 - [Formatting](formatting.md) — command-line formatting and `fmt --check`.
 - [Editor support](editor-support.md) — client configuration.
+The parser and formatter understand composable `table` and `measure` blocks,
+including nested `if`/`for` bodies and `row` directives. Diagnostics report
+invalid table members, row width mismatches, and malformed measure destinations;
+the server does not execute tables or measure bodies, so elapsed values are
+never inferred during completion or hover.
+
 - [Language guide](language.md) — syntax and static analysis context.
+- [Terminal tables](tables.md) and [Measure elapsed time](measure.md) — block contracts.

@@ -108,3 +108,4 @@ shellout $message
 - [Error handling](errors.md) — recover from ordinary runtime errors.
 - [Deferred cleanup](defer.md) — clean up when function scopes unwind.
 - [Control flow](conditionals.md) — branch inside a function.
+- [Terminal tables](tables.md) and [Measure elapsed time](measure.md) — composable blocks inside functions.

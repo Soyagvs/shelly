@@ -35,6 +35,13 @@ fn strings_comments_and_multiline_strings_are_preserved() {
 }
 
 #[test]
+fn composable_table_and_measure_blocks_indent_nested_structure() {
+    let source = "fn build {\ntable\nif true\ncolumn \"Name\"\nend\nend\nmeasure -> $elapsed\nif true\nshellout \"work\"\nend\nend\n}\n";
+    let expected = "fn build {\n    table\n        if true\n            column \"Name\"\n        end\n    end\n    measure -> $elapsed\n        if true\n            shellout \"work\"\n        end\n    end\n}\n";
+    assert_eq!(format_source(source).unwrap(), expected);
+}
+
+#[test]
 fn table_blocks_are_indented_and_validated() {
     let source = "table\ncolumn \"Name\"\nrow \"Alice\"\nfooter \"Total\"\nend\n";
     assert_eq!(

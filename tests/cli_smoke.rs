@@ -4,6 +4,95 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn measure_assigns_nonnegative_monotonic_milliseconds_after_successful_body() {
+    let output =
+        run_script("measure -> $milliseconds\n    command true\nend\nshellout $milliseconds\n");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    let milliseconds = stdout(&output).trim().parse::<i64>().expect("milliseconds");
+    assert!(
+        milliseconds >= 0,
+        "successful measure assigns nonnegative milliseconds"
+    );
+}
+
+#[test]
+fn measure_works_through_nested_loops_tables_and_functions() {
+    let output = run_script(
+        "fn build($item) {\n    $items = [\"A\", \"B\"]\n    measure -> $elapsed\n        table\n            column \"Name\"\n            for $entry in $items\n                row $entry\n            end\n            row $item\n        end\n    end\n    shellout $elapsed\n}\ncall build(\"input\")\n",
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(
+        stdout(&output)
+            .lines()
+            .last()
+            .unwrap()
+            .trim()
+            .parse::<u64>()
+            .is_ok()
+    );
+}
+
+#[test]
+fn measure_preserves_failure_and_does_not_assign_on_failed_body() {
+    let output = run_script("measure -> $elapsed\n    command false\nend\nshellout $elapsed\n");
+    assert!(!output.status.success(), "failed body propagates normally");
+    assert!(
+        stdout(&output).is_empty(),
+        "destination is not assigned after failure"
+    );
+}
+
+#[test]
+fn measure_rejects_malformed_or_missing_destinations() {
+    for source in ["measure\nend\n", "measure ->\nend\n", "measure -> 1\nend\n"] {
+        let path = write_script(source);
+        let output = Command::new(env!("CARGO_BIN_EXE_shelly"))
+            .args(["check", path.to_str().unwrap()])
+            .output()
+            .unwrap();
+        assert!(
+            !output.status.success(),
+            "invalid measure must be rejected: {source:?}"
+        );
+        assert!(
+            stderr(&output).contains("measure syntax"),
+            "stderr: {}",
+            stderr(&output)
+        );
+    }
+}
+
+#[test]
+fn composable_blocks_validate_nested_table_and_measure_structure() {
+    let path = write_script(
+        "fn build() {\n table\n if true\n column \"Name\"\n end\n end\n measure -> $elapsed\n if true\n shellout \"work\"\n end\n end\n}\n",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["check", path.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+}
+
+#[test]
+fn table_control_flow_accumulates_rows_and_functions_use_parameters() {
+    let output = run_script(
+        "fn build($name, $items) {\n    table\n        column \"Name\"\n        if true\n            row $name\n        end\n        for $item in $items\n            row $item\n        end\n    end\n}\ncall build(\"A\", [\"B\"])\n",
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stdout(&output).contains("A"));
+    assert!(stdout(&output).contains("B"));
+}
+
+#[test]
+fn table_alignment_applies_to_body_cells() {
+    let output =
+        run_script("table border ascii\n    column \"N\" align right\n    row \"long\"\nend\n");
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stdout(&output).contains("| long |"), "{}", stdout(&output));
+}
+
+#[test]
 fn table_blocks_parse_and_reject_invalid_members() {
     let valid =
         run_script("table\n    column \"Name\"\n    row \"Alice\"\n    footer \"Total\"\nend\n");
