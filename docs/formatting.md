@@ -45,6 +45,11 @@ Editor positions use UTF-16 because that is the LSP convention. The formatter it
 
 ## Related guides
 
+Nested `table` and `measure` blocks are indented with the same four-space rule
+as every other block; nested `if`/`for` bodies and their `row` directives are
+preserved as executable structure. Use `shelly fmt --check` to verify examples
+in CI.
+
 - [LSP reference](lsp.md) — editor formatting and document/workspace behavior.
 - [Editor support](editor-support.md) — client setup.
 - [Language guide](language.md) — Shelly syntax.

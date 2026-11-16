@@ -2,7 +2,7 @@
 
 Use this guide to learn Shelly's core syntax, values, control flow, and process model while keeping scripts easy to validate and run.
 
-[Documentation index](index.md) · [Commands and input](commands.md) · [Terminal tables](tables.md) · [Project structure](project-structure.md) · [Editor support](editor-support.md)
+[Documentation index](index.md) · [Commands and input](commands.md) · [Terminal tables](tables.md) · [Measure elapsed time](measure.md) · [Project structure](project-structure.md) · [Editor support](editor-support.md)
 
 ## 🚀 First success
 
@@ -63,6 +63,7 @@ See [commands.md](commands.md), [files.md](files.md), and [conditionals.md](cond
 - `"..."` is for one-line text; triple backticks are for multiline text.
 - `menu "Question" -> $choice` declares an interactive menu and stores the selected value; see [menu.md](menu.md).
 - `log "identifier"` wraps a block with structured file logging in script-relative `logs/`.
+- `table` and `measure -> $milliseconds` are composable blocks; see [tables](tables.md) and [measure](measure.md).
 - `exists` and `contains` provide built-in boolean predicates.
 - Standard helpers transform text, lists, values, path strings, time, and random numbers; see [helpers.md](helpers.md) and the [date formatting guide](date-formatting.md).
 - File commands (`create`, `copy`, `move`, `rename`, `remove`, `read`, `write`, `append`, `isFile`, `isDir`, `size`, `tempFile`, `tempDir`) and `files "pattern" -> $items` use script-relative paths where applicable.

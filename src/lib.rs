@@ -1066,6 +1066,7 @@ struct Interpreter {
     context: audit::ExecutionContext,
     mocks: mock::MockRegistry,
     color: ColorPolicy,
+    active_table: Option<table::Table>,
 }
 
 #[derive(Clone)]
@@ -1091,6 +1092,7 @@ impl Interpreter {
             context: audit::ExecutionContext::default(),
             mocks: self.mocks.clone(),
             color: self.color,
+            active_table: None,
         }
     }
 
@@ -1487,10 +1489,85 @@ impl Interpreter {
                     .map_err(|error| line_error(line_no, error))?;
                 continue;
             }
+            if let Some(rest) = line.strip_prefix("column ") {
+                let mut parts = table::parse_cells(rest)?;
+                let mut align = table::Align::Left;
+                if parts.len() >= 3 && parts[parts.len() - 2] == "align" {
+                    align = match parts.pop().unwrap() {
+                        "left" => table::Align::Left,
+                        "center" => table::Align::Center,
+                        "right" => table::Align::Right,
+                        _ => return Err("column alignment must be left, center, or right".into()),
+                    };
+                    parts.pop();
+                }
+                if parts.len() != 1 {
+                    return Err("column requires one label expression".into());
+                }
+                let value = self.emit_terminal(&self.eval_expr(parts[0])?);
+                self.active_table
+                    .as_mut()
+                    .ok_or_else(|| "column outside table".to_string())?
+                    .headers
+                    .push((value, align));
+                index += 1;
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("row ") {
+                let cells = table::parse_cells(rest)?
+                    .into_iter()
+                    .map(|e| self.eval_expr(e).map(|v| self.emit_terminal(&v)))
+                    .collect::<Result<Vec<_>, _>>()?;
+                self.active_table
+                    .as_mut()
+                    .ok_or_else(|| "row outside table".to_string())?
+                    .rows
+                    .push(cells);
+                index += 1;
+                continue;
+            }
+            if let Some(rest) = line.strip_prefix("footer ") {
+                let cells = table::parse_cells(rest)?
+                    .into_iter()
+                    .map(|e| self.eval_expr(e).map(|v| self.emit_terminal(&v)))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let table = self
+                    .active_table
+                    .as_mut()
+                    .ok_or_else(|| "footer outside table".to_string())?;
+                if table.footer.is_some() {
+                    return Err("table allows only one footer".into());
+                }
+                table.footer = Some(cells);
+                index += 1;
+                continue;
+            }
             if line == "table" || line.starts_with("table border ") {
                 let (body, next) = collect_block(lines, index, "table")?;
                 self.run_table(line, &body)
                     .map_err(|error| line_error(line_no, error))?;
+                index = next;
+                continue;
+            }
+            if line == "measure" || line.starts_with("measure ") {
+                let destination = line.strip_prefix("measure ").unwrap_or("").trim();
+                let destination = parse_var_ref(
+                    destination.strip_prefix("->").unwrap_or("").trim(),
+                )
+                .map_err(|_| {
+                    line_error(
+                        line_no,
+                        "measure syntax is measure -> $destination".to_string(),
+                    )
+                })?;
+                let (body, next) = collect_block(lines, index, "measure")?;
+                let started = Instant::now();
+                self.run_lines(&body)
+                    .map_err(|error| line_error(line_no, error))?;
+                self.vars.insert(
+                    destination,
+                    Value::Scalar(started.elapsed().as_millis().to_string()),
+                );
                 index = next;
                 continue;
             }
@@ -1533,15 +1610,20 @@ impl Interpreter {
                 ));
             }
         };
-        let mut t = table::Table {
+        let previous = self.active_table.replace(table::Table {
             headers: Vec::new(),
             rows: Vec::new(),
             footer: None,
             border,
-        };
-        for (_, raw) in body {
-            let line = raw.trim();
-            if let Some(rest) = line.strip_prefix("column ") {
+        });
+        let result = self.run_lines(body);
+        let t = self.active_table.take().expect("active table");
+        self.active_table = previous;
+        result?;
+        /* Nested control flow has collected the table members above. */
+        /* table body directives are handled by run_lines. */
+        /* validation follows */
+        /*
                 let mut parts = table::parse_cells(rest)?;
                 let mut align = table::Align::Left;
                 if parts.len() >= 3 && parts[parts.len() - 2] == "align" {
@@ -1577,7 +1659,7 @@ impl Interpreter {
             } else {
                 return Err("unexpected line in table block".into());
             }
-        }
+        }*/
         if t.headers.is_empty() {
             return Err("table requires at least one column".into());
         }
@@ -5216,6 +5298,7 @@ enum BlockKind {
     Retry,
     Progress,
     Table,
+    Measure,
     Menu {
         saw_option: bool,
         option_open: bool,
@@ -5269,6 +5352,7 @@ impl Checker {
                 BlockKind::Retry => "retry",
                 BlockKind::Progress => "progress",
                 BlockKind::Table => "table",
+                BlockKind::Measure => "measure",
                 BlockKind::Menu { .. } => "menu",
             };
             if matches!(
@@ -5304,7 +5388,7 @@ impl Checker {
             return Ok(());
         }
         if let Some(rest) = line.strip_prefix("column ") {
-            if !matches!(self.blocks.last(), Some(BlockKind::Table)) || rest.trim().is_empty() {
+            if !self.blocks.contains(&BlockKind::Table) || rest.trim().is_empty() {
                 return Err("column is only valid inside a table and requires a value".to_string());
             }
             let parts = table::parse_cells(rest)?;
@@ -5322,19 +5406,29 @@ impl Checker {
             return Ok(());
         }
         if let Some(rest) = line.strip_prefix("row ") {
-            if !matches!(self.blocks.last(), Some(BlockKind::Table)) || rest.trim().is_empty() {
+            if !self.blocks.contains(&BlockKind::Table) || rest.trim().is_empty() {
                 return Err("row is only valid inside a table and requires a value".to_string());
             }
             return Ok(());
         }
         if let Some(rest) = line.strip_prefix("footer ") {
-            if !matches!(self.blocks.last(), Some(BlockKind::Table)) || rest.trim().is_empty() {
+            if !self.blocks.contains(&BlockKind::Table) || rest.trim().is_empty() {
                 return Err("footer is only valid inside a table and requires a value".to_string());
             }
             return Ok(());
         }
-        if matches!(self.blocks.last(), Some(BlockKind::Table)) && line != "end" {
+        if matches!(self.blocks.last(), Some(BlockKind::Table))
+            && line != "end"
+            && !starts_block(line)
+        {
             return Err("unexpected line in table block".to_string());
+        }
+        if line == "measure" || line.starts_with("measure ") {
+            let destination = line.strip_prefix("measure ").unwrap_or("").trim();
+            parse_var_ref(destination.strip_prefix("->").unwrap_or("").trim())
+                .map_err(|_| "measure syntax is measure -> $destination")?;
+            self.blocks.push(BlockKind::Measure);
+            return Ok(());
         }
         if let Some(rest) = line.strip_prefix("progress ") {
             let (label, destination) = rest
@@ -8078,6 +8172,10 @@ fn starts_block(line: &str) -> bool {
         || line == "try"
         || line.starts_with("try ")
         || line.starts_with("log ")
+        || line == "table"
+        || line.starts_with("table border ")
+        || line == "measure"
+        || line.starts_with("measure ")
 }
 
 fn parse_try_header(line: &str) -> Result<Option<String>, String> {

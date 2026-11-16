@@ -189,6 +189,7 @@ fn is_open(line: &str) -> bool {
                 | "timeout"
                 | "defer"
                 | "watch"
+                | "measure"
         )
 }
 fn is_close(line: &str) -> bool {

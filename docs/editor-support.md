@@ -55,4 +55,4 @@ Diagnostics, symbols, definitions, references, and rename are workspace-scoped. 
 
 The LSP accepts `files` patterns including recursive `**` syntax (for example, `files "**/*.shelly" -> $items`) without reporting a syntax diagnostic. The LSP does not expand globs or inspect the filesystem for that command; expansion happens when Shelly runs the script.
 
-For command-line formatting and `fmt --check`, see [Formatting](formatting.md). For integration details, see the [Shelly VS Code extension](https://github.com/Soyagvs/shelly-vscode) or [Shelly Neovim plugin](https://github.com/Soyagvs/shelly-nvim).
+For command-line formatting and `fmt --check`, see [Formatting](formatting.md). Composable `table` and `measure` syntax is parsed and formatted by the server, while timing remains runtime-only; see [Terminal tables](tables.md) and [Measure elapsed time](measure.md). For integration details, see the [Shelly VS Code extension](https://github.com/Soyagvs/shelly-vscode) or [Shelly Neovim plugin](https://github.com/Soyagvs/shelly-nvim).
