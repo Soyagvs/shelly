@@ -40,3 +40,5 @@ L13. Neovim feature was merged to `main`; v0.7.0 changelog preparation commit: `
 L14. VS Code feature was merged to `main`; v0.7.0 package, lockfile, README, and VSIX verifier preparation commit: `75331d2 chore(release): prepare VS Code extension 0.7.0`.
 L15. The one-shot coordinated validation started: all Shelly checks completed successfully, then the Neovim phase stopped before probes because `tests/headless-custom-command.sh` is not executable (`Permission denied`, exit 126). VS Code validation, VSIX generation, tags, pushes, and publication did not run.
 L16. User authorized one fresh coordinated validation attempt using `bash tests/headless-custom-command.sh`; publication remains conditional on all gates passing.
+L17. The second coordinated validation again completed all Shelly checks successfully, then stopped before remaining probes because `tests/headless-icons.sh` is also not executable (`Permission denied`, exit 126). VS Code validation, VSIX generation, tags, pushes, and publication did not run.
+L18. User authorized one final coordinated validation attempt using `bash` for both non-executable Neovim scripts; no retry follows if this attempt fails.
