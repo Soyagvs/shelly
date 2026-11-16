@@ -4,6 +4,129 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn table_blocks_parse_and_reject_invalid_members() {
+    let valid =
+        run_script("table\n    column \"Name\"\n    row \"Alice\"\n    footer \"Total\"\nend\n");
+    assert!(valid.status.success(), "stderr: {}", stderr(&valid));
+
+    let invalid_path = write_script("table\n    shellout \"not a table member\"\nend\n");
+    let invalid = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["check", invalid_path.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(!invalid.status.success());
+    assert!(
+        stderr(&invalid).contains("table"),
+        "stderr: {}",
+        stderr(&invalid)
+    );
+}
+
+#[test]
+fn tables_render_borders_alignment_and_expressions() {
+    let output = run_script(
+        r#"$name = "世界"
+$value = "Alice"
+table border ascii
+    column "Name"
+    column "City" align right
+    row $value $name
+    footer "Total" "1"
+end
+"#,
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert_eq!(
+        stdout(&output),
+        "+-------+------+
+| Name  | City |
++-------+------+
+| Alice | 世界 |
++-------+------+
+| Total |    1 |
++-------+------+
+"
+    );
+}
+
+#[test]
+fn tables_preserve_style_and_reject_width_mismatch() {
+    let output = run_script(
+        "table border unicode\n    column \"Name\"\n    row style(\"red\", \"Alice\")\nend\n",
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stdout(&output).contains("Alice"));
+    let invalid =
+        run_script("table\n    column \"Name\"\n    column \"City\"\n    row \"Alice\"\nend\n");
+    assert!(!invalid.status.success());
+    assert!(
+        stderr(&invalid).contains("width"),
+        "stderr: {}",
+        stderr(&invalid)
+    );
+}
+
+#[test]
+fn table_border_junctions_are_connected_for_each_style() {
+    for (border, expected) in [
+        (
+            "ascii",
+            "+---+---+\n| A | B |\n+---+---+\n| x | y |\n+---+---+\n",
+        ),
+        (
+            "unicode",
+            "┌───┬───┐\n│ A │ B │\n├───┼───┤\n│ x │ y │\n└───┴───┘\n",
+        ),
+        (
+            "rounded",
+            "╭───┬───╮\n│ A │ B │\n├───┼───┤\n│ x │ y │\n╰───┴───╯\n",
+        ),
+    ] {
+        let output = run_script(&format!(
+            "table border {border}\n    column \"A\"\n    column \"B\"\n    row \"x\" \"y\"\nend\n"
+        ));
+        assert!(output.status.success(), "stderr: {}", stderr(&output));
+        assert_eq!(stdout(&output), expected);
+    }
+}
+
+#[test]
+fn table_check_accepts_expression_labels_and_rejects_malformed_columns() {
+    let valid = write_script(
+        "table\n    column \"City\" align right\n    column style(\"bold bright_cyan\", \"Endpoint\")\nend\n",
+    );
+    let output = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["check", valid.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    let invalid = write_script("table\n    column style(\"red\", \"Endpoint\") align\nend\n");
+    let output = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .args(["check", invalid.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+}
+
+#[test]
+fn table_color_policy_preserves_layout() {
+    let script = "table border unicode\n    column style(\"red\", \"Name\")\n    row style(\"green\", \"Alice\")\nend\n";
+    let always = run_script_with_args(script, &["--color", "always"]);
+    let never = run_script_with_args(script, &["--color", "never"]);
+    let path = write_script(script);
+    let no_color = Command::new(env!("CARGO_BIN_EXE_shelly"))
+        .arg(path.to_str().unwrap())
+        .env("NO_COLOR", "1")
+        .output()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&always.stdout).contains("\x1b["));
+    assert!(!String::from_utf8_lossy(&never.stdout).contains("\x1b["));
+    assert!(!String::from_utf8_lossy(&no_color.stdout).contains("\x1b["));
+    assert_eq!(strip_ansi_for_test(&always.stdout), never.stdout);
+    assert_eq!(never.stdout, no_color.stdout);
+}
+
+#[test]
 fn parallel_tasks_overlap_at_the_bound() {
     let root = std::env::temp_dir().join(format!("shelly-parallel-{}", std::process::id()));
     let first = root.with_extension("first");
@@ -5077,6 +5200,26 @@ fn style_output_preserves_secret_redaction() {
         .unwrap();
     assert!(!stdout(&output).contains("STYLE_SECRET_SENTINEL"));
     assert!(!stderr(&output).contains("STYLE_SECRET_SENTINEL"));
+}
+
+fn strip_ansi_for_test(bytes: &[u8]) -> Vec<u8> {
+    let text = String::from_utf8_lossy(bytes);
+    let mut out = String::new();
+    let mut escape = false;
+    for ch in text.chars() {
+        if escape {
+            if ch == 'm' {
+                escape = false;
+            }
+            continue;
+        }
+        if ch == '\x1b' {
+            escape = true;
+        } else {
+            out.push(ch);
+        }
+    }
+    out.into_bytes()
 }
 
 fn run_script(source: &str) -> std::process::Output {

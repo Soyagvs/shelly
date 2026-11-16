@@ -22,6 +22,7 @@ mod mock;
 mod parser;
 mod secret;
 mod shell;
+mod table;
 pub mod update;
 mod value;
 
@@ -1486,6 +1487,13 @@ impl Interpreter {
                     .map_err(|error| line_error(line_no, error))?;
                 continue;
             }
+            if line == "table" || line.starts_with("table border ") {
+                let (body, next) = collect_block(lines, index, "table")?;
+                self.run_table(line, &body)
+                    .map_err(|error| line_error(line_no, error))?;
+                index = next;
+                continue;
+            }
             if line == "menu" || line.starts_with("menu ") {
                 let (spec, next) =
                     menu::parse_spec(lines, index, &mut |expr| self.eval_expr_value(expr))?;
@@ -1511,6 +1519,73 @@ impl Interpreter {
                 .map_err(|error| line_error(line_no, error))?;
             index += 1;
         }
+        Ok(())
+    }
+
+    fn run_table(&mut self, header: &str, body: &[(usize, String)]) -> Result<(), String> {
+        let border = match header.strip_prefix("table border ").unwrap_or("rounded") {
+            "ascii" => table::Border::Ascii,
+            "unicode" => table::Border::Unicode,
+            "rounded" => table::Border::Rounded,
+            other => {
+                return Err(format!(
+                    "unknown table border '{other}' (use ascii, unicode, or rounded)"
+                ));
+            }
+        };
+        let mut t = table::Table {
+            headers: Vec::new(),
+            rows: Vec::new(),
+            footer: None,
+            border,
+        };
+        for (_, raw) in body {
+            let line = raw.trim();
+            if let Some(rest) = line.strip_prefix("column ") {
+                let mut parts = table::parse_cells(rest)?;
+                let mut align = table::Align::Left;
+                if parts.len() >= 3 && parts[parts.len() - 2] == "align" {
+                    align = match parts.pop().unwrap() {
+                        "left" => table::Align::Left,
+                        "center" => table::Align::Center,
+                        "right" => table::Align::Right,
+                        _ => return Err("column alignment must be left, center, or right".into()),
+                    };
+                    parts.pop();
+                }
+                if parts.len() != 1 {
+                    return Err("column requires one label expression".into());
+                }
+                t.headers
+                    .push((self.emit_terminal(&self.eval_expr(parts[0])?), align));
+            } else if let Some(rest) = line.strip_prefix("row ") {
+                let cells = table::parse_cells(rest)?
+                    .into_iter()
+                    .map(|e| self.eval_expr(e).map(|v| self.emit_terminal(&v)))
+                    .collect::<Result<Vec<_>, _>>()?;
+                t.rows.push(cells);
+            } else if let Some(rest) = line.strip_prefix("footer ") {
+                if t.footer.is_some() {
+                    return Err("table allows only one footer".into());
+                }
+                t.footer = Some(
+                    table::parse_cells(rest)?
+                        .into_iter()
+                        .map(|e| self.eval_expr(e).map(|v| self.emit_terminal(&v)))
+                        .collect::<Result<Vec<_>, _>>()?,
+                );
+            } else {
+                return Err("unexpected line in table block".into());
+            }
+        }
+        if t.headers.is_empty() {
+            return Err("table requires at least one column".into());
+        }
+        let n = t.headers.len();
+        if t.rows.iter().any(|r| r.len() != n) || t.footer.as_ref().is_some_and(|r| r.len() != n) {
+            return Err(format!("table row width must match {n} columns"));
+        }
+        print!("{}", table::render(&t));
         Ok(())
     }
 
@@ -5140,6 +5215,7 @@ enum BlockKind {
     Watch,
     Retry,
     Progress,
+    Table,
     Menu {
         saw_option: bool,
         option_open: bool,
@@ -5192,6 +5268,7 @@ impl Checker {
                 BlockKind::Watch => "watch",
                 BlockKind::Retry => "retry",
                 BlockKind::Progress => "progress",
+                BlockKind::Table => "table",
                 BlockKind::Menu { .. } => "menu",
             };
             if matches!(
@@ -5214,6 +5291,51 @@ impl Checker {
     }
 
     fn check_line(&mut self, line: &str) -> Result<(), String> {
+        if line == "table" || line.starts_with("table border ") {
+            if line != "table"
+                && !matches!(
+                    line,
+                    "table border ascii" | "table border unicode" | "table border rounded"
+                )
+            {
+                return Err("table border must be ascii, unicode, or rounded".into());
+            }
+            self.blocks.push(BlockKind::Table);
+            return Ok(());
+        }
+        if let Some(rest) = line.strip_prefix("column ") {
+            if !matches!(self.blocks.last(), Some(BlockKind::Table)) || rest.trim().is_empty() {
+                return Err("column is only valid inside a table and requires a value".to_string());
+            }
+            let parts = table::parse_cells(rest)?;
+            let label = if parts.len() >= 3 && parts[parts.len() - 2] == "align" {
+                if !matches!(parts[parts.len() - 1], "left" | "center" | "right") {
+                    return Err("column alignment must be left, center, or right".into());
+                }
+                &parts[..parts.len() - 2]
+            } else {
+                &parts[..]
+            };
+            if label.len() != 1 || !is_menu_text_expression(label[0]) {
+                return Err("column label must be a Shelly expression".into());
+            }
+            return Ok(());
+        }
+        if let Some(rest) = line.strip_prefix("row ") {
+            if !matches!(self.blocks.last(), Some(BlockKind::Table)) || rest.trim().is_empty() {
+                return Err("row is only valid inside a table and requires a value".to_string());
+            }
+            return Ok(());
+        }
+        if let Some(rest) = line.strip_prefix("footer ") {
+            if !matches!(self.blocks.last(), Some(BlockKind::Table)) || rest.trim().is_empty() {
+                return Err("footer is only valid inside a table and requires a value".to_string());
+            }
+            return Ok(());
+        }
+        if matches!(self.blocks.last(), Some(BlockKind::Table)) && line != "end" {
+            return Err("unexpected line in table block".to_string());
+        }
         if let Some(rest) = line.strip_prefix("progress ") {
             let (label, destination) = rest
                 .split_once("->")
