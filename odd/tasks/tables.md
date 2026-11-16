@@ -17,9 +17,9 @@ T2 | S1-S2 | Table model and terminal renderer with border modes and expression 
 T3 | S1-S2 | Public behavior tests and language documentation | verified: docs links + focused behavior tests; commit `da2f751`
 T4 | S3 | Neovim syntax/indentation and tests | verified: headless structured-syntax test; commit `4808768` in `shelly-nvim`
 T5 | S3 | VS Code grammar and tests | verified: focused extension tests + validate + build; commit `84fb614` in `shelly-vscode`
-T6 | S4 | Prepare Shelly v3.15.0 on main (merge and version commit) | commit pending
-T7 | S4 | Prepare Neovim v0.7.0 on main (merge and version/tag readiness) | commit pending
-T8 | S4 | Prepare VS Code v0.7.0 on main and generate the VSIX | commit pending
+T6 | S4 | Prepare Shelly v3.15.0 on main (merge and version commit) | prepared on main: commit `d339133`
+T7 | S4 | Prepare Neovim v0.7.0 on main (merge and version/tag readiness) | prepared on main: commit `b68e149`
+T8 | S4 | Prepare VS Code v0.7.0 on main and generate the VSIX | prepared on main: commit `75331d2`; VSIX pending one-shot validation
 T9 | S4 | Run the one-shot release validation, publish exact tags/releases, and independently verify artifacts | commit pending
 
 ## Log
@@ -35,3 +35,6 @@ L8. debes hacer las releases recuerda, y generar el vsix , todo en main . y dime
 L9. Release decision: minor line selected — Shelly v3.15.0, VS Code v0.7.0, and matching Neovim v0.7.0 release/tag.
 L10. Core release preflight initially invoked `cargo check --locked` after the version bump; it correctly refused the required Cargo.lock refresh, so zero validation tests ran. `cargo check --offline` repaired Cargo.lock.
 L11. User authorized one fresh, bounded release-validation attempt after the Cargo.lock repair. Preparation will complete in all repositories before that single validation/publish task.
+L12. Shelly feature was merged to `main`; v3.15.0 preparation commit: `d339133 chore: prepare v3.15.0`.
+L13. Neovim feature was merged to `main`; v0.7.0 changelog preparation commit: `b68e149 chore: prepare v0.7.0`.
+L14. VS Code feature was merged to `main`; v0.7.0 package, lockfile, README, and VSIX verifier preparation commit: `75331d2 chore(release): prepare VS Code extension 0.7.0`.
