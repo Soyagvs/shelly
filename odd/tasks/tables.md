@@ -38,3 +38,5 @@ L11. User authorized one fresh, bounded release-validation attempt after the Car
 L12. Shelly feature was merged to `main`; v3.15.0 preparation commit: `d339133 chore: prepare v3.15.0`.
 L13. Neovim feature was merged to `main`; v0.7.0 changelog preparation commit: `b68e149 chore: prepare v0.7.0`.
 L14. VS Code feature was merged to `main`; v0.7.0 package, lockfile, README, and VSIX verifier preparation commit: `75331d2 chore(release): prepare VS Code extension 0.7.0`.
+L15. The one-shot coordinated validation started: all Shelly checks completed successfully, then the Neovim phase stopped before probes because `tests/headless-custom-command.sh` is not executable (`Permission denied`, exit 126). VS Code validation, VSIX generation, tags, pushes, and publication did not run.
+L16. User authorized one fresh coordinated validation attempt using `bash tests/headless-custom-command.sh`; publication remains conditional on all gates passing.
