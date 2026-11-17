@@ -190,6 +190,9 @@ fn is_open(line: &str) -> bool {
                 | "defer"
                 | "watch"
                 | "measure"
+                | "pipeline"
+                | "parallel"
+                | "task"
         )
 }
 fn is_close(line: &str) -> bool {

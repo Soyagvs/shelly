@@ -2,6 +2,12 @@
 
 Functions package behavior into named, reusable blocks. Define them with `fn`, invoke them with `call`, and optionally return one scalar value.
 
+Block capture is unchanged by function scope. A `table`, `measure`, `pipeline`,
+or other supported block may use `-> $local` inside a function: visual stdout
+still appears, and the destination is assigned only on success. Nested `if` and
+`for` bodies follow the same tee rule. Use a mutable local or `global` variable
+according to the normal function scope rules.
+
 ## 🚀 Quick path
 
 ```shelly

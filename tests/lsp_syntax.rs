@@ -43,6 +43,15 @@ fn records_declarations_references_imports_and_calls_with_byte_spans() {
 }
 
 #[test]
+fn keeps_block_capture_destinations_navigable() {
+    let parsed = parse("pipeline -> $output\nparallel limit 2 -> $results\nmeasure -> $elapsed\n");
+    for name in ["output", "results", "elapsed"] {
+        assert!(parsed.symbols.iter().any(|s| s.name == name
+            && s.kind == SymbolKind::Reference), "missing capture destination {name}");
+    }
+}
+
+#[test]
 fn recognizes_style_as_a_native_expression_call() {
     let parsed = parse("let styled = style(\\\"red\\\", value)\\n");
     assert!(

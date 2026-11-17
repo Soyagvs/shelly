@@ -2,6 +2,11 @@
 
 Use `for` to visit each value in an iterable list, in list order. It works with variables, constants, ranges, selectors, filters, and [`files`](files.md) results.
 
+A `for` inside a block capture contributes visible stdout from each executed
+iteration to the outer tee, without suppressing it. Silent iterations remain
+silent. If an iteration or nested block fails, the enclosing destination is not
+assigned.
+
 ## 🚀 Quick path
 
 ```shelly

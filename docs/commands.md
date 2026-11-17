@@ -14,6 +14,43 @@ shellout $out
 
 For script validation and redacted JSONL action records, see [dry-run and audit logs](dry-run.md). For environment-only secret capture and safe command usage, see [Environment-only secrets](secrets.md).
 
+## 📥 Block output capture
+
+A block destination, written as `BLOCK ... -> $variable`, is a tee: it stores
+only the block's normally emitted visual stdout while leaving display behavior
+unchanged. A visual producer such as `shellout` or `table` continues to print
+its output, and that same output is assigned after the block succeeds.
+
+```shelly
+measure -> $elapsed
+    shellout "still visible"
+end
+
+pipeline -> $text
+    command printf "captured and visible"
+end
+```
+
+Silent operations remain silent. Capture does not turn a silent command into a
+visual one, and an operation with its own result semantics keeps them. The
+assignment is success-only: if the body, a nested block, or a required
+operation fails, the error propagates and the destination is left unchanged.
+
+This rule is universal for supported block destinations, including `table`,
+`measure`, `pipeline`, `parallel`, and `progress`, and for blocks nested in
+functions, `if`, and `for`. Specialized destinations such as `try ->` retain
+their documented error-result semantics. Nested captures are independent: an inner block
+assigns its destination on its own successful completion, while an enclosing
+capture receives only stdout emitted by the enclosing block's normal visual
+operations. Tables and functions do not change the rule.
+
+Captured text follows the terminal color policy used for the visual output:
+`--color auto`, `--color always`, `--color never`, and `NO_COLOR` determine
+whether ANSI styling is emitted. Capture does not strip or add color; use
+`--color never` when a plain-text value is required. See [Tables](tables.md),
+[Functions](functions.md), [Conditionals](conditionals.md), and [For loops](for.md)
+for examples in those contexts.
+
 ## 📌 Version and update commands
 
 Both binaries print their own installed package version and exit without starting script or LSP processing (for example, `shelly 3.8.2` and `shelly-lsp 3.8.2`).

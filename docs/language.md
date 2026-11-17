@@ -53,7 +53,7 @@ See [commands.md](commands.md), [files.md](files.md), and [conditionals.md](cond
 
 - Lowercase `$name` stores a mutable variable.
 - Uppercase `$NAME` stores an immutable constant; mixed-case names are rejected.
-- `->` binds an operation result into a variable.
+- `->` binds an operation result into a variable. For a block, it tees normally emitted visual stdout: output remains visible, silent operations remain silent, and assignment happens only after success. Color follows the active terminal policy; see [Commands and input](commands.md).
 - Commands use whitespace-separated arguments. Commas remain valid only in structural contexts such as data literals, function signatures, selectors, and multi-capture destinations.
 - Blocks close with `end`.
 - List indexes start at `1`.

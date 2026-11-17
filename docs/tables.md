@@ -81,3 +81,18 @@ multiline cells, or arbitrary per-cell options. Alignment is a column option
 only; border mode is a table option only.
 
 For timing around a table, see [Measure elapsed time](measure.md).
+
+## Capturing a table
+
+A table destination tees the rendered table: the table remains visible and its
+visual stdout is also stored after successful completion.
+
+```shelly
+table border ascii -> $rendered
+    column "Name"
+    row "Ada"
+end
+```
+
+The value follows the active color policy; capture does not strip ANSI styling.
+A failed row, nested block, or shape validation leaves `$rendered` unchanged.

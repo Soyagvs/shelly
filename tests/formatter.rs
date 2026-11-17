@@ -42,6 +42,13 @@ fn composable_table_and_measure_blocks_indent_nested_structure() {
 }
 
 #[test]
+fn capture_destinations_keep_pipeline_and_parallel_bodies_indented() {
+    let source = "pipeline -> $output\ncommand printf hello\nend\nparallel limit 2 -> $results\ntask first\ncommand printf one\nend\nend\n";
+    let expected = "pipeline -> $output\n    command printf hello\nend\nparallel limit 2 -> $results\n    task first\n        command printf one\n    end\nend\n";
+    assert_eq!(format_source(source).unwrap(), expected);
+}
+
+#[test]
 fn table_blocks_are_indented_and_validated() {
     let source = "table\ncolumn \"Name\"\nrow \"Alice\"\nfooter \"Total\"\nend\n";
     assert_eq!(
