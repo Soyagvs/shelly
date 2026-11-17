@@ -1067,6 +1067,7 @@ struct Interpreter {
     mocks: mock::MockRegistry,
     color: ColorPolicy,
     active_table: Option<table::Table>,
+    stdout_captures: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -1093,6 +1094,7 @@ impl Interpreter {
             mocks: self.mocks.clone(),
             color: self.color,
             active_table: None,
+            stdout_captures: Vec::new(),
         }
     }
 
@@ -1600,6 +1602,20 @@ impl Interpreter {
     }
 
     fn run_table(&mut self, header: &str, body: &[(usize, String)]) -> Result<(), String> {
+        let (header, destination) = split_block_destination(header, "table")?;
+        if let Some(destination) = destination {
+            self.stdout_captures.push(String::new());
+            let result = self.run_table_inner(header, body);
+            let captured = self.stdout_captures.pop().unwrap();
+            if result.is_ok() {
+                self.vars.insert(destination, Value::Scalar(captured));
+            }
+            return result;
+        }
+        self.run_table_inner(header, body)
+    }
+
+    fn run_table_inner(&mut self, header: &str, body: &[(usize, String)]) -> Result<(), String> {
         let border = match header.strip_prefix("table border ").unwrap_or("rounded") {
             "ascii" => table::Border::Ascii,
             "unicode" => table::Border::Unicode,
@@ -1667,7 +1683,7 @@ impl Interpreter {
         if t.rows.iter().any(|r| r.len() != n) || t.footer.as_ref().is_some_and(|r| r.len() != n) {
             return Err(format!("table row width must match {n} columns"));
         }
-        print!("{}", table::render(&t));
+        self.emit_stdout(&table::render(&t));
         Ok(())
     }
 
@@ -1889,6 +1905,7 @@ impl Interpreter {
         if first_condition.is_empty() {
             return Err("condition required".to_string());
         }
+        let (first_condition, destination) = split_block_destination(first_condition, "if")?;
         let mut branches: Vec<(Option<String>, Vec<(usize, String)>)> =
             vec![(Some(first_condition.to_string()), Vec::new())];
         let mut depth = 0;
@@ -1911,7 +1928,9 @@ impl Interpreter {
                             None => true,
                         };
                         if take {
-                            return self.run_lines(&body).map(|_| index + 1);
+                            return self
+                                .run_captured_block(&body, destination.clone())
+                                .map(|_| index + 1);
                         }
                     }
                     return Ok(index + 1);
@@ -2051,7 +2070,8 @@ impl Interpreter {
         lines: &[(usize, String)],
         start: usize,
     ) -> Result<usize, String> {
-        let (item_name, iterable) = parse_for_header(rest)?;
+        let (header, destination) = split_block_destination(rest, "for")?;
+        let (item_name, iterable) = parse_for_header(header)?;
         let (body, next_index) = collect_block(lines, start, "for")?;
         let values = match self.eval_expr_value(&iterable)? {
             Value::List(values) => values,
@@ -2060,16 +2080,25 @@ impl Interpreter {
             }
         };
 
+        self.stdout_captures.push(String::new());
+        let mut loop_result = Ok(());
         for value in values {
             self.vars.insert(item_name.clone(), value);
             match self.run_lines(&body) {
                 Ok(()) => {}
                 Err(error) if is_continue_signal(&error) => continue,
                 Err(error) if is_break_signal(&error) => break,
-                Err(error) => return Err(error),
+                Err(error) => {
+                    loop_result = Err(error);
+                    break;
+                }
             }
         }
-
+        let captured = self.stdout_captures.pop().unwrap();
+        loop_result?;
+        if let Some(destination) = destination {
+            self.vars.insert(destination, Value::Scalar(captured));
+        }
         Ok(next_index)
     }
 
@@ -2509,7 +2538,7 @@ impl Interpreter {
             let value = self.eval_expr(rest.trim())?;
             self.log_action(&format!("shellout: {value}"));
             if !self.context.is_dry_run() {
-                println!("{}", self.emit_terminal(&value));
+                self.emit_stdout(&format!("{}\n", self.emit_terminal(&value)));
             }
             return Ok(());
         }
@@ -4866,6 +4895,30 @@ impl Interpreter {
         Ok(selected)
     }
 
+    fn emit_stdout(&mut self, value: &str) {
+        print!("{value}");
+        for capture in &mut self.stdout_captures {
+            capture.push_str(value);
+        }
+    }
+
+    fn run_captured_block(
+        &mut self,
+        body: &[(usize, String)],
+        destination: Option<String>,
+    ) -> Result<(), String> {
+        let Some(destination) = destination else {
+            return self.run_lines(body);
+        };
+        self.stdout_captures.push(String::new());
+        let result = self.run_lines(body);
+        let captured = self.stdout_captures.pop().unwrap();
+        if result.is_ok() {
+            self.vars.insert(destination, Value::Scalar(captured));
+        }
+        result
+    }
+
     fn emit_terminal(&self, value: &str) -> String {
         let enabled = !env::var_os("NO_COLOR").is_some()
             && match self.color {
@@ -5962,6 +6015,18 @@ impl Checker {
             message,
         });
     }
+}
+
+fn split_block_destination<'a>(
+    text: &'a str,
+    keyword: &str,
+) -> Result<(&'a str, Option<String>), String> {
+    let Some((body, destination)) = text.split_once("->") else {
+        return Ok((text.trim(), None));
+    };
+    let destination = parse_var_ref(destination.trim())
+        .map_err(|_| format!("{keyword} destination must be a mutable variable"))?;
+    Ok((body.trim(), Some(destination)))
 }
 
 fn parse_capture_destination(destination: &str, command: &str) -> Result<String, String> {

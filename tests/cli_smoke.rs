@@ -4,6 +4,40 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
+fn visual_block_capture_tees_if_for_function_and_table_output() {
+    let output = run_script(
+        "fn greet() {\n    shellout \"fn\"\n}\n$items = [\"for\"]\nif true -> $ifout\n    shellout \"if\"\n    for $item in $items -> $forout\n        call greet()\n    end\nend\ntable border ascii -> $tableout\n    column \"Name\"\n    row \"table\"\nend\nshellout $ifout\nshellout $forout\nshellout $tableout\n",
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    let text = stdout(&output);
+    assert!(text.contains("if\n"));
+    assert!(text.contains("fn\n"));
+    assert!(text.contains("table"));
+    assert!(text.matches("table").count() >= 2);
+}
+
+#[test]
+fn visual_block_capture_does_not_assign_after_failure_or_capture_silent_output() {
+    let output = run_script(
+        "$value = \"unchanged\"\ntry\n    if true -> $value\n        shellout \"visible\"\n        command false\n    end\ncatch\nend\nshellout $value\n",
+    );
+    assert!(output.status.success(), "stderr: {}", stderr(&output));
+    assert!(stdout(&output).ends_with("unchanged\n"));
+}
+
+#[test]
+fn visual_block_capture_rejects_malformed_destinations() {
+    for source in ["if true -> $Bad\nend\n", "for $x in [] -> 1\nend\n", "table ->\nend\n"] {
+        let path = write_script(source);
+        let output = Command::new(env!("CARGO_BIN_EXE_shelly"))
+            .arg(path.to_str().unwrap())
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "invalid destination accepted: {source}");
+    }
+}
+
+#[test]
 fn measure_assigns_nonnegative_monotonic_milliseconds_after_successful_body() {
     let output =
         run_script("measure -> $milliseconds\n    command true\nend\nshellout $milliseconds\n");

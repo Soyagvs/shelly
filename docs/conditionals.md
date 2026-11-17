@@ -2,6 +2,11 @@
 
 Use `if`/`elif`/`else` for truth-based branching, or `case` when one value should dispatch to exact matches.
 
+Inside a captured block, an `if` contributes only the visual stdout emitted by
+the branch that runs. That output remains visible and is also stored by the
+outer `-> $variable`; silent branches remain silent. A branch failure prevents
+the enclosing destination from being assigned.
+
 ## 🚀 Quick path
 
 ```shelly

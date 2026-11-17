@@ -12,7 +12,9 @@ shellout "elapsed: $milliseconds ms"
 The clock is monotonic, so elapsed values do not move backward when the system
 clock changes. The destination is assigned only after the body succeeds. If a
 command or nested block fails, the failure propagates and the destination is
-not assigned.
+not assigned. `measure` does not capture or suppress visual output: `shellout`,
+tables, and other visual producers remain visible, while silent operations
+remain silent. The elapsed-time result remains the measure block's own result.
 
 ## Any block or function
 
