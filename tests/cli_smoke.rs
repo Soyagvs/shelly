@@ -27,13 +27,20 @@ fn visual_block_capture_does_not_assign_after_failure_or_capture_silent_output()
 
 #[test]
 fn visual_block_capture_rejects_malformed_destinations() {
-    for source in ["if true -> $Bad\nend\n", "for $x in [] -> 1\nend\n", "table ->\nend\n"] {
+    for source in [
+        "if true -> $Bad\nend\n",
+        "for $x in [] -> 1\nend\n",
+        "table ->\nend\n",
+    ] {
         let path = write_script(source);
         let output = Command::new(env!("CARGO_BIN_EXE_shelly"))
             .arg(path.to_str().unwrap())
             .output()
             .unwrap();
-        assert!(!output.status.success(), "invalid destination accepted: {source}");
+        assert!(
+            !output.status.success(),
+            "invalid destination accepted: {source}"
+        );
     }
 }
 
