@@ -9,7 +9,7 @@ command curl https://example.com timeout 10
 
 timeout 30
     call fetchData
-    process $item
+    shellout $item
 end
 ```
 
